@@ -20,6 +20,7 @@ Kickoff baseline is implemented:
 - Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
 - Structured run logs + optional Prometheus textfile metrics (`observability.*`)
 - Early boot apply + scheduled refresh via systemd
+- Module/release version source via `VERSION` (SemVer)
 
 ## Install (flake)
 
@@ -27,7 +28,8 @@ Kickoff baseline is implemented:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nix-csf.url = "github:<org>/nix-csf";
+    # Prefer pinning a release tag in production:
+    nix-csf.url = "github:<org>/nix-csf?ref=vX.Y.Z";
   };
 
   outputs = { self, nixpkgs, nix-csf, ... }: {
@@ -72,7 +74,7 @@ For remote tarball usage:
 
 ```nix
 imports = [
-  "${builtins.fetchTarball "https://github.com/<org>/nix-csf/archive/main.tar.gz"}"
+  "${builtins.fetchTarball "https://github.com/<org>/nix-csf/archive/refs/tags/vX.Y.Z.tar.gz"}"
 ];
 ```
 
@@ -227,16 +229,47 @@ Full validation (includes x86_64 VM smoke test):
 ./scripts/validate.sh
 ```
 
-The validation script now runs two x86_64 VM suites:
+The validation script runs:
 
+- `checks.x86_64-linux.version-semver` (VERSION SemVer gate)
+- `checks.x86_64-linux.eval-basic` (module evaluation wiring)
+- `checks.x86_64-linux.shellcheck` (script lint)
 - `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
 - `checks.x86_64-linux.nix-csf-integration` (fail-closed and legacy-mode integration coverage)
 
 If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
 
+## Versioning and releases
+
+- `VERSION` is the source of truth for module/project version.
+- Release tags follow `v<semver>` (for example `v0.2.0`).
+- Compatibility policy:
+  - `MAJOR`: breaking module API/behavior changes.
+  - `MINOR`: backward-compatible features.
+  - `PATCH`: backward-compatible fixes/docs/tests.
+
+Release workflow (maintainer):
+
+```bash
+# Preview checks only (no commit/tag):
+./scripts/release.sh --version 0.2.0 --dry-run
+
+# Create release commit + annotated tag:
+./scripts/release.sh --version 0.2.0
+
+# Create and push in one step:
+./scripts/release.sh --version 0.2.0 --push
+```
+
+Consumers can pin by tag:
+
+- flake: `github:<org>/nix-csf?ref=v0.2.0`
+- non-flake tarball: `.../archive/refs/tags/v0.2.0.tar.gz`
+
 ## Project docs
 
 - Architecture: `docs/ARCHITECTURE.md`
+- Release/compatibility policy: `docs/RELEASE.md`
 - Delivery board: `docs/DELIVERY_BOARD.md`
 - Team rules: `docs/TEAM_OPERATING_RULES.md`
 - Roadmap: `docs/ROADMAP.md`

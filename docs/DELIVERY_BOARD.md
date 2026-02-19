@@ -26,23 +26,22 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Scope freeze |
 |---|---|---|---|
-| T-009 | TODO | Release automation and module versioning | repeatable publish flow |
+| T-010 | TODO | Cluster policy propagation model | centralized allow/deny governance |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-009 | TODO | Release automation and module versioning | repeatable publish flow |
-| 2 | T-010 | TODO | Cluster policy propagation model | centralized allow/deny governance |
-| 3 | T-011 | TODO | Documentation use-case catalog expansion | operator-focused examples |
+| 1 | T-010 | TODO | Cluster policy propagation model | centralized allow/deny governance |
+| 2 | T-011 | TODO | Documentation use-case catalog expansion | operator-focused examples |
+| 3 | T-012 | TODO | Preset threat profiles (server/workstation/edge) | profile defaults + docs/tests |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-010 | TODO | Cluster policy propagation model |
-| 2 | T-011 | TODO | Documentation use-case catalog expansion |
-| 3 | T-012 | TODO | Preset threat profiles (server/workstation/edge) |
+| 1 | T-011 | TODO | Documentation use-case catalog expansion |
+| 2 | T-012 | TODO | Preset threat profiles (server/workstation/edge) |
 
 ## Completed baseline
 
@@ -57,6 +56,7 @@ Ship a production-usable NixOS firewall module that is:
 | T-006 | DONE | Stateful rate-limit presets (`synFlood`, `connFlood`) |
 | T-007 | DONE | Structured logging + Prometheus textfile metrics |
 | T-008 | DONE | NixOS VM integration tests (multi-scenario) |
+| T-009 | DONE | Release automation and module versioning |
 
 ## Triage protocol
 

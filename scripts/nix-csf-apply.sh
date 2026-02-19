@@ -253,6 +253,9 @@ write_metrics() {
     echo "# HELP nix_csf_last_run_success Last run result (1=success)."
     echo "# TYPE nix_csf_last_run_success gauge"
     printf 'nix_csf_last_run_success{mode="%s"} 1\n' "${MODE}"
+    echo "# HELP nix_csf_build_info Build/version metadata (always 1)."
+    echo "# TYPE nix_csf_build_info gauge"
+    printf 'nix_csf_build_info{version="%s"} 1\n' "${module_version}"
     echo "# HELP nix_csf_last_run_duration_seconds Total runtime of the successful run."
     echo "# TYPE nix_csf_last_run_duration_seconds gauge"
     printf 'nix_csf_last_run_duration_seconds{mode="%s"} %s\n' "${MODE}" "${duration}"
@@ -296,6 +299,7 @@ default_policy="$(jq -r '.defaultPolicy' "${CONFIG_FILE}")"
 forward_policy="$(jq -r '.forwardPolicy' "${CONFIG_FILE}")"
 allow_icmp="$(jq -r '.allowICMP' "${CONFIG_FILE}")"
 log_drops="$(jq -r '.logDrops' "${CONFIG_FILE}")"
+module_version="$(jq -r '.moduleVersion // "0.0.0-dev"' "${CONFIG_FILE}")"
 syn_rate_limit="$(jq -r '.synRateLimit // ""' "${CONFIG_FILE}")"
 legacy_syn_rate_limit_enabled="false"
 if [[ -n "${syn_rate_limit}" ]]; then
@@ -317,7 +321,7 @@ if [[ "${metrics_enabled}" == "true" && "${metrics_output_file}" != /* ]]; then
   fail "observability.metrics.outputFile must be an absolute path"
 fi
 
-log_event "stdout" "info" "run_start" "metrics_enabled=${metrics_enabled}"
+log_event "stdout" "info" "run_start" "version=${module_version}" "metrics_enabled=${metrics_enabled}"
 
 if [[ "${syn_flood_enabled}" == "true" ]]; then
   if [[ -z "${syn_flood_rate}" || ! "${syn_flood_burst}" =~ ^[1-9][0-9]*$ ]]; then
@@ -635,4 +639,4 @@ write_metrics
 
 run_finished_epoch="$(date +%s)"
 log_event "stdout" "info" "run_complete" "duration_seconds=$(( run_finished_epoch - run_started_epoch ))"
-say "rules applied (${MODE})"
+say "rules applied (${MODE}, version ${module_version})"

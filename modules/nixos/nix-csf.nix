@@ -7,11 +7,13 @@ let
     mkEnableOption
     mkIf
     mkOption
+    removeSuffix
     unique
     types
     toUpper;
 
   cfg = config.services.nixCsf;
+  moduleVersion = removeSuffix "\n" (builtins.readFile ../../VERSION);
 
   defaultBlocklistCatalog = {
     "spamhaus-drop-v4" = {
@@ -89,6 +91,7 @@ let
   };
 
   runtimeConfigFile = (pkgs.formats.json { }).generate "nix-csf-runtime-config.json" {
+    moduleVersion = cfg.moduleVersion;
     defaultPolicy = cfg.defaultPolicy;
     forwardPolicy = cfg.forwardPolicy;
     trustedInterfaces = cfg.trustedInterfaces;
@@ -155,6 +158,16 @@ in
 {
   options.services.nixCsf = {
     enable = mkEnableOption "CSF-inspired nftables firewall with NixOS-native options";
+
+    moduleVersion = mkOption {
+      type = types.str;
+      readOnly = true;
+      default = moduleVersion;
+      description = ''
+        nix-csf module release version from the repository VERSION file.
+        This value is exported into runtime metadata and metrics.
+      '';
+    };
 
     defaultPolicy = mkOption {
       type = types.enum [ "drop" "accept" ];

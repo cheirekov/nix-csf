@@ -80,6 +80,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("nft list table inet nix_csf | grep -F 'ip saddr @feed_ipv4 drop'")
     machine.succeed("test -s /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_last_run_success{mode=\"apply\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_build_info{version=\"' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"blocklists\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("systemctl start nix-csf-refresh.service")

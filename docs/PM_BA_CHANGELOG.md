@@ -204,3 +204,39 @@
   - release automation and module versioning (`T-009`),
   - cluster policy propagation model (`T-010`),
   - documentation use-case catalog expansion (`T-011`).
+
+## 2026-02-19 — Batch RELEASE-009
+
+- Ticket(s): `T-009`
+- Summary:
+  - introduced repository release source of truth via `VERSION` (`0.1.0`),
+  - added read-only module metadata option:
+    - `services.nixCsf.moduleVersion`,
+  - exported version into runtime outputs:
+    - structured `run_start` event includes version,
+    - Prometheus metric `nix_csf_build_info{version="..."} 1`,
+  - added release automation script:
+    - `scripts/release.sh` with SemVer gating and commit/tag workflow,
+  - added flake release packaging:
+    - `packages.<system>.release`,
+    - `packages.<system>.version`,
+  - added SemVer/eval/shell lint checks for x86_64 + aarch64,
+  - fixed `flake.nix` check composition to preserve x86_64 base checks plus VM checks,
+  - updated `scripts/validate.sh` to execute lightweight checks before VM suites,
+  - documented SemVer compatibility and release workflow in:
+    - `docs/RELEASE.md`,
+    - `README.md`.
+- BA requirement mapping:
+  - delivers repeatable publish flow and explicit module versioning for public flake/non-flake consumption.
+- PM milestone mapping:
+  - Phase 4 release-quality baseline expanded with SemVer policy and release automation.
+- Risk impact:
+  - `low` (automation/docs + metadata wiring; existing firewall semantics unchanged).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh && bash -n scripts/validate.sh && bash -n scripts/release.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `./scripts/validate.sh`
+  - `./scripts/release.sh --version 0.1.1 --dry-run --no-validate --allow-dirty`
+- Open follow-ups:
+  - cluster policy propagation model (`T-010`),
+  - documentation use-case catalog expansion (`T-011`).

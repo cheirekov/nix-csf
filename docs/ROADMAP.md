@@ -35,5 +35,6 @@
 ## Phase 4 — Release quality
 
 - Integration tests with NixOS VMs. [baseline done 2026-02-19]
-- SemVer and compatibility policy.
+- SemVer and compatibility policy. [baseline done 2026-02-19]
+- Release automation and module versioning. [baseline done 2026-02-19]
 - Publish first stable release.

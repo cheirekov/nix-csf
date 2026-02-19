@@ -7,6 +7,7 @@
 - Runtime feed refresh without rebuilding the system.
 - Compatibility with both flake and non-flake module imports.
 - Governed remote blocklist ingestion through a source catalog schema.
+- Repeatable SemVer-based release lifecycle.
 
 ## Components
 
@@ -14,6 +15,10 @@
   - NixOS module options and service wiring.
 - `scripts/nix-csf-apply.sh`
   - Runtime rule compiler and loader for nftables.
+- `VERSION`
+  - Single source of truth for module/project SemVer.
+- `scripts/release.sh`
+  - Maintainer release automation (validate, version bump, tag flow).
 - `systemd` units
   - `nix-csf-apply.service`: early boot apply.
   - `nix-csf-refresh.service`: network-online refresh.
@@ -26,14 +31,15 @@
 ## Data flow
 
 1. Nix evaluation generates a JSON config from module options.
-2. Boot-time apply service renders nftables rules from:
+2. Module version metadata (`services.nixCsf.moduleVersion`) is injected from `VERSION`.
+3. Boot-time apply service renders nftables rules from:
    - static config values,
    - cached feed data.
-3. Refresh service (manual/timer) downloads latest feed files.
-4. Rules are regenerated and atomically re-applied.
-5. Optional observability export writes:
+4. Refresh service (manual/timer) downloads latest feed files.
+5. Rules are regenerated and atomically re-applied.
+6. Optional observability export writes:
    - structured event logs to journald,
-   - snapshot metrics in Prometheus textfile format.
+   - snapshot metrics in Prometheus textfile format (including build/version metadata).
 
 ## Security boundaries
 
