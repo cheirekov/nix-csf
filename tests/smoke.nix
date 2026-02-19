@@ -15,6 +15,16 @@ pkgs.testers.runNixOSTest {
       allowIPv4 = [ "10.0.0.0/8" ];
       denyIPv4 = [ "198.51.100.0/24" ];
       logDrops = true;
+      rateLimits = {
+        synFlood = {
+          enable = true;
+          preset = "strict";
+        };
+        connFlood = {
+          enable = true;
+          preset = "balanced";
+        };
+      };
       country = {
         enable = true;
         mode = "allow";
@@ -43,6 +53,12 @@ pkgs.testers.runNixOSTest {
           };
         };
       };
+      observability.metrics = {
+        enable = true;
+        outputFile = "/var/lib/nix-csf/metrics.prom";
+      };
+      # Keep metrics assertions deterministic: explicit refresh is triggered in testScript.
+      autoRefresh.runOnBoot = false;
     };
 
     environment.etc."nix-csf-smoke-feed.txt".text = ''
@@ -59,9 +75,17 @@ pkgs.testers.runNixOSTest {
     machine.succeed("nft list table inet nix_csf")
     machine.succeed("nft list table inet nix_csf | grep -F 'ip saddr != @country_ipv4 drop'")
     machine.succeed("nft list table inet nix_csf | grep -E 'ip saddr @country_port_deny_ipv4.*tcp dport'")
+    machine.succeed("nft list table inet nix_csf | grep -F 'syn_flood_v4'")
+    machine.succeed("nft list table inet nix_csf | grep -F 'conn_flood_v4'")
     machine.succeed("nft list table inet nix_csf | grep -F 'ip saddr @feed_ipv4 drop'")
-    machine.succeed("nft list table inet nix_csf | grep -F '203.0.113.0/24'")
+    machine.succeed("test -s /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_last_run_success{mode=\"apply\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"blocklists\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("systemctl start nix-csf-refresh.service")
     machine.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx success")
+    machine.succeed("nft list table inet nix_csf | grep -F '203.0.113.0/24'")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_last_run_success{mode=\"refresh\"} 1' /var/lib/nix-csf/metrics.prom")
   '';
 }

@@ -26,22 +26,23 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Scope freeze |
 |---|---|---|---|
-| T-006 | TODO | Stateful rate-limit presets (SYN flood, conn flood) | practical presets only |
+| T-008 | TODO | NixOS VM integration tests | broader scenario coverage |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-006 | TODO | Stateful rate-limit presets (SYN flood, conn flood) | practical presets and tests |
-| 2 | T-007 | TODO | Structured logging and metrics exporter | operability baseline |
-| 3 | T-008 | TODO | NixOS VM integration tests | broader scenario coverage |
+| 1 | T-008 | TODO | NixOS VM integration tests | broader scenario coverage |
+| 2 | T-009 | TODO | Release automation and module versioning | repeatable publish flow |
+| 3 | T-010 | TODO | Cluster policy propagation model | centralized allow/deny governance |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-008 | TODO | NixOS VM integration tests |
-| 2 | T-009 | TODO | Release automation and module versioning |
+| 1 | T-009 | TODO | Release automation and module versioning |
+| 2 | T-010 | TODO | Cluster policy propagation model |
+| 3 | T-011 | TODO | Documentation use-case catalog expansion |
 
 ## Completed baseline
 
@@ -53,6 +54,8 @@ Ship a production-usable NixOS firewall module that is:
 | T-003 | DONE | Country filter policy modes (`deny` + `allow`) |
 | T-004 | DONE | Per-port country policy (`CC_DENY_PORTS` style) |
 | T-005 | DONE | Blocklist source catalog + schema |
+| T-006 | DONE | Stateful rate-limit presets (`synFlood`, `connFlood`) |
+| T-007 | DONE | Structured logging + Prometheus textfile metrics |
 
 ## Triage protocol
 

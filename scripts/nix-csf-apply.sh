@@ -55,16 +55,47 @@ trap 'rm -rf "${TMP_DIR}"' EXIT
 
 mkdir -p "${STATE_DIR}" "${CACHE_DIR}"
 
+run_started_epoch="$(date +%s)"
+structured_logging="false"
+metrics_enabled="false"
+metrics_output_file="/var/lib/nix-csf/metrics.prom"
+
+log_event() {
+  local sink="$1"
+  local level="$2"
+  local event="$3"
+  shift 3
+
+  if [[ "${structured_logging}" != "true" ]]; then
+    return 0
+  fi
+
+  local ts line
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  line="nix-csf: ts=${ts} level=${level} event=${event} mode=${MODE}"
+  for field in "$@"; do
+    line="${line} ${field}"
+  done
+
+  if [[ "${sink}" == "stderr" ]]; then
+    echo "${line}" >&2
+  else
+    echo "${line}"
+  fi
+}
+
 say() {
   echo "nix-csf: $*"
 }
 
 warn() {
   echo "nix-csf: WARNING: $*" >&2
+  log_event "stderr" "warn" "warning"
 }
 
 fail() {
   echo "nix-csf: ERROR: $*" >&2
+  log_event "stderr" "error" "failure"
   exit 1
 }
 
@@ -184,11 +215,121 @@ emit_set() {
   echo "  }"
 }
 
+count_file_lines() {
+  local file="$1"
+
+  if [[ -s "${file}" ]]; then
+    wc -l < "${file}" | tr -d '[:space:]'
+  else
+    echo "0"
+  fi
+}
+
+bool_to_num() {
+  if [[ "$1" == "true" ]]; then
+    echo "1"
+  else
+    echo "0"
+  fi
+}
+
+write_metrics() {
+  if [[ "${metrics_enabled}" != "true" ]]; then
+    return 0
+  fi
+
+  local output_dir tmp_metrics now_epoch duration
+  output_dir="$(dirname "${metrics_output_file}")"
+  tmp_metrics="${TMP_DIR}/metrics.prom"
+  now_epoch="$(date +%s)"
+  duration=$(( now_epoch - run_started_epoch ))
+
+  mkdir -p "${output_dir}"
+
+  {
+    echo "# HELP nix_csf_last_run_timestamp_seconds Unix timestamp of the last successful run."
+    echo "# TYPE nix_csf_last_run_timestamp_seconds gauge"
+    printf 'nix_csf_last_run_timestamp_seconds{mode="%s"} %s\n' "${MODE}" "${now_epoch}"
+    echo "# HELP nix_csf_last_run_success Last run result (1=success)."
+    echo "# TYPE nix_csf_last_run_success gauge"
+    printf 'nix_csf_last_run_success{mode="%s"} 1\n' "${MODE}"
+    echo "# HELP nix_csf_last_run_duration_seconds Total runtime of the successful run."
+    echo "# TYPE nix_csf_last_run_duration_seconds gauge"
+    printf 'nix_csf_last_run_duration_seconds{mode="%s"} %s\n' "${MODE}" "${duration}"
+    echo "# HELP nix_csf_feature_enabled Feature toggle state (1=enabled, 0=disabled)."
+    echo "# TYPE nix_csf_feature_enabled gauge"
+    printf 'nix_csf_feature_enabled{feature="country"} %s\n' "$(bool_to_num "${country_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="country_port_deny"} %s\n' "$(bool_to_num "${country_port_deny_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="blocklists"} %s\n' "$(bool_to_num "${blocklists_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="log_drops"} %s\n' "$(bool_to_num "${log_drops}")"
+    printf 'nix_csf_feature_enabled{feature="legacy_syn_rate_limit"} %s\n' "$(bool_to_num "${legacy_syn_rate_limit_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="syn_flood"} %s\n' "$(bool_to_num "${syn_flood_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="conn_flood"} %s\n' "$(bool_to_num "${conn_flood_enabled}")"
+    echo "# HELP nix_csf_set_entries Number of CIDR elements loaded into nft sets."
+    echo "# TYPE nix_csf_set_entries gauge"
+    printf 'nix_csf_set_entries{set="allow_ipv4"} %s\n' "${allow_v4_count}"
+    printf 'nix_csf_set_entries{set="allow_ipv6"} %s\n' "${allow_v6_count}"
+    printf 'nix_csf_set_entries{set="deny_ipv4"} %s\n' "${deny_v4_count}"
+    printf 'nix_csf_set_entries{set="deny_ipv6"} %s\n' "${deny_v6_count}"
+    printf 'nix_csf_set_entries{set="country_ipv4"} %s\n' "${country_v4_count}"
+    printf 'nix_csf_set_entries{set="country_ipv6"} %s\n' "${country_v6_count}"
+    printf 'nix_csf_set_entries{set="country_port_deny_ipv4"} %s\n' "${country_port_deny_v4_count}"
+    printf 'nix_csf_set_entries{set="country_port_deny_ipv6"} %s\n' "${country_port_deny_v6_count}"
+    printf 'nix_csf_set_entries{set="feed_ipv4"} %s\n' "${feed_v4_count}"
+    printf 'nix_csf_set_entries{set="feed_ipv6"} %s\n' "${feed_v6_count}"
+    echo "# HELP nix_csf_source_count Number of configured source identifiers."
+    echo "# TYPE nix_csf_source_count gauge"
+    printf 'nix_csf_source_count{source="country_codes"} %s\n' "${#country_codes[@]}"
+    printf 'nix_csf_source_count{source="country_port_deny_codes"} %s\n' "${#country_port_deny_codes[@]}"
+    printf 'nix_csf_source_count{source="blocklist_urls"} %s\n' "${#blocklist_urls[@]}"
+    echo "# HELP nix_csf_rate_limit_burst_packets Burst thresholds for rate-limited controls."
+    echo "# TYPE nix_csf_rate_limit_burst_packets gauge"
+    printf 'nix_csf_rate_limit_burst_packets{limit="syn_flood",preset="%s"} %s\n' "${syn_flood_preset}" "${syn_flood_burst}"
+    printf 'nix_csf_rate_limit_burst_packets{limit="conn_flood",preset="%s"} %s\n' "${conn_flood_preset}" "${conn_flood_burst}"
+  } > "${tmp_metrics}"
+
+  install -m 0644 "${tmp_metrics}" "${metrics_output_file}"
+  log_event "stdout" "info" "metrics_written" "output=${metrics_output_file}"
+}
+
 default_policy="$(jq -r '.defaultPolicy' "${CONFIG_FILE}")"
 forward_policy="$(jq -r '.forwardPolicy' "${CONFIG_FILE}")"
 allow_icmp="$(jq -r '.allowICMP' "${CONFIG_FILE}")"
 log_drops="$(jq -r '.logDrops' "${CONFIG_FILE}")"
 syn_rate_limit="$(jq -r '.synRateLimit // ""' "${CONFIG_FILE}")"
+legacy_syn_rate_limit_enabled="false"
+if [[ -n "${syn_rate_limit}" ]]; then
+  legacy_syn_rate_limit_enabled="true"
+fi
+syn_flood_enabled="$(jq -r '.rateLimits.synFlood.enable // false' "${CONFIG_FILE}")"
+syn_flood_preset="$(jq -r '.rateLimits.synFlood.preset // "balanced"' "${CONFIG_FILE}")"
+syn_flood_rate="$(jq -r '.rateLimits.synFlood.rate // ""' "${CONFIG_FILE}")"
+syn_flood_burst="$(jq -r '.rateLimits.synFlood.burst // 0' "${CONFIG_FILE}")"
+conn_flood_enabled="$(jq -r '.rateLimits.connFlood.enable // false' "${CONFIG_FILE}")"
+conn_flood_preset="$(jq -r '.rateLimits.connFlood.preset // "balanced"' "${CONFIG_FILE}")"
+conn_flood_rate="$(jq -r '.rateLimits.connFlood.rate // ""' "${CONFIG_FILE}")"
+conn_flood_burst="$(jq -r '.rateLimits.connFlood.burst // 0' "${CONFIG_FILE}")"
+structured_logging="$(jq -r '.observability.structuredLogging // false' "${CONFIG_FILE}")"
+metrics_enabled="$(jq -r '.observability.metrics.enable // false' "${CONFIG_FILE}")"
+metrics_output_file="$(jq -r '.observability.metrics.outputFile // "/var/lib/nix-csf/metrics.prom"' "${CONFIG_FILE}")"
+
+if [[ "${metrics_enabled}" == "true" && "${metrics_output_file}" != /* ]]; then
+  fail "observability.metrics.outputFile must be an absolute path"
+fi
+
+log_event "stdout" "info" "run_start" "metrics_enabled=${metrics_enabled}"
+
+if [[ "${syn_flood_enabled}" == "true" ]]; then
+  if [[ -z "${syn_flood_rate}" || ! "${syn_flood_burst}" =~ ^[1-9][0-9]*$ ]]; then
+    fail "rateLimits.synFlood requires a non-empty rate and positive burst"
+  fi
+fi
+
+if [[ "${conn_flood_enabled}" == "true" ]]; then
+  if [[ -z "${conn_flood_rate}" || ! "${conn_flood_burst}" =~ ^[1-9][0-9]*$ ]]; then
+    fail "rateLimits.connFlood requires a non-empty rate and positive burst"
+  fi
+fi
 
 jq -r '.allowIPv4[]?' "${CONFIG_FILE}" > "${TMP_DIR}/allow-v4.raw"
 jq -r '.allowIPv6[]?' "${CONFIG_FILE}" > "${TMP_DIR}/allow-v6.raw"
@@ -340,6 +481,29 @@ mapfile -t trusted_interfaces < <(jq -r '.trustedInterfaces[]?' "${CONFIG_FILE}"
 mapfile -t open_tcp_ports < <(jq -r '.openTCPPorts[]?' "${CONFIG_FILE}")
 mapfile -t open_udp_ports < <(jq -r '.openUDPPorts[]?' "${CONFIG_FILE}")
 
+allow_v4_count="$(count_file_lines "${TMP_DIR}/allow-v4.txt")"
+allow_v6_count="$(count_file_lines "${TMP_DIR}/allow-v6.txt")"
+deny_v4_count="$(count_file_lines "${TMP_DIR}/deny-v4.txt")"
+deny_v6_count="$(count_file_lines "${TMP_DIR}/deny-v6.txt")"
+country_v4_count="$(count_file_lines "${TMP_DIR}/country-v4.txt")"
+country_v6_count="$(count_file_lines "${TMP_DIR}/country-v6.txt")"
+country_port_deny_v4_count="$(count_file_lines "${TMP_DIR}/country-port-deny-v4.txt")"
+country_port_deny_v6_count="$(count_file_lines "${TMP_DIR}/country-port-deny-v6.txt")"
+feed_v4_count="$(count_file_lines "${TMP_DIR}/feeds-v4.txt")"
+feed_v6_count="$(count_file_lines "${TMP_DIR}/feeds-v6.txt")"
+
+log_event "stdout" "info" "set_counts" \
+  "allow_v4=${allow_v4_count}" \
+  "allow_v6=${allow_v6_count}" \
+  "deny_v4=${deny_v4_count}" \
+  "deny_v6=${deny_v6_count}" \
+  "country_v4=${country_v4_count}" \
+  "country_v6=${country_v6_count}" \
+  "country_port_deny_v4=${country_port_deny_v4_count}" \
+  "country_port_deny_v6=${country_port_deny_v6_count}" \
+  "feed_v4=${feed_v4_count}" \
+  "feed_v6=${feed_v6_count}"
+
 render_port_set() {
   local -n ref="$1"
   local IFS=", "
@@ -378,6 +542,16 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
 
   if [[ -n "${syn_rate_limit}" ]]; then
     printf '    tcp flags syn ct state new limit rate over %s drop\n' "${syn_rate_limit}"
+  fi
+
+  if [[ "${syn_flood_enabled}" == "true" ]]; then
+    printf '    tcp flags syn ct state new meter syn_flood_v4 { ip saddr limit rate over %s burst %s packets } drop\n' "${syn_flood_rate}" "${syn_flood_burst}"
+    printf '    tcp flags syn ct state new meter syn_flood_v6 { ip6 saddr limit rate over %s burst %s packets } drop\n' "${syn_flood_rate}" "${syn_flood_burst}"
+  fi
+
+  if [[ "${conn_flood_enabled}" == "true" ]]; then
+    printf '    ct state new meter conn_flood_v4 { ip saddr limit rate over %s burst %s packets } drop\n' "${conn_flood_rate}" "${conn_flood_burst}"
+    printf '    ct state new meter conn_flood_v6 { ip6 saddr limit rate over %s burst %s packets } drop\n' "${conn_flood_rate}" "${conn_flood_burst}"
   fi
 
   echo "    ip saddr @deny_ipv4 drop"
@@ -457,4 +631,8 @@ nft delete table inet nix_csf >/dev/null 2>&1 || true
 nft -f "${tmp_rules}"
 install -m 0640 "${tmp_rules}" "${RULESET_FILE}"
 
+write_metrics
+
+run_finished_epoch="$(date +%s)"
+log_event "stdout" "info" "run_complete" "duration_seconds=$(( run_finished_epoch - run_started_epoch ))"
 say "rules applied (${MODE})"

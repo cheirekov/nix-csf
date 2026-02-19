@@ -6,38 +6,45 @@ Owner: PM/BA + Codex
 ## 1) Batch contract
 
 - Batch type: `DAY (2-4h)`
-- Active ticket: `T-005` (Blocklist source catalog + schema)
-- Goal: establish trusted blocklist source governance without breaking existing blocklist behavior.
+- Active ticket: `T-007` (Structured logging + metrics exporter), with closure of `T-006`.
+- Goal: improve operational visibility and complete stateful rate-limit baseline.
 - In scope:
-  - Add schema-backed blocklist catalog model in module options.
-  - Add source selection (`blocklists.sources`) + governance flags (`enforceCatalog`, `requireHTTPS`).
-  - Keep compatibility with legacy direct `blocklists.urls`.
-  - Extend smoke test to validate catalog-backed feed ingestion.
+  - `T-006` stateful rate-limit presets for SYN flood and connection flood.
+  - `T-007` structured apply/refresh logs and Prometheus textfile metrics export.
+  - Smoke-test assertions for observability outputs.
+  - README and architecture documentation updates with new use cases.
 - Out of scope:
-  - rate-limit presets (`T-006`),
-  - structured metrics/export (`T-007`).
+  - `T-008` multi-scenario integration suite,
+  - release automation/versioning (`T-009`).
 - Stop/rollback condition:
-  - if catalog-governed feed selection fails eval/runtime safety checks.
+  - any regression in nftables rendering or failed smoke assertions for existing country/blocklist behavior.
 
 ## 2) Definition of done
 
 - `nix flake check --all-systems --no-build` passes.
 - VM smoke test executes successfully with assertions for:
-  - country `allow` mode and port-deny rendering (regression protection),
-  - blocklist catalog source ingestion into nft sets/rules.
-- Module and README/docs are updated for the new API.
+  - rate-limit meter rendering (`syn_flood_*`, `conn_flood_*`),
+  - metrics file generation for apply/refresh modes,
+  - blocklist feed CIDR presence after explicit refresh.
+- Module runtime API includes `observability` options and exported JSON wiring.
+- Module and README/docs are updated for the new API and use cases.
 - Board/changelog updated with validation evidence.
 
 ## 3) End-of-batch result
 
 - Decision: `continue`
 - Completed:
-  - implemented blocklist trusted catalog schema (`blocklists.catalog`) with metadata fields (`url`, `family`, `format`, `description`),
-  - implemented source selection via `blocklists.sources` and URL resolution at evaluation time,
-  - added governance controls:
-    - `blocklists.enforceCatalog` (forbid direct URLs),
-    - `blocklists.requireHTTPS` (enforce https URL policy),
-  - kept backward compatibility with legacy `blocklists.urls`,
-  - extended smoke test with deterministic local catalog source to assert feed rule and CIDR loading.
+  - closed `T-006`:
+    - added `rateLimits.synFlood` and `rateLimits.connFlood` presets (`relaxed|balanced|strict`),
+    - rendered per-source nftables meters and validated via smoke.
+  - closed `T-007`:
+    - added `services.nixCsf.observability` options:
+      - `structuredLogging`,
+      - `metrics.enable`,
+      - `metrics.outputFile`,
+    - implemented structured key-value events in `nix-csf-apply.sh`,
+    - implemented Prometheus textfile snapshot export with feature and set-count metrics,
+    - extended smoke test to assert apply/refresh mode metrics and post-refresh feed counts.
+  - expanded documentation examples in `README.md` and updated architecture notes.
 - Next ticket candidate:
-  - `T-006` stateful rate-limit presets.
+  - `T-008` NixOS VM integration tests (broader scenario coverage).

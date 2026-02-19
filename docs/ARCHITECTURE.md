@@ -21,6 +21,7 @@
 - Runtime state
   - `/var/lib/nix-csf/cache`: cached remote feeds.
   - `/var/lib/nix-csf/generated-ruleset.nft`: last generated ruleset.
+  - optional Prometheus textfile metrics output (default: `/var/lib/nix-csf/metrics.prom`).
 
 ## Data flow
 
@@ -30,6 +31,9 @@
    - cached feed data.
 3. Refresh service (manual/timer) downloads latest feed files.
 4. Rules are regenerated and atomically re-applied.
+5. Optional observability export writes:
+   - structured event logs to journald,
+   - snapshot metrics in Prometheus textfile format.
 
 ## Security boundaries
 

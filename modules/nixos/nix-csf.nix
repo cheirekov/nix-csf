@@ -2,6 +2,7 @@
 let
   inherit (lib)
     all
+    hasPrefix
     mkDefault
     mkEnableOption
     mkIf
@@ -41,6 +42,39 @@ let
   isHttpsUrl = url: builtins.match "^https://[^[:space:]]+$" url != null;
   catalogBlocklistURLs = map (entry: entry.url) (builtins.attrValues cfg.blocklists.catalog);
 
+  synFloodPresetTable = {
+    relaxed = {
+      rate = "120/second";
+      burst = 240;
+    };
+    balanced = {
+      rate = "60/second";
+      burst = 120;
+    };
+    strict = {
+      rate = "25/second";
+      burst = 50;
+    };
+  };
+
+  connFloodPresetTable = {
+    relaxed = {
+      rate = "200/second";
+      burst = 400;
+    };
+    balanced = {
+      rate = "120/second";
+      burst = 240;
+    };
+    strict = {
+      rate = "60/second";
+      burst = 120;
+    };
+  };
+
+  synFloodPreset = synFloodPresetTable.${cfg.rateLimits.synFlood.preset};
+  connFloodPreset = connFloodPresetTable.${cfg.rateLimits.connFlood.preset};
+
   applyTool = pkgs.writeShellApplication {
     name = "nix-csf-apply";
     runtimeInputs = with pkgs; [
@@ -67,6 +101,20 @@ let
     denyIPv6 = cfg.denyIPv6;
     logDrops = cfg.logDrops;
     synRateLimit = cfg.synRateLimit;
+    rateLimits = {
+      synFlood = {
+        enable = cfg.rateLimits.synFlood.enable;
+        preset = cfg.rateLimits.synFlood.preset;
+        rate = synFloodPreset.rate;
+        burst = synFloodPreset.burst;
+      };
+      connFlood = {
+        enable = cfg.rateLimits.connFlood.enable;
+        preset = cfg.rateLimits.connFlood.preset;
+        rate = connFloodPreset.rate;
+        burst = connFloodPreset.burst;
+      };
+    };
     country = {
       enable = cfg.country.enable;
       mode = cfg.country.mode;
@@ -92,6 +140,13 @@ let
       sources = cfg.blocklists.sources;
       enforceCatalog = cfg.blocklists.enforceCatalog;
       requireHTTPS = cfg.blocklists.requireHTTPS;
+    };
+    observability = {
+      structuredLogging = cfg.observability.structuredLogging;
+      metrics = {
+        enable = cfg.observability.metrics.enable;
+        outputFile = cfg.observability.metrics.outputFile;
+      };
     };
   };
 
@@ -182,6 +237,46 @@ in
         Optional nftables rate expression for new TCP SYN packets.
         Example values: "25/second", "300/minute".
       '';
+    };
+
+    rateLimits = {
+      synFlood = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Enable per-source SYN flood protection preset.";
+        };
+
+        preset = mkOption {
+          type = types.enum [ "relaxed" "balanced" "strict" ];
+          default = "balanced";
+          description = ''
+            SYN flood preset profile:
+            - relaxed: higher threshold, lower false positives
+            - balanced: general server default
+            - strict: lower threshold, stronger burst control
+          '';
+        };
+      };
+
+      connFlood = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Enable per-source new-connection flood protection preset.";
+        };
+
+        preset = mkOption {
+          type = types.enum [ "relaxed" "balanced" "strict" ];
+          default = "balanced";
+          description = ''
+            New-connection flood preset profile:
+            - relaxed: higher threshold
+            - balanced: general server default
+            - strict: lower threshold
+          '';
+        };
+      };
     };
 
     country = {
@@ -392,6 +487,35 @@ in
       };
     };
 
+    observability = {
+      structuredLogging = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Emit structured key-value logs from apply/refresh runs.
+          Useful for journal parsing and incident timelines.
+        '';
+      };
+
+      metrics = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Export runtime snapshot metrics in Prometheus textfile format.";
+        };
+
+        outputFile = mkOption {
+          type = types.str;
+          default = "/var/lib/nix-csf/metrics.prom";
+          example = "/var/lib/node_exporter/textfile_collector/nix-csf.prom";
+          description = ''
+            Destination file for Prometheus textfile metrics.
+            Parent directory is created automatically at runtime.
+          '';
+        };
+      };
+    };
+
     autoRefresh = {
       enable = mkOption {
         type = types.bool;
@@ -455,6 +579,13 @@ in
         message = "services.nixCsf.country.portDeny.enable requires at least one TCP or UDP port.";
       }
       {
+        assertion = !(cfg.synRateLimit != null && cfg.rateLimits.synFlood.enable);
+        message = ''
+          services.nixCsf.synRateLimit cannot be combined with rateLimits.synFlood.enable.
+          Use either the legacy explicit synRateLimit or the synFlood preset.
+        '';
+      }
+      {
         assertion = missingBlocklistSources == [ ];
         message = ''
           services.nixCsf.blocklists.sources contains unknown catalog IDs:
@@ -482,6 +613,10 @@ in
           services.nixCsf.blocklists.catalog.<name>.url must use https:// when
           blocklists.requireHTTPS = true.
         '';
+      }
+      {
+        assertion = !cfg.observability.metrics.enable || hasPrefix "/" cfg.observability.metrics.outputFile;
+        message = "services.nixCsf.observability.metrics.outputFile must be an absolute path.";
       }
       {
         assertion = !(cfg.country.enable && cfg.country.mode == "allow")

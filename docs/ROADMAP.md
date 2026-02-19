@@ -23,12 +23,13 @@
 
 - Country policy modes (`deny` and optional `allow`). [done 2026-02-19]
 - Per-port country controls (deny mode / `CC_DENY_PORTS` style). [done 2026-02-19]
+- Stateful rate-limit presets (SYN flood, connection flood). [done 2026-02-19]
 - Preset threat profiles (server, workstation, edge node).
 
 ## Phase 3 — Operations maturity
 
-- Structured logs and drop telemetry.
-- Optional Prometheus textfile metrics.
+- Structured logs and drop telemetry. [baseline done 2026-02-19]
+- Optional Prometheus textfile metrics. [baseline done 2026-02-19]
 - Troubleshooting command set and runbook.
 
 ## Phase 4 — Release quality

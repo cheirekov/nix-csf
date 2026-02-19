@@ -14,9 +14,11 @@ Kickoff baseline is implemented:
 - NixOS module: `services.nixCsf`
 - Static allow/deny rules (IPv4 + IPv6)
 - Port policy (`openTCPPorts`, `openUDPPorts`, ICMP toggle)
+- Stateful rate-limit presets (`rateLimits.synFlood`, `rateLimits.connFlood`)
 - Country policy modes (`deny` and `allow`)
 - Per-port country deny policy (`country.portDeny`, CSF `CC_DENY_PORTS` style)
 - Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
+- Structured run logs + optional Prometheus textfile metrics (`observability.*`)
 - Early boot apply + scheduled refresh via systemd
 
 ## Install (flake)
@@ -87,7 +89,19 @@ services.nixCsf = {
   allowIPv4 = [ "10.0.0.0/8" ];
   denyIPv4 = [ "198.51.100.0/24" ];
 
-  synRateLimit = "50/second";
+  rateLimits = {
+    synFlood = {
+      enable = true;
+      preset = "balanced"; # relaxed | balanced | strict
+    };
+    connFlood = {
+      enable = true;
+      preset = "balanced"; # relaxed | balanced | strict
+    };
+  };
+
+  # Legacy one-line SYN limiter (do not combine with rateLimits.synFlood.enable):
+  # synRateLimit = "50/second";
   logDrops = true;
 
   country = {
@@ -120,9 +134,74 @@ services.nixCsf = {
     ];
   };
 
+  observability = {
+    structuredLogging = true;
+    metrics = {
+      enable = true;
+      outputFile = "/var/lib/node_exporter/textfile_collector/nix-csf.prom";
+    };
+  };
+
   autoRefresh = {
     enable = true;
     onCalendar = "hourly";
+  };
+};
+```
+
+## Use Cases
+
+### 1) Public web server with conservative DDoS posture
+
+```nix
+services.nixCsf = {
+  enable = true;
+  openTCPPorts = [ 22 80 443 ];
+  rateLimits.synFlood = { enable = true; preset = "strict"; };
+  rateLimits.connFlood = { enable = true; preset = "balanced"; };
+};
+```
+
+### 2) Country allow-list for inbound traffic
+
+```nix
+services.nixCsf = {
+  enable = true;
+  openTCPPorts = [ 22 443 ];
+  country = {
+    enable = true;
+    mode = "allow";
+    countries = [ "US" "CA" ];
+  };
+};
+```
+
+### 3) Port-scoped country deny (CSF `CC_DENY_PORTS` style)
+
+```nix
+services.nixCsf = {
+  enable = true;
+  openTCPPorts = [ 22 443 ];
+  country = {
+    enable = true;
+    countries = [ "RU" "CN" ];
+    portDeny = {
+      enable = true;
+      countries = [ "RU" "CN" ];
+      tcpPorts = [ 443 ];
+    };
+  };
+};
+```
+
+### 4) Enable Prometheus textfile metrics
+
+```nix
+services.nixCsf = {
+  enable = true;
+  observability.metrics = {
+    enable = true;
+    outputFile = "/var/lib/node_exporter/textfile_collector/nix-csf.prom";
   };
 };
 ```

@@ -115,3 +115,59 @@
 - Open follow-ups:
   - stateful rate-limit presets (`T-006`),
   - structured logging and metrics exporter (`T-007`).
+
+## 2026-02-19 — Batch RATE-LIMIT-PRESETS-006
+
+- Ticket(s): `T-006`
+- Summary:
+  - added stateful rate-limit presets:
+    - `services.nixCsf.rateLimits.synFlood.{enable,preset}`,
+    - `services.nixCsf.rateLimits.connFlood.{enable,preset}`,
+  - implemented preset mapping (`relaxed|balanced|strict`) to nftables `rate` + `burst`,
+  - rendered per-source nftables meters for IPv4 and IPv6 in the input chain,
+  - extended smoke test with assertions for `syn_flood_*` and `conn_flood_*` rule presence.
+- BA requirement mapping:
+  - delivers a practical, declarative anti-flood profile layer aligned with CSF-inspired usability.
+- PM milestone mapping:
+  - Phase 2 policy expansion progressed with production-usable presets.
+- Risk impact:
+  - `low` (feature is opt-in and guarded by validation; legacy `synRateLimit` conflict is asserted).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh && bash -n scripts/validate.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-smoke" --print-build-logs`
+- Open follow-ups:
+  - structured logging and metrics exporter (`T-007`),
+  - scenario expansion in integration tests (`T-008`).
+
+## 2026-02-19 — Batch OBSERVABILITY-007
+
+- Ticket(s): `T-007`
+- Summary:
+  - added observability module API:
+    - `services.nixCsf.observability.structuredLogging`,
+    - `services.nixCsf.observability.metrics.{enable,outputFile}`,
+  - implemented structured apply/refresh event logs (`run_start`, `set_counts`, `metrics_written`, `run_complete`),
+  - implemented Prometheus textfile snapshot metrics export with:
+    - feature enable gauges,
+    - set entry counts,
+    - source counts,
+    - run success/timestamp/duration gauges,
+  - extended smoke test to assert:
+    - apply-mode metrics output,
+    - refresh-mode metrics output,
+    - post-refresh feed ingestion and metric count transition,
+  - expanded README with observability examples and architecture notes.
+- BA requirement mapping:
+  - enables easier operations and troubleshooting for modern firewall workflows.
+- PM milestone mapping:
+  - Phase 3 operations maturity baseline established.
+- Risk impact:
+  - `low` (observability controls are backward compatible; metrics exporter is opt-in).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh && bash -n scripts/validate.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-smoke" --print-build-logs`
+- Open follow-ups:
+  - integration scenario broadening (`T-008`),
+  - cluster policy propagation model (`T-010`).
