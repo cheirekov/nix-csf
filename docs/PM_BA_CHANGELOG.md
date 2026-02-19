@@ -171,3 +171,36 @@
 - Open follow-ups:
   - integration scenario broadening (`T-008`),
   - cluster policy propagation model (`T-010`).
+
+## 2026-02-19 — Batch INTEGRATION-008
+
+- Ticket(s): `T-008`
+- Summary:
+  - added a second VM-based integration suite: `tests/integration.nix`,
+  - validated two-node scenarios:
+    - `good` node:
+      - legacy `synRateLimit` rule rendering,
+      - forward policy rendering,
+      - metrics disabled behavior,
+      - fail-closed refresh failure path for missing blocklist feed,
+    - `failclosed` node:
+      - fail-closed apply failure when `country.mode = "allow"` has no available data and `failOpen = false`,
+  - exposed the new suite in flake checks as:
+    - `checks.x86_64-linux.nix-csf-integration`,
+  - updated `scripts/validate.sh` to run both VM checks:
+    - smoke + integration,
+  - updated README validation docs to describe both suites.
+- BA requirement mapping:
+  - expands practical testability and confidence for strict failure semantics in modern firewall workflows.
+- PM milestone mapping:
+  - Phase 4 integration-tests baseline started.
+- Risk impact:
+  - `low` (test-only expansion and validation script wiring).
+- Validation evidence:
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs`
+  - `./scripts/validate.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+- Open follow-ups:
+  - release automation and module versioning (`T-009`),
+  - cluster policy propagation model (`T-010`),
+  - documentation use-case catalog expansion (`T-011`).

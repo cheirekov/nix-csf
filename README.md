@@ -227,6 +227,11 @@ Full validation (includes x86_64 VM smoke test):
 ./scripts/validate.sh
 ```
 
+The validation script now runs two x86_64 VM suites:
+
+- `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
+- `checks.x86_64-linux.nix-csf-integration` (fail-closed and legacy-mode integration coverage)
+
 If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
 
 ## Project docs

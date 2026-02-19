@@ -55,6 +55,10 @@
           pkgs = import nixpkgs { system = "x86_64-linux"; };
           module = nixCsfModule;
         };
+        x86_64-linux.nix-csf-integration = import ./tests/integration.nix {
+          pkgs = import nixpkgs { system = "x86_64-linux"; };
+          module = nixCsfModule;
+        };
       };
 
       packages = forAllSystems (system:

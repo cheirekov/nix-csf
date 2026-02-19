@@ -6,45 +6,48 @@ Owner: PM/BA + Codex
 ## 1) Batch contract
 
 - Batch type: `DAY (2-4h)`
-- Active ticket: `T-007` (Structured logging + metrics exporter), with closure of `T-006`.
-- Goal: improve operational visibility and complete stateful rate-limit baseline.
+- Active ticket: `T-008` (NixOS VM integration tests).
+- Goal: broaden end-to-end test coverage beyond the smoke baseline.
 - In scope:
-  - `T-006` stateful rate-limit presets for SYN flood and connection flood.
-  - `T-007` structured apply/refresh logs and Prometheus textfile metrics export.
-  - Smoke-test assertions for observability outputs.
-  - README and architecture documentation updates with new use cases.
+  - add second x86_64 VM integration suite with multi-node scenarios,
+  - validate fail-closed behavior for country allow-mode when data is unavailable,
+  - validate fail-closed behavior for blocklist refresh with `failOpen = false`,
+  - validate legacy `synRateLimit` and metrics-disabled paths,
+  - wire integration suite into default `validate.sh`.
 - Out of scope:
-  - `T-008` multi-scenario integration suite,
-  - release automation/versioning (`T-009`).
+  - release automation/versioning (`T-009`),
+  - cluster propagation architecture (`T-010`).
 - Stop/rollback condition:
-  - any regression in nftables rendering or failed smoke assertions for existing country/blocklist behavior.
+  - any regression in existing smoke assertions or inability to keep integration scenarios deterministic.
 
 ## 2) Definition of done
 
 - `nix flake check --all-systems --no-build` passes.
-- VM smoke test executes successfully with assertions for:
-  - rate-limit meter rendering (`syn_flood_*`, `conn_flood_*`),
-  - metrics file generation for apply/refresh modes,
-  - blocklist feed CIDR presence after explicit refresh.
-- Module runtime API includes `observability` options and exported JSON wiring.
-- Module and README/docs are updated for the new API and use cases.
+- VM suites execute successfully:
+  - `checks.x86_64-linux.nix-csf-smoke`,
+  - `checks.x86_64-linux.nix-csf-integration`.
+- Integration suite covers:
+  - good-path rule rendering and runtime artifacts,
+  - explicit fail-closed refresh failure (`blocklists.failOpen = false`),
+  - explicit fail-closed apply failure (`country.mode = "allow"` with no available data and `failOpen = false`).
+- `scripts/validate.sh` runs both VM suites.
 - Board/changelog updated with validation evidence.
 
 ## 3) End-of-batch result
 
 - Decision: `continue`
 - Completed:
-  - closed `T-006`:
-    - added `rateLimits.synFlood` and `rateLimits.connFlood` presets (`relaxed|balanced|strict`),
-    - rendered per-source nftables meters and validated via smoke.
-  - closed `T-007`:
-    - added `services.nixCsf.observability` options:
-      - `structuredLogging`,
-      - `metrics.enable`,
-      - `metrics.outputFile`,
-    - implemented structured key-value events in `nix-csf-apply.sh`,
-    - implemented Prometheus textfile snapshot export with feature and set-count metrics,
-    - extended smoke test to assert apply/refresh mode metrics and post-refresh feed counts.
-  - expanded documentation examples in `README.md` and updated architecture notes.
+  - closed `T-008`:
+    - added `tests/integration.nix` with two nodes (`good`, `failclosed`),
+    - added assertions for:
+      - legacy SYN limiter rendering,
+      - forward-policy rendering,
+      - metrics-disabled behavior,
+      - blocklist refresh fail-closed semantics,
+      - country allow-mode fail-closed semantics,
+    - exposed integration suite in flake checks as:
+      - `checks.x86_64-linux.nix-csf-integration`,
+    - updated `scripts/validate.sh` to run smoke + integration VM builds.
+  - updated README validation section to document both VM suites.
 - Next ticket candidate:
-  - `T-008` NixOS VM integration tests (broader scenario coverage).
+  - `T-009` release automation and module versioning.
