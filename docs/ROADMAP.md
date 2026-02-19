@@ -14,7 +14,7 @@
 
 ## Phase 1 — Safety hardening
 
-- Validation lane (`nix flake check` and smoke profile).
+- Validation lane (`nix flake check` and smoke profile). [done 2026-02-19]
 - Clear failure semantics for feed outages.
 - Safer defaults and improved assertions.
 

@@ -26,7 +26,7 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Scope freeze |
 |---|---|---|---|
-| T-002 | TODO | Validation pipeline (`nix flake check`, smoke test profile) | No feature expansion |
+| T-003 | TODO | Country filter policy modes (`deny` + `allow`) | No per-port country logic in this ticket |
 
 ### NEXT
 
@@ -51,6 +51,7 @@ Ship a production-usable NixOS firewall module that is:
 |---|---|---|
 | T-000 | DONE | Project bootstrap + team operating model |
 | T-001 | DONE | Core `services.nixCsf` module and boot/refresh pipeline |
+| T-002 | DONE | Validation pipeline (`flake check` + VM smoke test) |
 
 ## Triage protocol
 

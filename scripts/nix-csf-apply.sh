@@ -124,8 +124,8 @@ emit_set() {
   echo "  set ${name} {"
   echo "    type ${nft_type}"
   echo "    flags interval"
-  echo "    elements = {"
   if [[ -s "${source_file}" ]]; then
+    echo "    elements = {"
     awk '
       { lines[++n] = $0 }
       END {
@@ -135,8 +135,8 @@ emit_set() {
         }
       }
     ' "${source_file}"
+    echo "    }"
   fi
-  echo "    }"
   echo "  }"
 }
 
@@ -178,7 +178,7 @@ if [[ "${country_enabled}" == "true" ]]; then
     cc_lc="$(printf '%s' "${cc}" | tr '[:upper:]' '[:lower:]')"
 
     if [[ -n "${country_ipv4_template}" ]]; then
-      v4_url="$(printf "${country_ipv4_template}" "${cc_lc}")"
+      v4_url="${country_ipv4_template//%s/${cc_lc}}"
       v4_cache="${CACHE_DIR}/country-v4-${cc_lc}.txt"
 
       if [[ "${MODE}" == "refresh" ]]; then
@@ -197,7 +197,7 @@ if [[ "${country_enabled}" == "true" ]]; then
     fi
 
     if [[ -n "${country_ipv6_template}" ]]; then
-      v6_url="$(printf "${country_ipv6_template}" "${cc_lc}")"
+      v6_url="${country_ipv6_template//%s/${cc_lc}}"
       v6_cache="${CACHE_DIR}/country-v6-${cc_lc}.txt"
 
       if [[ "${MODE}" == "refresh" ]]; then
@@ -322,7 +322,7 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
 
   if [[ "${default_policy}" == "drop" ]]; then
     if [[ "${log_drops}" == "true" ]]; then
-      echo "    log prefix \"nix-csf drop: \" level warning"
+      echo "    log prefix \"nix-csf drop: \" level warn"
     fi
     echo "    reject with icmpx type admin-prohibited"
   fi

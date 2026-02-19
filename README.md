@@ -118,6 +118,22 @@ services.nixCsf = {
 - Refresh service runs after network is online and can be periodic via timer.
 - Generated runtime artifacts live in `/var/lib/nix-csf`.
 
+## Validation
+
+Quick check (evaluation only):
+
+```bash
+nix flake check "path:$(pwd)" --all-systems --no-build
+```
+
+Full validation (includes x86_64 VM smoke test):
+
+```bash
+./scripts/validate.sh
+```
+
+If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
+
 ## Project docs
 
 - Architecture: `docs/ARCHITECTURE.md`
