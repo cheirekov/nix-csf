@@ -17,11 +17,12 @@
 - Validation lane (`nix flake check` and smoke profile). [done 2026-02-19]
 - Clear failure semantics for feed outages.
 - Safer defaults and improved assertions.
+- Blocklist source governance catalog + schema. [done 2026-02-19]
 
 ## Phase 2 — CSF-style policy expansion
 
-- Country policy modes (`deny` and optional `allow`).
-- Per-port country controls.
+- Country policy modes (`deny` and optional `allow`). [done 2026-02-19]
+- Per-port country controls (deny mode / `CC_DENY_PORTS` style). [done 2026-02-19]
 - Preset threat profiles (server, workstation, edge node).
 
 ## Phase 3 — Operations maturity

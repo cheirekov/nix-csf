@@ -6,6 +6,7 @@
 - Declarative module API for NixOS users.
 - Runtime feed refresh without rebuilding the system.
 - Compatibility with both flake and non-flake module imports.
+- Governed remote blocklist ingestion through a source catalog schema.
 
 ## Components
 
@@ -35,3 +36,4 @@
 - `networking.firewall.enable` is asserted off to avoid mixed ownership.
 - nftables policy is explicit and auditable in generated output.
 - Remote feeds are optional and can run `failOpen` to reduce outage risk.
+- Blocklist sources can be governed by catalog IDs (`blocklists.sources`) with schema-backed metadata.

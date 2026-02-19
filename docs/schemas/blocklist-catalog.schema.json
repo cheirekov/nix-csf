@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nix-csf.local/schemas/blocklist-catalog.schema.json",
+  "title": "nix-csf blocklist catalog schema",
+  "description": "Schema for services.nixCsf.blocklists.catalog entries.",
+  "type": "object",
+  "propertyNames": {
+    "pattern": "^[A-Za-z0-9._-]+$"
+  },
+  "additionalProperties": {
+    "type": "object",
+    "required": [
+      "url",
+      "family",
+      "format"
+    ],
+    "properties": {
+      "url": {
+        "type": "string",
+        "pattern": "^(https|file)://[^\\s]+$",
+        "description": "Remote or local feed URL. Production sources should prefer https://."
+      },
+      "family": {
+        "type": "string",
+        "enum": [
+          "ipv4",
+          "ipv6",
+          "mixed"
+        ]
+      },
+      "format": {
+        "type": "string",
+        "enum": [
+          "cidr-text"
+        ]
+      },
+      "description": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  }
+}

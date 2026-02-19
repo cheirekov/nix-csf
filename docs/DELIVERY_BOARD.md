@@ -26,24 +26,22 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Scope freeze |
 |---|---|---|---|
-| T-003 | TODO | Country filter policy modes (`deny` + `allow`) | No per-port country logic in this ticket |
+| T-006 | TODO | Stateful rate-limit presets (SYN flood, conn flood) | practical presets only |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-003 | TODO | Country filter policy modes (`deny` + `allow`) | safe semantics and tests |
-| 2 | T-004 | TODO | Per-port country policy (`CC_DENY_PORTS` style) | minimal ergonomic API |
-| 3 | T-005 | TODO | Blocklist source catalog + schema | trusted source governance |
+| 1 | T-006 | TODO | Stateful rate-limit presets (SYN flood, conn flood) | practical presets and tests |
+| 2 | T-007 | TODO | Structured logging and metrics exporter | operability baseline |
+| 3 | T-008 | TODO | NixOS VM integration tests | broader scenario coverage |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-006 | TODO | Stateful rate-limit presets (SYN flood, conn flood) |
-| 2 | T-007 | TODO | Structured logging and metrics exporter |
-| 3 | T-008 | TODO | NixOS VM integration tests |
-| 4 | T-009 | TODO | Release automation and module versioning |
+| 1 | T-008 | TODO | NixOS VM integration tests |
+| 2 | T-009 | TODO | Release automation and module versioning |
 
 ## Completed baseline
 
@@ -52,6 +50,9 @@ Ship a production-usable NixOS firewall module that is:
 | T-000 | DONE | Project bootstrap + team operating model |
 | T-001 | DONE | Core `services.nixCsf` module and boot/refresh pipeline |
 | T-002 | DONE | Validation pipeline (`flake check` + VM smoke test) |
+| T-003 | DONE | Country filter policy modes (`deny` + `allow`) |
+| T-004 | DONE | Per-port country policy (`CC_DENY_PORTS` style) |
+| T-005 | DONE | Blocklist source catalog + schema |
 
 ## Triage protocol
 

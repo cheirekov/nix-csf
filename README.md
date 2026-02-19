@@ -14,8 +14,9 @@ Kickoff baseline is implemented:
 - NixOS module: `services.nixCsf`
 - Static allow/deny rules (IPv4 + IPv6)
 - Port policy (`openTCPPorts`, `openUDPPorts`, ICMP toggle)
-- Country-based deny feed support (CSF-style inspiration)
-- External blocklist feed support
+- Country policy modes (`deny` and `allow`)
+- Per-port country deny policy (`country.portDeny`, CSF `CC_DENY_PORTS` style)
+- Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
 - Early boot apply + scheduled refresh via systemd
 
 ## Install (flake)
@@ -91,16 +92,31 @@ services.nixCsf = {
 
   country = {
     enable = true;
+    mode = "deny"; # or "allow"
     countries = [ "RU" "CN" ];
     # Defaults to ipdeny template:
     # ipv4URLTemplate = "https://www.ipdeny.com/ipblocks/data/countries/%s.zone";
+
+    # Optional: deny specific ports only for selected countries.
+    # Ports should remain present in openTCPPorts/openUDPPorts.
+    portDeny = {
+      enable = true;
+      countries = [ "RU" "CN" ];
+      tcpPorts = [ 21 443 ];
+      udpPorts = [ ];
+    };
   };
 
   blocklists = {
     enable = true;
+    # Enable trusted catalog entries:
+    sources = [ "spamhaus-drop-v4" "spamhaus-drop-v6" ];
+    # Optional governance hardening:
+    enforceCatalog = true;
+
+    # Optional legacy path (prefer sources/catalog):
     urls = [
-      "https://www.spamhaus.org/drop/drop_v4.txt"
-      "https://www.spamhaus.org/drop/drop_v6.txt"
+      # "https://example.invalid/custom-feed.txt"
     ];
   };
 
@@ -140,6 +156,7 @@ If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs s
 - Delivery board: `docs/DELIVERY_BOARD.md`
 - Team rules: `docs/TEAM_OPERATING_RULES.md`
 - Roadmap: `docs/ROADMAP.md`
+- Blocklist catalog schema: `docs/schemas/blocklist-catalog.schema.json`
 
 ## License
 

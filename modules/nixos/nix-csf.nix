@@ -6,10 +6,40 @@ let
     mkEnableOption
     mkIf
     mkOption
+    unique
     types
     toUpper;
 
   cfg = config.services.nixCsf;
+
+  defaultBlocklistCatalog = {
+    "spamhaus-drop-v4" = {
+      url = "https://www.spamhaus.org/drop/drop_v4.txt";
+      family = "ipv4";
+      format = "cidr-text";
+      description = "Spamhaus DROP IPv4 list.";
+    };
+    "spamhaus-drop-v6" = {
+      url = "https://www.spamhaus.org/drop/drop_v6.txt";
+      family = "ipv6";
+      format = "cidr-text";
+      description = "Spamhaus DROP IPv6 list.";
+    };
+  };
+
+  missingBlocklistSources =
+    builtins.filter (name: !(builtins.hasAttr name cfg.blocklists.catalog))
+      cfg.blocklists.sources;
+
+  selectedCatalogBlocklistURLs =
+    map (name: (builtins.getAttr name cfg.blocklists.catalog).url)
+      (builtins.filter (name: builtins.hasAttr name cfg.blocklists.catalog)
+        cfg.blocklists.sources);
+
+  resolvedBlocklistURLs = unique (selectedCatalogBlocklistURLs ++ cfg.blocklists.urls);
+
+  isHttpsUrl = url: builtins.match "^https://[^[:space:]]+$" url != null;
+  catalogBlocklistURLs = map (entry: entry.url) (builtins.attrValues cfg.blocklists.catalog);
 
   applyTool = pkgs.writeShellApplication {
     name = "nix-csf-apply";
@@ -39,17 +69,29 @@ let
     synRateLimit = cfg.synRateLimit;
     country = {
       enable = cfg.country.enable;
+      mode = cfg.country.mode;
       countries = map toUpper cfg.country.countries;
       ipv4URLTemplate = cfg.country.ipv4URLTemplate;
       ipv6URLTemplate = cfg.country.ipv6URLTemplate;
       failOpen = cfg.country.failOpen;
       extraIPv4 = cfg.country.extraIPv4;
       extraIPv6 = cfg.country.extraIPv6;
+      portDeny = {
+        enable = cfg.country.portDeny.enable;
+        countries = map toUpper cfg.country.portDeny.countries;
+        tcpPorts = cfg.country.portDeny.tcpPorts;
+        udpPorts = cfg.country.portDeny.udpPorts;
+        extraIPv4 = cfg.country.portDeny.extraIPv4;
+        extraIPv6 = cfg.country.portDeny.extraIPv6;
+      };
     };
     blocklists = {
       enable = cfg.blocklists.enable;
-      urls = cfg.blocklists.urls;
+      urls = resolvedBlocklistURLs;
       failOpen = cfg.blocklists.failOpen;
+      sources = cfg.blocklists.sources;
+      enforceCatalog = cfg.blocklists.enforceCatalog;
+      requireHTTPS = cfg.blocklists.requireHTTPS;
     };
   };
 
@@ -149,11 +191,25 @@ in
         description = "Enable country-based deny list feeds.";
       };
 
+      mode = mkOption {
+        type = types.enum [ "deny" "allow" ];
+        default = "deny";
+        description = ''
+          Country policy mode:
+          - "deny": block source IPs from configured country sets.
+          - "allow": allow only configured country sets for inbound traffic.
+        '';
+      };
+
       countries = mkOption {
         type = types.listOf types.str;
         default = [ ];
         example = [ "CN" "RU" ];
-        description = "ISO-3166 alpha-2 country codes to deny.";
+        description = ''
+          ISO-3166 alpha-2 country codes used by country.mode.
+          In "deny" mode these countries are blocked.
+          In "allow" mode only these countries are permitted.
+        '';
       };
 
       ipv4URLTemplate = mkOption {
@@ -198,13 +254,122 @@ in
         example = [ "2001:db8:ffff::/48" ];
         description = "Additional static IPv6 CIDRs added to the country deny set.";
       };
+
+      portDeny = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Enable port-scoped country deny policy (CSF CC_DENY_PORTS style).
+            This only denies selected ports for selected countries.
+          '';
+        };
+
+        countries = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "RU" "CN" ];
+          description = "ISO-3166 alpha-2 country codes that should be denied on selected ports.";
+        };
+
+        tcpPorts = mkOption {
+          type = types.listOf types.port;
+          default = [ ];
+          example = [ 21 25 ];
+          description = "TCP destination ports denied for sources in country.portDeny.countries.";
+        };
+
+        udpPorts = mkOption {
+          type = types.listOf types.port;
+          default = [ ];
+          example = [ 53 ];
+          description = "UDP destination ports denied for sources in country.portDeny.countries.";
+        };
+
+        extraIPv4 = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "203.0.113.0/24" ];
+          description = "Additional static IPv4 CIDRs added to the port-scoped country deny set.";
+        };
+
+        extraIPv6 = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "2001:db8:abcd::/48" ];
+          description = "Additional static IPv6 CIDRs added to the port-scoped country deny set.";
+        };
+      };
     };
 
     blocklists = {
+      catalog = mkOption {
+        type = types.attrsOf (types.submodule ({ ... }: {
+          options = {
+            url = mkOption {
+              type = types.str;
+              example = "https://www.spamhaus.org/drop/drop_v4.txt";
+              description = "HTTP(S) endpoint that provides CIDR lines.";
+            };
+
+            family = mkOption {
+              type = types.enum [ "ipv4" "ipv6" "mixed" ];
+              default = "mixed";
+              description = "Declared address-family expectation for this source.";
+            };
+
+            format = mkOption {
+              type = types.enum [ "cidr-text" ];
+              default = "cidr-text";
+              description = "Parser format identifier for this source.";
+            };
+
+            description = mkOption {
+              type = types.str;
+              default = "";
+              description = "Human-readable source notes for governance/audit.";
+            };
+          };
+        }));
+        default = defaultBlocklistCatalog;
+        description = ''
+          Trusted blocklist source catalog.
+          Use blocklists.sources to enable one or more entries.
+        '';
+      };
+
+      sources = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "spamhaus-drop-v4" "spamhaus-drop-v6" ];
+        description = ''
+          Source IDs selected from blocklists.catalog.
+          Selected source URLs are merged with blocklists.urls.
+        '';
+      };
+
       enable = mkOption {
         type = types.bool;
         default = false;
         description = "Enable remote blocklist URL ingestion.";
+      };
+
+      enforceCatalog = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          If true, direct blocklists.urls entries are disallowed.
+          Only blocklists.sources + blocklists.catalog may define URLs.
+        '';
+      };
+
+      requireHTTPS = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Require all blocklist URLs (catalog and direct) to use https://.
+          Disable only for controlled local/offline feeds.
+        '';
       };
 
       urls = mkOption {
@@ -214,7 +379,10 @@ in
           "https://www.spamhaus.org/drop/drop_v4.txt"
           "https://www.spamhaus.org/drop/drop_v6.txt"
         ];
-        description = "Remote blocklist URLs containing CIDR entries.";
+        description = ''
+          Additional direct blocklist URLs containing CIDR entries.
+          Prefer blocklists.catalog + blocklists.sources for governed source selection.
+        '';
       };
 
       failOpen = mkOption {
@@ -273,8 +441,69 @@ in
         message = "services.nixCsf.country.countries entries must be ISO alpha-2 codes (e.g. US, DE).";
       }
       {
-        assertion = !cfg.blocklists.enable || cfg.blocklists.urls != [ ];
-        message = "services.nixCsf.blocklists.enable requires at least one URL.";
+        assertion = !cfg.country.portDeny.enable || cfg.country.portDeny.countries != [ ];
+        message = "services.nixCsf.country.portDeny.enable requires at least one country code.";
+      }
+      {
+        assertion = all validCountryCode cfg.country.portDeny.countries;
+        message = "services.nixCsf.country.portDeny.countries entries must be ISO alpha-2 codes (e.g. US, DE).";
+      }
+      {
+        assertion = !cfg.country.portDeny.enable
+          || cfg.country.portDeny.tcpPorts != [ ]
+          || cfg.country.portDeny.udpPorts != [ ];
+        message = "services.nixCsf.country.portDeny.enable requires at least one TCP or UDP port.";
+      }
+      {
+        assertion = missingBlocklistSources == [ ];
+        message = ''
+          services.nixCsf.blocklists.sources contains unknown catalog IDs:
+          ${builtins.concatStringsSep ", " missingBlocklistSources}
+        '';
+      }
+      {
+        assertion = !cfg.blocklists.enable || resolvedBlocklistURLs != [ ];
+        message = "services.nixCsf.blocklists.enable requires at least one URL or catalog source.";
+      }
+      {
+        assertion = !cfg.blocklists.enforceCatalog || cfg.blocklists.urls == [ ];
+        message = ''
+          services.nixCsf.blocklists.enforceCatalog = true forbids blocklists.urls.
+          Use blocklists.sources with blocklists.catalog entries instead.
+        '';
+      }
+      {
+        assertion = !cfg.blocklists.requireHTTPS || all isHttpsUrl cfg.blocklists.urls;
+        message = "services.nixCsf.blocklists.urls must use https:// when blocklists.requireHTTPS = true.";
+      }
+      {
+        assertion = !cfg.blocklists.requireHTTPS || all isHttpsUrl catalogBlocklistURLs;
+        message = ''
+          services.nixCsf.blocklists.catalog.<name>.url must use https:// when
+          blocklists.requireHTTPS = true.
+        '';
+      }
+      {
+        assertion = !(cfg.country.enable && cfg.country.mode == "allow")
+          || cfg.country.ipv4URLTemplate != ""
+          || cfg.country.ipv6URLTemplate != null
+          || cfg.country.extraIPv4 != [ ]
+          || cfg.country.extraIPv6 != [ ];
+        message = ''
+          services.nixCsf.country.mode = "allow" requires at least one country data source
+          (URL template or extra country CIDRs).
+        '';
+      }
+      {
+        assertion = !cfg.country.portDeny.enable
+          || cfg.country.ipv4URLTemplate != ""
+          || cfg.country.ipv6URLTemplate != null
+          || cfg.country.portDeny.extraIPv4 != [ ]
+          || cfg.country.portDeny.extraIPv6 != [ ];
+        message = ''
+          services.nixCsf.country.portDeny.enable requires at least one country data source
+          (URL template or portDeny extra CIDRs).
+        '';
       }
     ];
 
