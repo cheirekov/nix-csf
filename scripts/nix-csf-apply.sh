@@ -127,6 +127,16 @@ sort_unique() {
   fi
 }
 
+merge_sorted_overlay() {
+  local base_file="$1"
+  local overlay_file="$2"
+
+  if [[ -s "${overlay_file}" ]]; then
+    cat "${base_file}" "${overlay_file}" > "${TMP_DIR}/_merge-overlay.txt"
+    sort_unique "${TMP_DIR}/_merge-overlay.txt" "${base_file}"
+  fi
+}
+
 append_if_exists() {
   local source_file="$1"
   local target_file="$2"
@@ -144,6 +154,41 @@ fetch_to_cache() {
     install -m 0640 "${tmp_file}" "${cache_file}"
     return 0
   fi
+  return 1
+}
+
+fetch_cluster_policy_to_cache() {
+  local url="$1"
+  local cache_file="$2"
+  local tmp_file="${TMP_DIR}/cluster-policy-download.json"
+  local -a curl_args=(--fail --location --silent --show-error --max-time 40)
+
+  if [[ -n "${cluster_policy_node_id}" ]]; then
+    curl_args+=(-H "X-Nix-Csf-Node: ${cluster_policy_node_id}")
+  fi
+
+  if [[ -n "${cluster_policy_auth_token_file}" ]]; then
+    if [[ ! -f "${cluster_policy_auth_token_file}" ]]; then
+      fail "cluster policy authTokenFile does not exist: ${cluster_policy_auth_token_file}"
+    fi
+
+    local auth_token
+    auth_token="$(tr -d '\r\n' < "${cluster_policy_auth_token_file}")"
+    if [[ -z "${auth_token}" ]]; then
+      fail "cluster policy authTokenFile is empty: ${cluster_policy_auth_token_file}"
+    fi
+
+    curl_args+=(-H "Authorization: Bearer ${auth_token}")
+  fi
+
+  if curl "${curl_args[@]}" "${url}" -o "${tmp_file}"; then
+    if ! jq -e . "${tmp_file}" >/dev/null 2>&1; then
+      return 2
+    fi
+    install -m 0640 "${tmp_file}" "${cache_file}"
+    return 0
+  fi
+
   return 1
 }
 
@@ -264,6 +309,7 @@ write_metrics() {
     printf 'nix_csf_feature_enabled{feature="country"} %s\n' "$(bool_to_num "${country_enabled}")"
     printf 'nix_csf_feature_enabled{feature="country_port_deny"} %s\n' "$(bool_to_num "${country_port_deny_enabled}")"
     printf 'nix_csf_feature_enabled{feature="blocklists"} %s\n' "$(bool_to_num "${blocklists_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="cluster_policy"} %s\n' "$(bool_to_num "${cluster_policy_enabled}")"
     printf 'nix_csf_feature_enabled{feature="log_drops"} %s\n' "$(bool_to_num "${log_drops}")"
     printf 'nix_csf_feature_enabled{feature="legacy_syn_rate_limit"} %s\n' "$(bool_to_num "${legacy_syn_rate_limit_enabled}")"
     printf 'nix_csf_feature_enabled{feature="syn_flood"} %s\n' "$(bool_to_num "${syn_flood_enabled}")"
@@ -280,11 +326,16 @@ write_metrics() {
     printf 'nix_csf_set_entries{set="country_port_deny_ipv6"} %s\n' "${country_port_deny_v6_count}"
     printf 'nix_csf_set_entries{set="feed_ipv4"} %s\n' "${feed_v4_count}"
     printf 'nix_csf_set_entries{set="feed_ipv6"} %s\n' "${feed_v6_count}"
+    printf 'nix_csf_set_entries{set="cluster_allow_ipv4"} %s\n' "${cluster_allow_v4_count}"
+    printf 'nix_csf_set_entries{set="cluster_allow_ipv6"} %s\n' "${cluster_allow_v6_count}"
+    printf 'nix_csf_set_entries{set="cluster_deny_ipv4"} %s\n' "${cluster_deny_v4_count}"
+    printf 'nix_csf_set_entries{set="cluster_deny_ipv6"} %s\n' "${cluster_deny_v6_count}"
     echo "# HELP nix_csf_source_count Number of configured source identifiers."
     echo "# TYPE nix_csf_source_count gauge"
     printf 'nix_csf_source_count{source="country_codes"} %s\n' "${#country_codes[@]}"
     printf 'nix_csf_source_count{source="country_port_deny_codes"} %s\n' "${#country_port_deny_codes[@]}"
     printf 'nix_csf_source_count{source="blocklist_urls"} %s\n' "${#blocklist_urls[@]}"
+    printf 'nix_csf_source_count{source="cluster_policy_urls"} %s\n' "${cluster_policy_source_count}"
     echo "# HELP nix_csf_rate_limit_burst_packets Burst thresholds for rate-limited controls."
     echo "# TYPE nix_csf_rate_limit_burst_packets gauge"
     printf 'nix_csf_rate_limit_burst_packets{limit="syn_flood",preset="%s"} %s\n' "${syn_flood_preset}" "${syn_flood_burst}"
@@ -481,6 +532,75 @@ normalize_cidrs "${TMP_DIR}/feeds.raw" "${TMP_DIR}/feeds-v4.norm" "${TMP_DIR}/fe
 sort_unique "${TMP_DIR}/feeds-v4.norm" "${TMP_DIR}/feeds-v4.txt"
 sort_unique "${TMP_DIR}/feeds-v6.norm" "${TMP_DIR}/feeds-v6.txt"
 
+cluster_policy_enabled="$(jq -r '.clusterPolicy.enable // false' "${CONFIG_FILE}")"
+cluster_policy_url="$(jq -r '.clusterPolicy.url // ""' "${CONFIG_FILE}")"
+cluster_policy_fail_open="$(jq -r '.clusterPolicy.failOpen // true' "${CONFIG_FILE}")"
+cluster_policy_auth_token_file="$(jq -r '.clusterPolicy.authTokenFile // ""' "${CONFIG_FILE}")"
+cluster_policy_node_id="$(jq -r '.clusterPolicy.nodeId // ""' "${CONFIG_FILE}")"
+cluster_policy_source_count="0"
+
+: > "${TMP_DIR}/cluster-allow-v4.raw"
+: > "${TMP_DIR}/cluster-allow-v6.raw"
+: > "${TMP_DIR}/cluster-deny-v4.raw"
+: > "${TMP_DIR}/cluster-deny-v6.raw"
+
+if [[ "${cluster_policy_enabled}" == "true" ]]; then
+  cluster_policy_source_count="1"
+  cluster_policy_cache="${CACHE_DIR}/cluster-policy.json"
+
+  if [[ "${MODE}" == "refresh" ]]; then
+    cluster_fetch_rc=0
+    if ! fetch_cluster_policy_to_cache "${cluster_policy_url}" "${cluster_policy_cache}"; then
+      cluster_fetch_rc=$?
+      if [[ "${cluster_fetch_rc}" -eq 2 ]]; then
+        if [[ -s "${cluster_policy_cache}" ]]; then
+          warn "invalid JSON from cluster policy ${cluster_policy_url}; using cached data"
+        elif [[ "${cluster_policy_fail_open}" == "true" ]]; then
+          warn "invalid JSON from cluster policy ${cluster_policy_url}; continuing due to failOpen"
+        else
+          fail "invalid JSON from cluster policy ${cluster_policy_url} and no cache exists"
+        fi
+      elif [[ -s "${cluster_policy_cache}" ]]; then
+        warn "failed to refresh cluster policy ${cluster_policy_url}; using cached data"
+      elif [[ "${cluster_policy_fail_open}" == "true" ]]; then
+        warn "failed to fetch cluster policy ${cluster_policy_url}; continuing due to failOpen"
+      else
+        fail "failed to fetch cluster policy ${cluster_policy_url} and no cache exists"
+      fi
+    fi
+  fi
+
+  if [[ -s "${cluster_policy_cache}" ]]; then
+    if ! jq -e . "${cluster_policy_cache}" >/dev/null 2>&1; then
+      if [[ "${cluster_policy_fail_open}" == "true" ]]; then
+        warn "cached cluster policy is invalid JSON; skipping merge due to failOpen"
+      else
+        fail "cached cluster policy is invalid JSON"
+      fi
+    else
+      jq -r '.allowIPv4[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-allow-v4.raw"
+      jq -r '.allowIPv6[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-allow-v6.raw"
+      jq -r '.denyIPv4[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-deny-v4.raw"
+      jq -r '.denyIPv6[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-deny-v6.raw"
+    fi
+  fi
+fi
+
+normalize_cidrs "${TMP_DIR}/cluster-allow-v4.raw" "${TMP_DIR}/cluster-allow-v4.norm" "${TMP_DIR}/cluster-allow-v4.ignore"
+normalize_cidrs "${TMP_DIR}/cluster-allow-v6.raw" "${TMP_DIR}/cluster-allow-v6.ignore" "${TMP_DIR}/cluster-allow-v6.norm"
+normalize_cidrs "${TMP_DIR}/cluster-deny-v4.raw" "${TMP_DIR}/cluster-deny-v4.norm" "${TMP_DIR}/cluster-deny-v4.ignore"
+normalize_cidrs "${TMP_DIR}/cluster-deny-v6.raw" "${TMP_DIR}/cluster-deny-v6.ignore" "${TMP_DIR}/cluster-deny-v6.norm"
+
+sort_unique "${TMP_DIR}/cluster-allow-v4.norm" "${TMP_DIR}/cluster-allow-v4.txt"
+sort_unique "${TMP_DIR}/cluster-allow-v6.norm" "${TMP_DIR}/cluster-allow-v6.txt"
+sort_unique "${TMP_DIR}/cluster-deny-v4.norm" "${TMP_DIR}/cluster-deny-v4.txt"
+sort_unique "${TMP_DIR}/cluster-deny-v6.norm" "${TMP_DIR}/cluster-deny-v6.txt"
+
+merge_sorted_overlay "${TMP_DIR}/allow-v4.txt" "${TMP_DIR}/cluster-allow-v4.txt"
+merge_sorted_overlay "${TMP_DIR}/allow-v6.txt" "${TMP_DIR}/cluster-allow-v6.txt"
+merge_sorted_overlay "${TMP_DIR}/deny-v4.txt" "${TMP_DIR}/cluster-deny-v4.txt"
+merge_sorted_overlay "${TMP_DIR}/deny-v6.txt" "${TMP_DIR}/cluster-deny-v6.txt"
+
 mapfile -t trusted_interfaces < <(jq -r '.trustedInterfaces[]?' "${CONFIG_FILE}")
 mapfile -t open_tcp_ports < <(jq -r '.openTCPPorts[]?' "${CONFIG_FILE}")
 mapfile -t open_udp_ports < <(jq -r '.openUDPPorts[]?' "${CONFIG_FILE}")
@@ -495,6 +615,10 @@ country_port_deny_v4_count="$(count_file_lines "${TMP_DIR}/country-port-deny-v4.
 country_port_deny_v6_count="$(count_file_lines "${TMP_DIR}/country-port-deny-v6.txt")"
 feed_v4_count="$(count_file_lines "${TMP_DIR}/feeds-v4.txt")"
 feed_v6_count="$(count_file_lines "${TMP_DIR}/feeds-v6.txt")"
+cluster_allow_v4_count="$(count_file_lines "${TMP_DIR}/cluster-allow-v4.txt")"
+cluster_allow_v6_count="$(count_file_lines "${TMP_DIR}/cluster-allow-v6.txt")"
+cluster_deny_v4_count="$(count_file_lines "${TMP_DIR}/cluster-deny-v4.txt")"
+cluster_deny_v6_count="$(count_file_lines "${TMP_DIR}/cluster-deny-v6.txt")"
 
 log_event "stdout" "info" "set_counts" \
   "allow_v4=${allow_v4_count}" \
@@ -506,7 +630,11 @@ log_event "stdout" "info" "set_counts" \
   "country_port_deny_v4=${country_port_deny_v4_count}" \
   "country_port_deny_v6=${country_port_deny_v6_count}" \
   "feed_v4=${feed_v4_count}" \
-  "feed_v6=${feed_v6_count}"
+  "feed_v6=${feed_v6_count}" \
+  "cluster_allow_v4=${cluster_allow_v4_count}" \
+  "cluster_allow_v6=${cluster_allow_v6_count}" \
+  "cluster_deny_v4=${cluster_deny_v4_count}" \
+  "cluster_deny_v6=${cluster_deny_v6_count}"
 
 render_port_set() {
   local -n ref="$1"

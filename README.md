@@ -18,6 +18,7 @@ Kickoff baseline is implemented:
 - Country policy modes (`deny` and `allow`)
 - Per-port country deny policy (`country.portDeny`, CSF `CC_DENY_PORTS` style)
 - Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
+- Cluster policy propagation overlay (`clusterPolicy.*`)
 - Structured run logs + optional Prometheus textfile metrics (`observability.*`)
 - Early boot apply + scheduled refresh via systemd
 - Module/release version source via `VERSION` (SemVer)
@@ -136,6 +137,15 @@ services.nixCsf = {
     ];
   };
 
+  clusterPolicy = {
+    enable = true;
+    url = "https://policy.example.org/nix-csf/prod-edge.json";
+    failOpen = true;
+    # Optional node identity and auth:
+    # nodeId = "edge-eu-01";
+    # authTokenFile = "/run/secrets/nix-csf-cluster-token";
+  };
+
   observability = {
     structuredLogging = true;
     metrics = {
@@ -152,6 +162,8 @@ services.nixCsf = {
 ```
 
 ## Use Cases
+
+For a full operator-oriented catalog (including strict/fail-closed and offline patterns), see `docs/USE_CASES.md`.
 
 ### 1) Public web server with conservative DDoS posture
 
@@ -206,6 +218,32 @@ services.nixCsf = {
     outputFile = "/var/lib/node_exporter/textfile_collector/nix-csf.prom";
   };
 };
+```
+
+### 5) Centralized cluster allow/deny propagation
+
+```nix
+services.nixCsf = {
+  enable = true;
+  clusterPolicy = {
+    enable = true;
+    url = "https://policy.example.org/nix-csf/prod-edge.json";
+    failOpen = false; # fail refresh if policy is unreachable and no cache exists
+    authTokenFile = "/run/secrets/nix-csf-cluster-token";
+    nodeId = "edge-eu-01";
+  };
+};
+```
+
+Expected remote JSON structure:
+
+```json
+{
+  "allowIPv4": ["172.20.0.0/16"],
+  "allowIPv6": ["2001:db8:66::/48"],
+  "denyIPv4": ["203.0.114.0/24"],
+  "denyIPv6": ["2001:db8:bad::/48"]
+}
 ```
 
 ## Operational notes
@@ -269,6 +307,7 @@ Consumers can pin by tag:
 ## Project docs
 
 - Architecture: `docs/ARCHITECTURE.md`
+- Operator use-case catalog: `docs/USE_CASES.md`
 - Release/compatibility policy: `docs/RELEASE.md`
 - Delivery board: `docs/DELIVERY_BOARD.md`
 - Team rules: `docs/TEAM_OPERATING_RULES.md`

@@ -144,6 +144,14 @@ let
       enforceCatalog = cfg.blocklists.enforceCatalog;
       requireHTTPS = cfg.blocklists.requireHTTPS;
     };
+    clusterPolicy = {
+      enable = cfg.clusterPolicy.enable;
+      url = cfg.clusterPolicy.url;
+      failOpen = cfg.clusterPolicy.failOpen;
+      requireHTTPS = cfg.clusterPolicy.requireHTTPS;
+      authTokenFile = cfg.clusterPolicy.authTokenFile;
+      nodeId = cfg.clusterPolicy.nodeId;
+    };
     observability = {
       structuredLogging = cfg.observability.structuredLogging;
       metrics = {
@@ -500,6 +508,68 @@ in
       };
     };
 
+    clusterPolicy = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable centralized cluster policy propagation from a remote JSON endpoint.
+          The downloaded policy is merged into local allow/deny CIDR sets.
+        '';
+      };
+
+      url = mkOption {
+        type = types.str;
+        default = "";
+        example = "https://policy.example.org/nix-csf/edge-west.json";
+        description = ''
+          Endpoint that returns a JSON policy document with optional arrays:
+          - allowIPv4
+          - allowIPv6
+          - denyIPv4
+          - denyIPv6
+        '';
+      };
+
+      failOpen = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          If true, refresh failures are tolerated when no cached cluster policy exists.
+          If false, refresh fails hard when policy cannot be fetched and cache is empty.
+        '';
+      };
+
+      requireHTTPS = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Require clusterPolicy.url to use https://.
+          Disable only for controlled local/offline testing.
+        '';
+      };
+
+      authTokenFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "/run/secrets/nix-csf-cluster-token";
+        description = ''
+          Optional absolute path to a bearer token file for cluster policy requests.
+          Content is sent as Authorization: Bearer <token>.
+        '';
+      };
+
+      nodeId = mkOption {
+        type = types.str;
+        default = "";
+        example = "web-eu-01";
+        description = ''
+          Optional node identifier sent as HTTP header:
+          X-Nix-Csf-Node: <nodeId>.
+        '';
+      };
+    };
+
     observability = {
       structuredLogging = mkOption {
         type = types.bool;
@@ -626,6 +696,20 @@ in
           services.nixCsf.blocklists.catalog.<name>.url must use https:// when
           blocklists.requireHTTPS = true.
         '';
+      }
+      {
+        assertion = !cfg.clusterPolicy.enable || cfg.clusterPolicy.url != "";
+        message = "services.nixCsf.clusterPolicy.enable requires clusterPolicy.url.";
+      }
+      {
+        assertion = !cfg.clusterPolicy.enable
+          || !cfg.clusterPolicy.requireHTTPS
+          || isHttpsUrl cfg.clusterPolicy.url;
+        message = "services.nixCsf.clusterPolicy.url must use https:// when clusterPolicy.requireHTTPS = true.";
+      }
+      {
+        assertion = cfg.clusterPolicy.authTokenFile == null || hasPrefix "/" cfg.clusterPolicy.authTokenFile;
+        message = "services.nixCsf.clusterPolicy.authTokenFile must be an absolute path when set.";
       }
       {
         assertion = !cfg.observability.metrics.enable || hasPrefix "/" cfg.observability.metrics.outputFile;

@@ -240,3 +240,66 @@
 - Open follow-ups:
   - cluster policy propagation model (`T-010`),
   - documentation use-case catalog expansion (`T-011`).
+
+## 2026-02-19 — Batch CLUSTER-PROPAGATION-010
+
+- Ticket(s): `T-010`
+- Summary:
+  - added cluster policy module API:
+    - `services.nixCsf.clusterPolicy.{enable,url,failOpen,requireHTTPS,authTokenFile,nodeId}`,
+  - added module assertions for cluster policy URL/auth path safety,
+  - added runtime cluster policy fetch/caching path in `nix-csf-apply.sh`:
+    - refresh fetches JSON policy,
+    - optional `Authorization` bearer token from `authTokenFile`,
+    - optional `X-Nix-Csf-Node` header from `nodeId`,
+  - added fail-open/fail-closed behavior for:
+    - fetch failures,
+    - invalid JSON payloads,
+    - invalid cached policy,
+  - merged propagated CIDRs into effective allow/deny nftables sets,
+  - added cluster observability metrics:
+    - `feature="cluster_policy"`,
+    - `source="cluster_policy_urls"`,
+    - `cluster_allow_*` / `cluster_deny_*` set-entry counts,
+  - extended smoke VM scenario with deterministic local cluster policy source and assertions.
+- BA requirement mapping:
+  - delivers the first centralized allow/deny governance model across a server cluster while preserving local declarative control.
+- PM milestone mapping:
+  - closes cluster propagation model priority and advances operations maturity.
+- Risk impact:
+  - `low` (feature is opt-in and failure behavior is explicit).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh && bash -n scripts/validate.sh && bash -n scripts/release.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `./scripts/validate.sh`
+- Open follow-ups:
+  - documentation use-case catalog expansion (`T-011`),
+  - preset threat profiles (`T-012`).
+
+## 2026-02-19 — Batch DOC-USECASES-011
+
+- Ticket(s): `T-011`
+- Summary:
+  - added operator-focused use-case catalog:
+    - `docs/USE_CASES.md`,
+  - added seven practical deployment scenarios:
+    - public web,
+    - SSH bastion allow-list,
+    - port-scoped country deny,
+    - governed catalog-only blocklists,
+    - cluster policy propagation,
+    - offline/local file feeds,
+    - observability with Prometheus textfile metrics,
+  - added baseline operator verification commands for apply/refresh/rules/logs/metrics checks,
+  - updated README to link the full use-case catalog.
+- BA requirement mapping:
+  - directly addresses the request for richer, operator-ready documentation examples and use cases.
+- PM milestone mapping:
+  - closes documentation use-case catalog expansion and improves operations maturity onboarding.
+- Risk impact:
+  - `none` (documentation/process-only changes; no runtime policy logic changed in this ticket).
+- Validation evidence:
+  - `./scripts/validate.sh`
+- Open follow-ups:
+  - preset threat profiles (`T-012`),
+  - troubleshooting command set and runbook (`T-013`).

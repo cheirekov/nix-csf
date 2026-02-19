@@ -6,58 +6,35 @@ Owner: PM/BA + Codex
 ## 1) Batch contract
 
 - Batch type: `DAY (2-4h)`
-- Active ticket: `T-009` (Release automation and module versioning).
-- Goal: provide a repeatable SemVer release flow and expose module version metadata in runtime operations.
+- Active ticket: `T-011` (Documentation use-case catalog expansion).
+- Goal: provide operator-focused deployment examples that make feature adoption and verification straightforward.
 - In scope:
-  - add repository version source (`VERSION`),
-  - expose module version as read-only module option (`services.nixCsf.moduleVersion`),
-  - inject version into runtime config/logs/Prometheus metrics,
-  - add release automation script (`scripts/release.sh`) and flake package wrapper,
-  - wire x86_64 lightweight checks (`version-semver`, `eval-basic`, `shellcheck`) into `validate.sh`,
-  - document SemVer and release gate workflow.
+  - publish a dedicated operator use-case catalog doc,
+  - include concrete snippets for web/SSH/geo/blocklist/cluster/offline/observability scenarios,
+  - include operator verification commands for apply/refresh/rules/metrics checks,
+  - link catalog from README for discoverability.
 - Out of scope:
-  - cluster policy propagation architecture (`T-010`),
-  - expanded operator use-case documentation catalog (`T-011`).
+  - preset profile layer (`T-012`),
+  - troubleshooting runbook expansion (`T-013`).
 - Stop/rollback condition:
-  - any regression in existing VM smoke/integration behavior or broken release reproducibility.
+  - documentation examples mismatch actual module options or create contradictory failure-mode guidance.
 
 ## 2) Definition of done
 
-- `VERSION` exists and validates as SemVer via flake check.
-- Module/runtime expose version metadata:
-  - `services.nixCsf.moduleVersion` (read-only),
-  - structured logs include version,
-  - metrics include `nix_csf_build_info{version="..."} 1`.
-- Release automation exists and is executable:
-  - `scripts/release.sh` supports dry-run and real tag flow.
-- Validation lane executes:
-  - lightweight checks,
-  - VM smoke,
-  - VM integration.
-- README + release policy docs updated.
-- Board/changelog updated with evidence.
+- `docs/USE_CASES.md` exists with operator-oriented scenarios and command checks.
+- README includes explicit pointer to the catalog.
+- Board/changelog/roadmap/session docs are aligned to mark `T-011` done and queue `T-012`.
+- Validation evidence is captured in changelog/session notes.
 
 ## 3) End-of-batch result
 
 - Decision: `continue`
 - Completed:
-  - closed `T-009`:
-    - added `VERSION` (`0.1.0`) as release source of truth,
-    - added read-only `services.nixCsf.moduleVersion` and runtime JSON wiring,
-    - extended runtime observability with version metadata in:
-      - structured events (`run_start`),
-      - Prometheus metric `nix_csf_build_info`,
-    - added maintainer release script:
-      - `scripts/release.sh` (`--version`, `--dry-run`, `--no-validate`, `--push`),
-    - fixed flake checks merge to keep both base and x86_64 VM checks,
-    - updated `scripts/validate.sh` to run:
-      - `version-semver`, `eval-basic`, `shellcheck`,
-      - smoke + integration VM suites,
-    - added release/compatibility docs (`docs/RELEASE.md`) and README release instructions.
+  - `T-011` documentation use-case catalog expansion:
+    - added `docs/USE_CASES.md` with seven operator scenarios,
+    - added baseline operational check command set,
+    - added README link to the full use-case catalog.
 - Validation evidence:
-  - `bash -n scripts/nix-csf-apply.sh && bash -n scripts/validate.sh && bash -n scripts/release.sh`
-  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
   - `./scripts/validate.sh`
-  - `./scripts/release.sh --version 0.1.1 --dry-run --no-validate --allow-dirty`
 - Next ticket candidate:
-  - `T-010` cluster policy propagation model.
+  - `T-012` preset threat profiles (server/workstation/edge).

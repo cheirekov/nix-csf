@@ -26,22 +26,20 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Scope freeze |
 |---|---|---|---|
-| T-010 | TODO | Cluster policy propagation model | centralized allow/deny governance |
+| T-012 | TODO | Preset threat profiles (server/workstation/edge) | profile defaults + docs/tests |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-010 | TODO | Cluster policy propagation model | centralized allow/deny governance |
-| 2 | T-011 | TODO | Documentation use-case catalog expansion | operator-focused examples |
-| 3 | T-012 | TODO | Preset threat profiles (server/workstation/edge) | profile defaults + docs/tests |
+| 1 | T-012 | TODO | Preset threat profiles (server/workstation/edge) | profile defaults + docs/tests |
+| 2 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-011 | TODO | Documentation use-case catalog expansion |
-| 2 | T-012 | TODO | Preset threat profiles (server/workstation/edge) |
+| 1 | T-013 | TODO | Troubleshooting command set and runbook |
 
 ## Completed baseline
 
@@ -57,6 +55,8 @@ Ship a production-usable NixOS firewall module that is:
 | T-007 | DONE | Structured logging + Prometheus textfile metrics |
 | T-008 | DONE | NixOS VM integration tests (multi-scenario) |
 | T-009 | DONE | Release automation and module versioning |
+| T-010 | DONE | Cluster policy propagation model |
+| T-011 | DONE | Documentation use-case catalog expansion |
 
 ## Triage protocol
 

@@ -7,6 +7,7 @@
 - Runtime feed refresh without rebuilding the system.
 - Compatibility with both flake and non-flake module imports.
 - Governed remote blocklist ingestion through a source catalog schema.
+- Centralized cluster policy propagation for multi-host allow/deny overlays.
 - Repeatable SemVer-based release lifecycle.
 
 ## Components
@@ -35,7 +36,7 @@
 3. Boot-time apply service renders nftables rules from:
    - static config values,
    - cached feed data.
-4. Refresh service (manual/timer) downloads latest feed files.
+4. Refresh service (manual/timer) downloads latest feed files and optional cluster policy overlay JSON.
 5. Rules are regenerated and atomically re-applied.
 6. Optional observability export writes:
    - structured event logs to journald,

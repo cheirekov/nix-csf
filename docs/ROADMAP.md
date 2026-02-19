@@ -30,6 +30,8 @@
 
 - Structured logs and drop telemetry. [baseline done 2026-02-19]
 - Optional Prometheus textfile metrics. [baseline done 2026-02-19]
+- Cluster policy propagation model. [baseline done 2026-02-19]
+- Operator use-case catalog and deployment examples. [baseline done 2026-02-19]
 - Troubleshooting command set and runbook.
 
 ## Phase 4 — Release quality
