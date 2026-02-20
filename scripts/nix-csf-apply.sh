@@ -137,6 +137,16 @@ merge_sorted_overlay() {
   fi
 }
 
+subtract_sorted_overlay() {
+  local base_file="$1"
+  local overlay_file="$2"
+
+  if [[ -s "${base_file}" && -s "${overlay_file}" ]]; then
+    comm -23 "${base_file}" "${overlay_file}" > "${TMP_DIR}/_subtract-overlay.txt"
+    install -m 0640 "${TMP_DIR}/_subtract-overlay.txt" "${base_file}"
+  fi
+}
+
 append_if_exists() {
   local source_file="$1"
   local target_file="$2"
@@ -185,11 +195,66 @@ fetch_cluster_policy_to_cache() {
     if ! jq -e . "${tmp_file}" >/dev/null 2>&1; then
       return 2
     fi
+    if ! validate_cluster_policy_schema "${tmp_file}"; then
+      return 3
+    fi
     install -m 0640 "${tmp_file}" "${cache_file}"
     return 0
   fi
 
   return 1
+}
+
+validate_cluster_policy_schema() {
+  local policy_file="$1"
+
+  jq -e '
+    type == "object"
+    and (
+      (.schemaVersion? == null)
+      or (.schemaVersion == 1)
+      or (.schemaVersion == "1")
+      or (.schemaVersion == 2)
+      or (.schemaVersion == "2")
+    )
+    and (
+      (.revision? == null)
+      or ((.revision | type) == "string")
+      or ((.revision | type) == "number")
+    )
+    and (
+      (.ttlSeconds? == null)
+      or (
+        (.ttlSeconds | type) == "number"
+        and ((.ttlSeconds | floor) == .ttlSeconds)
+        and (.ttlSeconds >= 0)
+      )
+    )
+    and (
+      (.allowIPv4? == null)
+      or ((.allowIPv4 | type) == "array" and all(.allowIPv4[]; type == "string"))
+    )
+    and (
+      (.allowIPv6? == null)
+      or ((.allowIPv6 | type) == "array" and all(.allowIPv6[]; type == "string"))
+    )
+    and (
+      (.denyIPv4? == null)
+      or ((.denyIPv4 | type) == "array" and all(.denyIPv4[]; type == "string"))
+    )
+    and (
+      (.denyIPv6? == null)
+      or ((.denyIPv6 | type) == "array" and all(.denyIPv6[]; type == "string"))
+    )
+    and (
+      (.ignoreIPv4? == null)
+      or ((.ignoreIPv4 | type) == "array" and all(.ignoreIPv4[]; type == "string"))
+    )
+    and (
+      (.ignoreIPv6? == null)
+      or ((.ignoreIPv6 | type) == "array" and all(.ignoreIPv6[]; type == "string"))
+    )
+  ' "${policy_file}" >/dev/null 2>&1
 }
 
 fetch_country_data_for_code() {
@@ -330,12 +395,26 @@ write_metrics() {
     printf 'nix_csf_set_entries{set="cluster_allow_ipv6"} %s\n' "${cluster_allow_v6_count}"
     printf 'nix_csf_set_entries{set="cluster_deny_ipv4"} %s\n' "${cluster_deny_v4_count}"
     printf 'nix_csf_set_entries{set="cluster_deny_ipv6"} %s\n' "${cluster_deny_v6_count}"
+    printf 'nix_csf_set_entries{set="cluster_ignore_ipv4"} %s\n' "${cluster_ignore_v4_count}"
+    printf 'nix_csf_set_entries{set="cluster_ignore_ipv6"} %s\n' "${cluster_ignore_v6_count}"
     echo "# HELP nix_csf_source_count Number of configured source identifiers."
     echo "# TYPE nix_csf_source_count gauge"
     printf 'nix_csf_source_count{source="country_codes"} %s\n' "${#country_codes[@]}"
     printf 'nix_csf_source_count{source="country_port_deny_codes"} %s\n' "${#country_port_deny_codes[@]}"
     printf 'nix_csf_source_count{source="blocklist_urls"} %s\n' "${#blocklist_urls[@]}"
     printf 'nix_csf_source_count{source="cluster_policy_urls"} %s\n' "${cluster_policy_source_count}"
+    echo "# HELP nix_csf_cluster_policy_schema_version Active cluster policy schema version."
+    echo "# TYPE nix_csf_cluster_policy_schema_version gauge"
+    printf 'nix_csf_cluster_policy_schema_version %s\n' "${cluster_policy_schema_version}"
+    echo "# HELP nix_csf_cluster_policy_cache_age_seconds Age of cached cluster policy in seconds."
+    echo "# TYPE nix_csf_cluster_policy_cache_age_seconds gauge"
+    printf 'nix_csf_cluster_policy_cache_age_seconds %s\n' "${cluster_policy_cache_age_seconds}"
+    echo "# HELP nix_csf_cluster_policy_ttl_seconds Cluster policy TTL in seconds (0 when unset)."
+    echo "# TYPE nix_csf_cluster_policy_ttl_seconds gauge"
+    printf 'nix_csf_cluster_policy_ttl_seconds %s\n' "${cluster_policy_ttl_seconds}"
+    echo "# HELP nix_csf_cluster_policy_cache_expired Cached cluster policy expiration status (1=expired)."
+    echo "# TYPE nix_csf_cluster_policy_cache_expired gauge"
+    printf 'nix_csf_cluster_policy_cache_expired %s\n' "$(bool_to_num "${cluster_policy_cache_expired}")"
     echo "# HELP nix_csf_rate_limit_burst_packets Burst thresholds for rate-limited controls."
     echo "# TYPE nix_csf_rate_limit_burst_packets gauge"
     printf 'nix_csf_rate_limit_burst_packets{limit="syn_flood",preset="%s"} %s\n' "${syn_flood_preset}" "${syn_flood_burst}"
@@ -536,15 +615,22 @@ sort_unique "${TMP_DIR}/feeds-v6.norm" "${TMP_DIR}/feeds-v6.txt"
 
 cluster_policy_enabled="$(jq -r '.clusterPolicy.enable // false' "${CONFIG_FILE}")"
 cluster_policy_url="$(jq -r '.clusterPolicy.url // ""' "${CONFIG_FILE}")"
-cluster_policy_fail_open="$(jq -r '.clusterPolicy.failOpen // true' "${CONFIG_FILE}")"
+cluster_policy_fail_open="$(jq -r 'if .clusterPolicy.failOpen == null then true else .clusterPolicy.failOpen end' "${CONFIG_FILE}")"
 cluster_policy_auth_token_file="$(jq -r '.clusterPolicy.authTokenFile // ""' "${CONFIG_FILE}")"
 cluster_policy_node_id="$(jq -r '.clusterPolicy.nodeId // ""' "${CONFIG_FILE}")"
 cluster_policy_source_count="0"
+cluster_policy_schema_version="1"
+cluster_policy_revision="none"
+cluster_policy_ttl_seconds="0"
+cluster_policy_cache_age_seconds="0"
+cluster_policy_cache_expired="false"
 
 : > "${TMP_DIR}/cluster-allow-v4.raw"
 : > "${TMP_DIR}/cluster-allow-v6.raw"
 : > "${TMP_DIR}/cluster-deny-v4.raw"
 : > "${TMP_DIR}/cluster-deny-v6.raw"
+: > "${TMP_DIR}/cluster-ignore-v4.raw"
+: > "${TMP_DIR}/cluster-ignore-v6.raw"
 
 if [[ "${cluster_policy_enabled}" == "true" ]]; then
   cluster_policy_source_count="1"
@@ -564,6 +650,14 @@ if [[ "${cluster_policy_enabled}" == "true" ]]; then
         else
           fail "invalid JSON from cluster policy ${cluster_policy_url} and no cache exists"
         fi
+      elif [[ "${cluster_fetch_rc}" -eq 3 ]]; then
+        if [[ -s "${cluster_policy_cache}" ]]; then
+          warn "cluster policy ${cluster_policy_url} failed schema validation; using cached data"
+        elif [[ "${cluster_policy_fail_open}" == "true" ]]; then
+          warn "cluster policy ${cluster_policy_url} failed schema validation; continuing due to failOpen"
+        else
+          fail "cluster policy ${cluster_policy_url} failed schema validation and no cache exists"
+        fi
       elif [[ -s "${cluster_policy_cache}" ]]; then
         warn "failed to refresh cluster policy ${cluster_policy_url}; using cached data"
       elif [[ "${cluster_policy_fail_open}" == "true" ]]; then
@@ -577,17 +671,35 @@ if [[ "${cluster_policy_enabled}" == "true" ]]; then
   fi
 
   if [[ -s "${cluster_policy_cache}" ]]; then
-    if ! jq -e . "${cluster_policy_cache}" >/dev/null 2>&1; then
+    if ! validate_cluster_policy_schema "${cluster_policy_cache}"; then
       if [[ "${cluster_policy_fail_open}" == "true" ]]; then
-        warn "cached cluster policy is invalid JSON; skipping merge due to failOpen"
+        warn "cached cluster policy failed schema validation; skipping merge due to failOpen"
       else
-        fail "cached cluster policy is invalid JSON"
+        fail "cached cluster policy failed schema validation"
       fi
     else
-      jq -r '.allowIPv4[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-allow-v4.raw"
-      jq -r '.allowIPv6[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-allow-v6.raw"
-      jq -r '.denyIPv4[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-deny-v4.raw"
-      jq -r '.denyIPv6[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-deny-v6.raw"
+      cluster_policy_schema_version="$(jq -r 'if .schemaVersion == null then "1" else (.schemaVersion | tostring) end' "${cluster_policy_cache}")"
+      cluster_policy_revision="$(jq -r 'if .revision == null then "none" else (.revision | tostring) end' "${cluster_policy_cache}")"
+      cluster_policy_ttl_seconds="$(jq -r '(.ttlSeconds // 0) | tostring' "${cluster_policy_cache}")"
+      cluster_policy_cache_age_seconds="$(( $(date +%s) - $(stat -c %Y "${cluster_policy_cache}") ))"
+
+      if [[ "${cluster_policy_ttl_seconds}" =~ ^[0-9]+$ ]] \
+        && [[ "${cluster_policy_ttl_seconds}" -gt 0 ]] \
+        && [[ "${cluster_policy_cache_age_seconds}" -gt "${cluster_policy_ttl_seconds}" ]]; then
+        cluster_policy_cache_expired="true"
+        if [[ "${cluster_policy_fail_open}" == "true" ]]; then
+          warn "cached cluster policy expired (ttlSeconds=${cluster_policy_ttl_seconds}, age=${cluster_policy_cache_age_seconds}); skipping merge due to failOpen"
+        else
+          fail "cached cluster policy expired (ttlSeconds=${cluster_policy_ttl_seconds}, age=${cluster_policy_cache_age_seconds})"
+        fi
+      else
+        jq -r '.allowIPv4[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-allow-v4.raw"
+        jq -r '.allowIPv6[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-allow-v6.raw"
+        jq -r '.denyIPv4[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-deny-v4.raw"
+        jq -r '.denyIPv6[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-deny-v6.raw"
+        jq -r '.ignoreIPv4[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-ignore-v4.raw"
+        jq -r '.ignoreIPv6[]?' "${cluster_policy_cache}" >> "${TMP_DIR}/cluster-ignore-v6.raw"
+      fi
     fi
   fi
 fi
@@ -596,16 +708,38 @@ normalize_cidrs "${TMP_DIR}/cluster-allow-v4.raw" "${TMP_DIR}/cluster-allow-v4.n
 normalize_cidrs "${TMP_DIR}/cluster-allow-v6.raw" "${TMP_DIR}/cluster-allow-v6.ignore" "${TMP_DIR}/cluster-allow-v6.norm"
 normalize_cidrs "${TMP_DIR}/cluster-deny-v4.raw" "${TMP_DIR}/cluster-deny-v4.norm" "${TMP_DIR}/cluster-deny-v4.ignore"
 normalize_cidrs "${TMP_DIR}/cluster-deny-v6.raw" "${TMP_DIR}/cluster-deny-v6.ignore" "${TMP_DIR}/cluster-deny-v6.norm"
+normalize_cidrs "${TMP_DIR}/cluster-ignore-v4.raw" "${TMP_DIR}/cluster-ignore-v4.norm" "${TMP_DIR}/cluster-ignore-v4.ignore"
+normalize_cidrs "${TMP_DIR}/cluster-ignore-v6.raw" "${TMP_DIR}/cluster-ignore-v6.ignore" "${TMP_DIR}/cluster-ignore-v6.norm"
 
 sort_unique "${TMP_DIR}/cluster-allow-v4.norm" "${TMP_DIR}/cluster-allow-v4.txt"
 sort_unique "${TMP_DIR}/cluster-allow-v6.norm" "${TMP_DIR}/cluster-allow-v6.txt"
 sort_unique "${TMP_DIR}/cluster-deny-v4.norm" "${TMP_DIR}/cluster-deny-v4.txt"
 sort_unique "${TMP_DIR}/cluster-deny-v6.norm" "${TMP_DIR}/cluster-deny-v6.txt"
+sort_unique "${TMP_DIR}/cluster-ignore-v4.norm" "${TMP_DIR}/cluster-ignore-v4.txt"
+sort_unique "${TMP_DIR}/cluster-ignore-v6.norm" "${TMP_DIR}/cluster-ignore-v6.txt"
 
 merge_sorted_overlay "${TMP_DIR}/allow-v4.txt" "${TMP_DIR}/cluster-allow-v4.txt"
 merge_sorted_overlay "${TMP_DIR}/allow-v6.txt" "${TMP_DIR}/cluster-allow-v6.txt"
 merge_sorted_overlay "${TMP_DIR}/deny-v4.txt" "${TMP_DIR}/cluster-deny-v4.txt"
 merge_sorted_overlay "${TMP_DIR}/deny-v6.txt" "${TMP_DIR}/cluster-deny-v6.txt"
+
+if [[ -s "${TMP_DIR}/cluster-ignore-v4.txt" ]]; then
+  merge_sorted_overlay "${TMP_DIR}/allow-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/deny-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/country-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/country-port-deny-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/feeds-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/cluster-deny-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
+fi
+
+if [[ -s "${TMP_DIR}/cluster-ignore-v6.txt" ]]; then
+  merge_sorted_overlay "${TMP_DIR}/allow-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/deny-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/country-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/country-port-deny-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/feeds-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/cluster-deny-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
+fi
 
 mapfile -t trusted_interfaces < <(jq -r '.trustedInterfaces[]?' "${CONFIG_FILE}")
 mapfile -t open_tcp_ports < <(jq -r '.openTCPPorts[]?' "${CONFIG_FILE}")
@@ -625,6 +759,8 @@ cluster_allow_v4_count="$(count_file_lines "${TMP_DIR}/cluster-allow-v4.txt")"
 cluster_allow_v6_count="$(count_file_lines "${TMP_DIR}/cluster-allow-v6.txt")"
 cluster_deny_v4_count="$(count_file_lines "${TMP_DIR}/cluster-deny-v4.txt")"
 cluster_deny_v6_count="$(count_file_lines "${TMP_DIR}/cluster-deny-v6.txt")"
+cluster_ignore_v4_count="$(count_file_lines "${TMP_DIR}/cluster-ignore-v4.txt")"
+cluster_ignore_v6_count="$(count_file_lines "${TMP_DIR}/cluster-ignore-v6.txt")"
 
 log_event "stdout" "info" "set_counts" \
   "allow_v4=${allow_v4_count}" \
@@ -640,7 +776,18 @@ log_event "stdout" "info" "set_counts" \
   "cluster_allow_v4=${cluster_allow_v4_count}" \
   "cluster_allow_v6=${cluster_allow_v6_count}" \
   "cluster_deny_v4=${cluster_deny_v4_count}" \
-  "cluster_deny_v6=${cluster_deny_v6_count}"
+  "cluster_deny_v6=${cluster_deny_v6_count}" \
+  "cluster_ignore_v4=${cluster_ignore_v4_count}" \
+  "cluster_ignore_v6=${cluster_ignore_v6_count}"
+
+if [[ "${cluster_policy_enabled}" == "true" ]]; then
+  log_event "stdout" "info" "cluster_policy_meta" \
+    "schema_version=${cluster_policy_schema_version}" \
+    "revision=${cluster_policy_revision}" \
+    "ttl_seconds=${cluster_policy_ttl_seconds}" \
+    "cache_age_seconds=${cluster_policy_cache_age_seconds}" \
+    "cache_expired=${cluster_policy_cache_expired}"
+fi
 
 render_port_set() {
   local -n ref="$1"

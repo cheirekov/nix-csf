@@ -61,6 +61,43 @@ pkgs.testers.runNixOSTest {
     system.stateVersion = "24.11";
   };
 
+  nodes.clusterexpired = { ... }: {
+    imports = [ module ];
+
+    networking.hostName = "nix-csf-clusterexpired";
+    networking.firewall.enable = false;
+
+    services.nixCsf = {
+      enable = true;
+      openTCPPorts = [ 22 ];
+      clusterPolicy = {
+        enable = true;
+        url = "file:///etc/nix-csf-cluster-policy-expired.json";
+        requireHTTPS = false;
+        failOpen = false;
+      };
+      autoRefresh.runOnBoot = false;
+    };
+
+    systemd.services.nix-csf-apply.preStart = ''
+      mkdir -p /var/lib/nix-csf/cache
+      install -m 0640 /etc/nix-csf-cluster-policy-expired.json /var/lib/nix-csf/cache/cluster-policy.json
+      touch -d '1970-01-01 00:00:00 UTC' /var/lib/nix-csf/cache/cluster-policy.json
+    '';
+
+    environment.etc."nix-csf-cluster-policy-expired.json".text = ''
+      {
+        "schemaVersion": 2,
+        "revision": "expired-r1",
+        "ttlSeconds": 1,
+        "denyIPv4": [ "198.51.100.0/24" ]
+      }
+    '';
+
+    environment.systemPackages = [ pkgs.nftables ];
+    system.stateVersion = "24.11";
+  };
+
   nodes.failclosed = { ... }: {
     imports = [ module ];
 
@@ -86,7 +123,7 @@ pkgs.testers.runNixOSTest {
 
   testScript = ''
     start_all()
-    blockapplyfailclosed, failclosed, good, profileedge = machines
+    blockapplyfailclosed, clusterexpired, failclosed, good, profileedge = machines
 
     good.wait_for_unit("multi-user.target")
     good.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
@@ -112,6 +149,12 @@ pkgs.testers.runNixOSTest {
     blockapplyfailclosed.fail("test -e /var/lib/nix-csf/generated-ruleset.nft")
     blockapplyfailclosed.fail("nft list table inet nix_csf")
     blockapplyfailclosed.succeed("journalctl -u nix-csf-apply.service -n 30 | grep -F 'blocklists.failOpen=false and no cached data is available for file:///etc/nix-csf-missing-feed.txt'")
+
+    clusterexpired.wait_for_unit("multi-user.target")
+    clusterexpired.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")
+    clusterexpired.fail("test -e /var/lib/nix-csf/generated-ruleset.nft")
+    clusterexpired.fail("nft list table inet nix_csf")
+    clusterexpired.succeed("journalctl -u nix-csf-apply.service -n 30 | grep -F 'cached cluster policy expired (ttlSeconds=1'")
 
     failclosed.wait_for_unit("multi-user.target")
     failclosed.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")

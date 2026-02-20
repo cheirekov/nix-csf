@@ -9,6 +9,9 @@
 - Profile-driven onboarding (`threatProfile`) with explicit override precedence.
 - Governed remote blocklist ingestion through a source catalog schema.
 - Centralized cluster policy propagation for multi-host allow/deny overlays.
+- Cluster policy schema v2 governance (`allow`/`deny`/`ignore` + revision/TTL).
+- Clear separation between declarative policy state and runtime dynamic offender state.
+- Coexistence strategy for hosts that run additional firewall mutators (for example Docker).
 - Repeatable SemVer-based release lifecycle.
 
 ## Components
@@ -39,8 +42,9 @@
    - static config values,
    - cached feed data.
 4. Refresh service (manual/timer) downloads latest feed files and optional cluster policy overlay JSON.
-5. Rules are regenerated and atomically re-applied.
-6. Optional observability export writes:
+5. Cluster policy cache metadata (schema/revision/TTL) is validated before merge.
+6. Rules are regenerated and atomically re-applied.
+7. Optional observability export writes:
    - structured event logs to journald,
    - snapshot metrics in Prometheus textfile format (including build/version metadata).
 
@@ -51,3 +55,14 @@
 - Remote feeds are optional and can run `failOpen` to reduce outage risk.
 - In strict mode (`failOpen = false`), `apply` requires cache presence for remote sources and fails closed when cache is absent.
 - Blocklist sources can be governed by catalog IDs (`blocklists.sources`) with schema-backed metadata.
+- Cluster ignore overlays can explicitly subtract CIDRs from deny-style sources.
+
+## Centralized dynamic POC
+
+See `docs/DYNAMIC_CLUSTER_POC.md` for the team recommendation on:
+
+- CSF-style dynamic temporary bans,
+- hybrid local-files + remote cluster list workflows,
+- token lifecycle handling for cluster auth,
+- Grafana/Prometheus operational model,
+- Docker and other dynamic-firewall coexistence strategy.

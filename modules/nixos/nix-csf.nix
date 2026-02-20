@@ -587,6 +587,12 @@ in
           - allowIPv6
           - denyIPv4
           - denyIPv6
+          - ignoreIPv4
+          - ignoreIPv6
+          and optional metadata:
+          - schemaVersion (1|2)
+          - revision (string or number)
+          - ttlSeconds (non-negative integer; cache age guard)
         '';
       };
 

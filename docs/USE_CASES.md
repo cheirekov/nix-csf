@@ -8,6 +8,8 @@ All snippets assume:
 - `networking.firewall.enable = false` (required by module assertion),
 - validation happens with `sudo systemctl start nix-csf-refresh.service` after deployment.
 
+For centralized dynamic-ban and Docker coexistence design recommendations, see `docs/DYNAMIC_CLUSTER_POC.md`.
+
 ## Baseline operator checks
 
 Run these checks for any profile:
@@ -140,10 +142,20 @@ services.nixCsf = {
 
 Expected JSON keys from the policy endpoint:
 
+- `schemaVersion` (1 or 2)
+- `revision` (string/number)
+- `ttlSeconds` (non-negative integer)
 - `allowIPv4`
 - `allowIPv6`
 - `denyIPv4`
 - `denyIPv6`
+- `ignoreIPv4`
+- `ignoreIPv6`
+
+If `ttlSeconds` is present and cache age exceeds TTL:
+
+- strict mode (`clusterPolicy.failOpen = false`) fails closed,
+- fail-open mode keeps service running but skips cluster merge.
 
 ## 6) Offline/lab environment with local files
 
@@ -196,3 +208,45 @@ Example checks:
 sudo cat /var/lib/node_exporter/textfile_collector/nix-csf.prom
 sudo journalctl -u nix-csf-apply.service -n 50 --no-pager
 ```
+
+## 8) Global opened ports baseline
+
+Use this when you want globally exposed ports independent of geo filters.
+
+```nix
+services.nixCsf = {
+  enable = true;
+  openTCPPorts = [ 22 80 443 ];
+  openUDPPorts = [ 53 ];
+};
+```
+
+## 9) Ports opened only to selected countries
+
+Use country allow-mode with strict behavior.
+
+```nix
+services.nixCsf = {
+  enable = true;
+  openTCPPorts = [ 22 443 ];
+  country = {
+    enable = true;
+    mode = "allow";
+    countries = [ "US" "CA" ];
+    failOpen = false;
+  };
+};
+```
+
+## 10) ICMP baseline and roadmap
+
+Current module supports global ICMP enable/disable:
+
+```nix
+services.nixCsf = {
+  enable = true;
+  allowICMP = false; # set true if ICMP should be accepted
+};
+```
+
+Per-type/per-rate ICMP controls are planned in `T-017`.

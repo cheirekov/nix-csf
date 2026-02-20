@@ -20,6 +20,7 @@ Kickoff baseline is implemented:
 - Per-port country deny policy (`country.portDeny`, CSF `CC_DENY_PORTS` style)
 - Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
 - Cluster policy propagation overlay (`clusterPolicy.*`)
+- Cluster policy schema v2 support (`ignore*`, `schemaVersion`, `revision`, `ttlSeconds`)
 - Structured run logs + optional Prometheus textfile metrics (`observability.*`)
 - Early boot apply + scheduled refresh via systemd
 - Module/release version source via `VERSION` (SemVer)
@@ -254,10 +255,15 @@ Expected remote JSON structure:
 
 ```json
 {
+  "schemaVersion": 2,
+  "revision": "prod-2026-02-20-01",
+  "ttlSeconds": 3600,
   "allowIPv4": ["172.20.0.0/16"],
   "allowIPv6": ["2001:db8:66::/48"],
   "denyIPv4": ["203.0.114.0/24"],
-  "denyIPv6": ["2001:db8:bad::/48"]
+  "denyIPv6": ["2001:db8:bad::/48"],
+  "ignoreIPv4": ["203.0.114.7/32"],
+  "ignoreIPv6": []
 }
 ```
 
@@ -268,6 +274,8 @@ Expected remote JSON structure:
 - Refresh service runs after network is online and can be periodic via timer.
 - With `blocklists.failOpen = false` or `clusterPolicy.failOpen = false`, `apply` requires cached data.
   Run `sudo systemctl start nix-csf-refresh.service` at least once after network is available.
+- Cluster policy cache can be guarded by `ttlSeconds` from the snapshot payload.
+  In strict mode (`clusterPolicy.failOpen = false`), expired cached policy fails closed.
 - Rule evaluation is deny-first for static allow/deny CIDRs (`denyIPv4/denyIPv6` are matched before `allowIPv4/allowIPv6`).
 - Generated runtime artifacts live in `/var/lib/nix-csf`.
 
@@ -326,6 +334,7 @@ Consumers can pin by tag:
 ## Project docs
 
 - Architecture: `docs/ARCHITECTURE.md`
+- Dynamic cluster POC recommendation: `docs/DYNAMIC_CLUSTER_POC.md`
 - Operator use-case catalog: `docs/USE_CASES.md`
 - Release/compatibility policy: `docs/RELEASE.md`
 - Delivery board: `docs/DELIVERY_BOARD.md`

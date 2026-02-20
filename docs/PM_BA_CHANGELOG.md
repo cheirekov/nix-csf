@@ -368,3 +368,45 @@
   - cluster schema v2 (`T-015`),
   - dynamic offender propagation (`T-016`),
   - ICMP policy profiles (`T-017`).
+
+## 2026-02-20 — Batch CLUSTER-SCHEMA-V2-015
+
+- Ticket(s): `T-015`
+- Summary:
+  - added cluster policy schema v2 runtime support in `nix-csf-apply.sh`:
+    - `allowIPv4/allowIPv6`,
+    - `denyIPv4/denyIPv6`,
+    - `ignoreIPv4/ignoreIPv6`,
+    - metadata keys `schemaVersion`, `revision`, `ttlSeconds`,
+  - added explicit schema validation for fetched and cached cluster policy payloads,
+  - implemented cache TTL guardrails:
+    - fail-closed when `clusterPolicy.failOpen = false` and cache is expired,
+    - fail-open warning and skip-merge behavior when `clusterPolicy.failOpen = true`,
+  - implemented ignore-precedence reconciliation:
+    - merge ignore CIDRs into allow sets,
+    - subtract ignore CIDRs from deny-style sources (static deny, country deny, per-port country deny, blocklist feeds, cluster deny),
+  - added cluster policy metadata observability:
+    - structured `cluster_policy_meta` log event,
+    - Prometheus gauges for schema version, cache age, TTL, expired state,
+    - set-entry counters for cluster ignore sets,
+  - expanded tests:
+    - smoke suite now asserts ignore precedence + schema/TTL metrics,
+    - integration suite adds `clusterexpired` stale-cache strict failure scenario,
+  - fixed regression discovered during integration:
+    - explicit `clusterPolicy.failOpen = false` was being coerced to `true` due jq `// true` behavior;
+    - parsing now preserves explicit `false`.
+- BA requirement mapping:
+  - addresses centralized list governance concerns (allow/deny/ignore), strict stale-cache behavior, and provides a concrete path toward CSF-like cluster operations.
+- PM milestone mapping:
+  - closes Phase 3 cluster schema v2 milestone and unblocks dynamic propagation/coexistence implementation tickets.
+- Risk impact:
+  - `medium` (strict-mode behavior now correctly enforces fail-closed semantics for expired cluster policy cache).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs`
+- Open follow-ups:
+  - dynamic offender propagation (`T-016`),
+  - firewall coexistence profile (`T-021`),
+  - token lifecycle/secret handling (`T-020`),
+  - Grafana/Prometheus monitoring pack (`T-019`).

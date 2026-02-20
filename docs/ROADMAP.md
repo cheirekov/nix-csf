@@ -33,9 +33,11 @@
 - Structured logs and drop telemetry. [baseline done 2026-02-19]
 - Optional Prometheus textfile metrics. [baseline done 2026-02-19]
 - Cluster policy propagation model. [baseline done 2026-02-19]
+- Cluster policy schema v2 (`allow`/`deny`/`ignore`, revision/TTL). [done 2026-02-20]
 - Operator use-case catalog and deployment examples. [baseline done 2026-02-19]
-- Cluster policy schema v2 (`allow`/`deny`/`ignore`, revision/TTL/signing).
 - Dynamic offender propagation across cluster nodes.
+- Firewall coexistence profile (Docker/other dynamic firewall daemons).
+- Hybrid local-files + remote-cluster list reconciliation.
 - Cluster auth/token lifecycle and secret-management guidance.
 - Grafana/Prometheus monitoring pack and alert rules.
 - Troubleshooting command set and runbook.

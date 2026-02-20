@@ -73,8 +73,12 @@ pkgs.testers.runNixOSTest {
     '';
     environment.etc."nix-csf-cluster-policy.json".text = ''
       {
+        "schemaVersion": 2,
+        "revision": "smoke-r1",
+        "ttlSeconds": 3600,
         "allowIPv4": [ "172.20.0.0/16" ],
-        "denyIPv4": [ "203.0.114.0/24" ]
+        "denyIPv4": [ "203.0.114.0/24", "203.0.115.0/24" ],
+        "ignoreIPv4": [ "203.0.115.0/24" ]
       }
     '';
     environment.systemPackages = [ pkgs.nftables ];
@@ -101,9 +105,14 @@ pkgs.testers.runNixOSTest {
     machine.succeed("nft list table inet nix_csf | grep -F '203.0.113.0/24'")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_last_run_success{mode=\"refresh\"} 1' /var/lib/nix-csf/metrics.prom")
-    machine.succeed("nft list table inet nix_csf | grep -F '203.0.114.0/24'")
+    machine.succeed("nft list set inet nix_csf deny_ipv4 | grep -F '203.0.114.0/24'")
+    machine.fail("nft list set inet nix_csf deny_ipv4 | grep -F '203.0.115.0/24'")
+    machine.succeed("nft list set inet nix_csf allow_ipv4 | grep -F '203.0.115.0/24'")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"cluster_policy\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"cluster_deny_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"cluster_ignore_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"cluster_policy_urls\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_cluster_policy_schema_version 2' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_cluster_policy_cache_expired 0' /var/lib/nix-csf/metrics.prom")
   '';
 }
