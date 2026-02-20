@@ -18,7 +18,7 @@
       baseChecks = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          systemEval = nixpkgs.lib.nixosSystem {
+          mkEvalSystem = extraModule: nixpkgs.lib.nixosSystem {
             inherit system;
             modules = [
               nixCsfModule
@@ -27,8 +27,29 @@
                 networking.firewall.enable = false;
                 system.stateVersion = "24.11";
               })
+              extraModule
             ];
           };
+          boolText = value: if value then "true" else "false";
+          systemEval = mkEvalSystem ({ ... }: { });
+          serverProfileEval = mkEvalSystem ({ ... }: {
+            services.nixCsf.threatProfile = "server";
+          });
+          workstationProfileEval = mkEvalSystem ({ ... }: {
+            services.nixCsf.threatProfile = "workstation";
+          });
+          edgeOverrideEval = mkEvalSystem ({ ... }: {
+            services.nixCsf = {
+              threatProfile = "edge";
+              openTCPPorts = [ 8443 ];
+              logDrops = false;
+              rateLimits.synFlood = {
+                enable = true;
+                preset = "relaxed";
+              };
+              autoRefresh.onCalendar = "weekly";
+            };
+          });
         in
         {
           version-semver = pkgs.runCommand "nix-csf-version-semver" {
@@ -45,6 +66,30 @@
             test -n "$serviceExec"
             printf '%s\n' "$moduleVersion" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
             printf '%s\n' "$serviceExec" > "$out"
+          '';
+          eval-profiles = pkgs.runCommand "nix-csf-eval-profiles" {
+            serverSynEnabled = boolText serverProfileEval.config.services.nixCsf.rateLimits.synFlood.enable;
+            serverConnEnabled = boolText serverProfileEval.config.services.nixCsf.rateLimits.connFlood.enable;
+            serverLogDrops = boolText serverProfileEval.config.services.nixCsf.logDrops;
+            serverOnCalendar = serverProfileEval.config.services.nixCsf.autoRefresh.onCalendar;
+            workstationTCPCount = toString (builtins.length workstationProfileEval.config.services.nixCsf.openTCPPorts);
+            workstationUDPCount = toString (builtins.length workstationProfileEval.config.services.nixCsf.openUDPPorts);
+            edgeOverrideTCP = builtins.concatStringsSep "," (map toString edgeOverrideEval.config.services.nixCsf.openTCPPorts);
+            edgeOverrideLogDrops = boolText edgeOverrideEval.config.services.nixCsf.logDrops;
+            edgeOverrideSynPreset = edgeOverrideEval.config.services.nixCsf.rateLimits.synFlood.preset;
+            edgeOverrideOnCalendar = edgeOverrideEval.config.services.nixCsf.autoRefresh.onCalendar;
+          } ''
+            test "$serverSynEnabled" = "true"
+            test "$serverConnEnabled" = "true"
+            test "$serverLogDrops" = "true"
+            test "$serverOnCalendar" = "hourly"
+            test "$workstationTCPCount" = "0"
+            test "$workstationUDPCount" = "0"
+            test "$edgeOverrideTCP" = "8443"
+            test "$edgeOverrideLogDrops" = "false"
+            test "$edgeOverrideSynPreset" = "relaxed"
+            test "$edgeOverrideOnCalendar" = "weekly"
+            touch "$out"
           '';
           shellcheck = pkgs.runCommand "nix-csf-shellcheck" {
             nativeBuildInputs = [ pkgs.shellcheck ];

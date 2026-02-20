@@ -15,6 +15,7 @@ Kickoff baseline is implemented:
 - Static allow/deny rules (IPv4 + IPv6)
 - Port policy (`openTCPPorts`, `openUDPPorts`, ICMP toggle)
 - Stateful rate-limit presets (`rateLimits.synFlood`, `rateLimits.connFlood`)
+- Preset threat profiles (`threatProfile = "server"|"workstation"|"edge"`)
 - Country policy modes (`deny` and `allow`)
 - Per-port country deny policy (`country.portDeny`, CSF `CC_DENY_PORTS` style)
 - Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
@@ -84,6 +85,7 @@ imports = [
 ```nix
 services.nixCsf = {
   enable = true;
+  threatProfile = "custom"; # custom | server | workstation | edge
 
   trustedInterfaces = [ "tailscale0" "wg0" ];
   openTCPPorts = [ 22 80 443 ];
@@ -164,6 +166,19 @@ services.nixCsf = {
 ## Use Cases
 
 For a full operator-oriented catalog (including strict/fail-closed and offline patterns), see `docs/USE_CASES.md`.
+
+### Threat profile quick-starts
+
+```nix
+# Server baseline: enables balanced flood controls + logDrops + hourly refresh.
+services.nixCsf.threatProfile = "server";
+
+# Workstation baseline: no inbound open TCP/UDP ports by default.
+services.nixCsf.threatProfile = "workstation";
+
+# Edge baseline: opens 22/443 TCP + 53/51820 UDP and enables stricter flood controls.
+services.nixCsf.threatProfile = "edge";
+```
 
 ### 1) Public web server with conservative DDoS posture
 
@@ -251,6 +266,9 @@ Expected remote JSON structure:
 - This module expects `networking.firewall.enable = false` (asserted by the module).
 - Rule apply service runs before network stack comes up (`network-pre.target`).
 - Refresh service runs after network is online and can be periodic via timer.
+- With `blocklists.failOpen = false` or `clusterPolicy.failOpen = false`, `apply` requires cached data.
+  Run `sudo systemctl start nix-csf-refresh.service` at least once after network is available.
+- Rule evaluation is deny-first for static allow/deny CIDRs (`denyIPv4/denyIPv6` are matched before `allowIPv4/allowIPv6`).
 - Generated runtime artifacts live in `/var/lib/nix-csf`.
 
 ## Validation
@@ -271,9 +289,10 @@ The validation script runs:
 
 - `checks.x86_64-linux.version-semver` (VERSION SemVer gate)
 - `checks.x86_64-linux.eval-basic` (module evaluation wiring)
+- `checks.x86_64-linux.eval-profiles` (profile defaults + override precedence)
 - `checks.x86_64-linux.shellcheck` (script lint)
 - `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
-- `checks.x86_64-linux.nix-csf-integration` (fail-closed and legacy-mode integration coverage)
+- `checks.x86_64-linux.nix-csf-integration` (fail-closed, legacy-mode, and edge-profile integration coverage)
 
 If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
 

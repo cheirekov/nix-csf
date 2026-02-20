@@ -6,6 +6,7 @@ let
     mkDefault
     mkEnableOption
     mkIf
+    mkMerge
     mkOption
     removeSuffix
     unique
@@ -92,6 +93,7 @@ let
 
   runtimeConfigFile = (pkgs.formats.json { }).generate "nix-csf-runtime-config.json" {
     moduleVersion = cfg.moduleVersion;
+    threatProfile = cfg.threatProfile;
     defaultPolicy = cfg.defaultPolicy;
     forwardPolicy = cfg.forwardPolicy;
     trustedInterfaces = cfg.trustedInterfaces;
@@ -162,10 +164,67 @@ let
   };
 
   validCountryCode = cc: builtins.match "^[A-Z]{2}$" (toUpper cc) != null;
+
+  threatProfileDefaults = {
+    custom = { };
+    server = {
+      services.nixCsf = {
+        logDrops = mkDefault true;
+        rateLimits.synFlood = {
+          enable = mkDefault true;
+          preset = mkDefault "balanced";
+        };
+        rateLimits.connFlood = {
+          enable = mkDefault true;
+          preset = mkDefault "balanced";
+        };
+        autoRefresh.onCalendar = mkDefault "hourly";
+      };
+    };
+    workstation = {
+      services.nixCsf = {
+        openTCPPorts = mkDefault [ ];
+        openUDPPorts = mkDefault [ ];
+        allowICMP = mkDefault true;
+        logDrops = mkDefault true;
+      };
+    };
+    edge = {
+      services.nixCsf = {
+        openTCPPorts = mkDefault [ 22 443 ];
+        openUDPPorts = mkDefault [ 53 51820 ];
+        logDrops = mkDefault true;
+        rateLimits.synFlood = {
+          enable = mkDefault true;
+          preset = mkDefault "strict";
+        };
+        rateLimits.connFlood = {
+          enable = mkDefault true;
+          preset = mkDefault "balanced";
+        };
+        autoRefresh.onCalendar = mkDefault "hourly";
+      };
+    };
+  };
+
 in
 {
   options.services.nixCsf = {
     enable = mkEnableOption "CSF-inspired nftables firewall with NixOS-native options";
+
+    threatProfile = mkOption {
+      type = types.enum [ "custom" "server" "workstation" "edge" ];
+      default = "custom";
+      example = "server";
+      description = ''
+        Preset threat profile that applies `mkDefault` values to related options.
+        Explicit option values always override profile defaults.
+        - custom: keep module baseline defaults
+        - server: enable balanced flood controls, drop logging, hourly refresh
+        - workstation: no inbound open TCP/UDP ports by default
+        - edge: stricter flood controls and edge-oriented open ports
+      '';
+    };
 
     moduleVersion = mkOption {
       type = types.str;
@@ -633,7 +692,11 @@ in
     };
   };
 
-  config = mkIf cfg.enable {
+  config = mkMerge [
+    (mkIf (cfg.enable && cfg.threatProfile == "server") threatProfileDefaults.server)
+    (mkIf (cfg.enable && cfg.threatProfile == "workstation") threatProfileDefaults.workstation)
+    (mkIf (cfg.enable && cfg.threatProfile == "edge") threatProfileDefaults.edge)
+    (mkIf cfg.enable {
     assertions = [
       {
         assertion = !config.networking.firewall.enable;
@@ -780,5 +843,6 @@ in
         Persistent = cfg.autoRefresh.persistent;
       };
     };
-  };
+    })
+  ];
 }

@@ -20,6 +20,39 @@ sudo nft list table inet nix_csf
 sudo journalctl -u nix-csf-refresh.service -n 80 --no-pager
 ```
 
+If you run strict mode (`blocklists.failOpen = false` or `clusterPolicy.failOpen = false`),
+warm caches after deployment:
+
+```bash
+sudo systemctl start nix-csf-refresh.service
+```
+
+## Threat profile quick-starts (`T-012`)
+
+Use `services.nixCsf.threatProfile` for fast baseline posture, then override only what is host-specific.
+
+```nix
+# Server baseline: balanced flood controls + logDrops + hourly refresh.
+services.nixCsf.threatProfile = "server";
+
+# Workstation baseline: closes inbound defaults (no open TCP/UDP ports).
+services.nixCsf.threatProfile = "workstation";
+
+# Edge baseline: opens 22/443 TCP + 53/51820 UDP with stricter SYN flood control.
+services.nixCsf.threatProfile = "edge";
+```
+
+Explicit options still win over profile defaults:
+
+```nix
+services.nixCsf = {
+  enable = true;
+  threatProfile = "edge";
+  openTCPPorts = [ 8443 ]; # overrides profile openTCPPorts
+  logDrops = false;        # overrides profile logDrops=true
+};
+```
+
 ## 1) Public web server with conservative flood controls
 
 Use this when the node serves HTTP/HTTPS directly.

@@ -522,6 +522,8 @@ if [[ "${blocklists_enabled}" == "true" ]]; then
           fail "failed to fetch ${url} and no cache exists"
         fi
       fi
+    elif [[ "${blocklists_fail_open}" != "true" && ! -s "${cache_file}" ]]; then
+      fail "blocklists.failOpen=false and no cached data is available for ${url}"
     fi
 
     append_if_exists "${cache_file}" "${TMP_DIR}/feeds.raw"
@@ -550,7 +552,9 @@ if [[ "${cluster_policy_enabled}" == "true" ]]; then
 
   if [[ "${MODE}" == "refresh" ]]; then
     cluster_fetch_rc=0
-    if ! fetch_cluster_policy_to_cache "${cluster_policy_url}" "${cluster_policy_cache}"; then
+    if fetch_cluster_policy_to_cache "${cluster_policy_url}" "${cluster_policy_cache}"; then
+      cluster_fetch_rc=0
+    else
       cluster_fetch_rc=$?
       if [[ "${cluster_fetch_rc}" -eq 2 ]]; then
         if [[ -s "${cluster_policy_cache}" ]]; then
@@ -568,6 +572,8 @@ if [[ "${cluster_policy_enabled}" == "true" ]]; then
         fail "failed to fetch cluster policy ${cluster_policy_url} and no cache exists"
       fi
     fi
+  elif [[ "${cluster_policy_fail_open}" != "true" && ! -s "${cluster_policy_cache}" ]]; then
+    fail "clusterPolicy.failOpen=false and no cached policy is available for ${cluster_policy_url}"
   fi
 
   if [[ -s "${cluster_policy_cache}" ]]; then
@@ -669,9 +675,6 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
     fi
   done
 
-  echo "    ip saddr @allow_ipv4 accept"
-  echo "    ip6 saddr @allow_ipv6 accept"
-
   if [[ -n "${syn_rate_limit}" ]]; then
     printf '    tcp flags syn ct state new limit rate over %s drop\n' "${syn_rate_limit}"
   fi
@@ -688,6 +691,9 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
 
   echo "    ip saddr @deny_ipv4 drop"
   echo "    ip6 saddr @deny_ipv6 drop"
+
+  echo "    ip saddr @allow_ipv4 accept"
+  echo "    ip6 saddr @allow_ipv6 accept"
 
   if [[ "${country_enabled}" == "true" && "${country_mode}" == "deny" ]]; then
     echo "    ip saddr @country_ipv4 drop"

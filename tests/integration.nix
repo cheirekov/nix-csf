@@ -16,12 +16,44 @@ pkgs.testers.runNixOSTest {
       synRateLimit = "30/second";
       forwardPolicy = "accept";
       logDrops = true;
+      autoRefresh.runOnBoot = false;
+    };
+
+    environment.systemPackages = [ pkgs.nftables ];
+    system.stateVersion = "24.11";
+  };
+
+  nodes.blockapplyfailclosed = { ... }: {
+    imports = [ module ];
+
+    networking.hostName = "nix-csf-blockapplyfailclosed";
+    networking.firewall.enable = false;
+
+    services.nixCsf = {
+      enable = true;
+      openTCPPorts = [ 22 ];
       blocklists = {
         enable = true;
         urls = [ "file:///etc/nix-csf-missing-feed.txt" ];
         requireHTTPS = false;
         failOpen = false;
       };
+      autoRefresh.runOnBoot = false;
+    };
+
+    environment.systemPackages = [ pkgs.nftables ];
+    system.stateVersion = "24.11";
+  };
+
+  nodes.profileedge = { ... }: {
+    imports = [ module ];
+
+    networking.hostName = "nix-csf-profileedge";
+    networking.firewall.enable = false;
+
+    services.nixCsf = {
+      enable = true;
+      threatProfile = "edge";
       autoRefresh.runOnBoot = false;
     };
 
@@ -54,7 +86,7 @@ pkgs.testers.runNixOSTest {
 
   testScript = ''
     start_all()
-    failclosed, good = machines
+    blockapplyfailclosed, failclosed, good, profileedge = machines
 
     good.wait_for_unit("multi-user.target")
     good.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
@@ -63,11 +95,23 @@ pkgs.testers.runNixOSTest {
     good.succeed("grep -F 'tcp flags syn ct state new limit rate over 30/second drop' /var/lib/nix-csf/generated-ruleset.nft")
     good.succeed("grep -F 'iifname \"wg0\" accept' /var/lib/nix-csf/generated-ruleset.nft")
     good.succeed("grep -F 'type filter hook forward priority filter; policy accept;' /var/lib/nix-csf/generated-ruleset.nft")
-    good.succeed("grep -F 'ip saddr @feed_ipv4 drop' /var/lib/nix-csf/generated-ruleset.nft")
     good.fail("test -e /var/lib/nix-csf/metrics.prom")
-    good.fail("systemctl start nix-csf-refresh.service")
-    good.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx exit-code")
-    good.succeed("journalctl -u nix-csf-refresh.service -n 20 | grep -F 'failed to fetch file:///etc/nix-csf-missing-feed.txt'")
+
+    profileedge.wait_for_unit("multi-user.target")
+    profileedge.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
+    profileedge.succeed("grep -E 'tcp dport .*22' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("grep -E 'tcp dport .*443' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("grep -E 'udp dport .*53' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("grep -E 'udp dport .*51820' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("grep -F 'syn_flood_v4 { ip saddr limit rate over 25/second burst 50 packets } drop' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("grep -F 'conn_flood_v4 { ip saddr limit rate over 120/second burst 240 packets } drop' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("grep -F 'log prefix \"nix-csf drop: \" level warn' /var/lib/nix-csf/generated-ruleset.nft")
+
+    blockapplyfailclosed.wait_for_unit("multi-user.target")
+    blockapplyfailclosed.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")
+    blockapplyfailclosed.fail("test -e /var/lib/nix-csf/generated-ruleset.nft")
+    blockapplyfailclosed.fail("nft list table inet nix_csf")
+    blockapplyfailclosed.succeed("journalctl -u nix-csf-apply.service -n 30 | grep -F 'blocklists.failOpen=false and no cached data is available for file:///etc/nix-csf-missing-feed.txt'")
 
     failclosed.wait_for_unit("multi-user.target")
     failclosed.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")

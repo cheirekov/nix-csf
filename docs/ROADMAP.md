@@ -24,7 +24,9 @@
 - Country policy modes (`deny` and optional `allow`). [done 2026-02-19]
 - Per-port country controls (deny mode / `CC_DENY_PORTS` style). [done 2026-02-19]
 - Stateful rate-limit presets (SYN flood, connection flood). [done 2026-02-19]
-- Preset threat profiles (server, workstation, edge node).
+- Preset threat profiles (server, workstation, edge node). [done 2026-02-20]
+- Country allow-by-port controls (`CC_ALLOW_PORTS` parity).
+- ICMP policy profiles (type/rate controls).
 
 ## Phase 3 — Operations maturity
 
@@ -32,6 +34,10 @@
 - Optional Prometheus textfile metrics. [baseline done 2026-02-19]
 - Cluster policy propagation model. [baseline done 2026-02-19]
 - Operator use-case catalog and deployment examples. [baseline done 2026-02-19]
+- Cluster policy schema v2 (`allow`/`deny`/`ignore`, revision/TTL/signing).
+- Dynamic offender propagation across cluster nodes.
+- Cluster auth/token lifecycle and secret-management guidance.
+- Grafana/Prometheus monitoring pack and alert rules.
 - Troubleshooting command set and runbook.
 
 ## Phase 4 — Release quality

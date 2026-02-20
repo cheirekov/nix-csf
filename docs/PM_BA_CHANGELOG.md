@@ -303,3 +303,68 @@
 - Open follow-ups:
   - preset threat profiles (`T-012`),
   - troubleshooting command set and runbook (`T-013`).
+
+## 2026-02-19 — Batch STRICT-SEMANTICS-014
+
+- Ticket(s): `T-014`
+- Summary:
+  - hardened apply-time strict semantics in `nix-csf-apply.sh`:
+    - when `blocklists.failOpen = false`, `apply` now fails if required feed cache is absent,
+    - when `clusterPolicy.failOpen = false`, `apply` now fails if cluster policy cache is absent,
+  - fixed cluster fetch return-code handling so invalid JSON is classified correctly on refresh,
+  - changed static rule evaluation order to deny-first for explicit CIDR sets:
+    - `denyIPv4/denyIPv6` now evaluate before `allowIPv4/allowIPv6`,
+  - expanded integration coverage with deterministic strict apply failure assertions for blocklist cache-missing scenarios,
+  - expanded PM backlog with prioritized centralized-control tickets:
+    - `T-015` cluster schema v2 (`allow`/`deny`/`ignore`, revision/TTL/signing),
+    - `T-016` dynamic offender propagation,
+    - `T-017` ICMP policy profiles,
+    - `T-018` country allow-by-port parity,
+    - `T-019` Grafana/Prometheus monitoring pack,
+    - `T-020` cluster auth/token lifecycle and secret handling.
+- BA requirement mapping:
+  - improves fail-closed predictability and addresses core operator concerns about centralized behavior safety and policy precedence.
+- PM milestone mapping:
+  - closes strict-semantics hardening lane and seeds the next centralized-control implementation queue.
+- Risk impact:
+  - `medium` (strict-mode behavior is intentionally tighter; hosts with strict settings now require cache warmup before apply succeeds).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh && bash -n scripts/validate.sh && bash -n scripts/release.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration"`
+  - `./scripts/validate.sh`
+- Open follow-ups:
+  - preset threat profiles (`T-012`),
+  - cluster schema v2 (`T-015`),
+  - dynamic offender propagation (`T-016`).
+
+## 2026-02-20 — Batch THREAT-PROFILES-012
+
+- Ticket(s): `T-012`
+- Summary:
+  - introduced profile API:
+    - `services.nixCsf.threatProfile = "custom"|"server"|"workstation"|"edge"`,
+  - implemented profile defaults with explicit-override safety via `mkDefault`,
+  - defined profile baselines:
+    - `server`: enables balanced SYN/connection flood controls, `logDrops = true`, `autoRefresh.onCalendar = "hourly"`,
+    - `workstation`: defaults to no inbound open TCP/UDP ports,
+    - `edge`: defaults to `openTCPPorts = [ 22 443 ]`, `openUDPPorts = [ 53 51820 ]`, strict SYN flood + balanced connection flood controls,
+  - added lightweight profile evaluation check:
+    - `checks.<system>.eval-profiles`,
+  - updated validation pipeline to build the new profile check in `scripts/validate.sh`,
+  - extended integration VM coverage with deterministic `profileedge` runtime assertions,
+  - added profile quick-start/override documentation in README and use-case catalog.
+- BA requirement mapping:
+  - delivers safer, faster onboarding for common host roles while preserving declarative per-host control.
+- PM milestone mapping:
+  - closes Phase 2 preset threat profiles and advances readiness for centralized cluster governance work.
+- Risk impact:
+  - `low` (opt-in profile selection; explicit host config keeps highest precedence).
+- Validation evidence:
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs`
+  - `./scripts/validate.sh`
+- Open follow-ups:
+  - cluster schema v2 (`T-015`),
+  - dynamic offender propagation (`T-016`),
+  - ICMP policy profiles (`T-017`).
