@@ -154,6 +154,16 @@ let
       authTokenFile = cfg.clusterPolicy.authTokenFile;
       nodeId = cfg.clusterPolicy.nodeId;
     };
+    dynamicOffenders = {
+      enable = cfg.dynamicOffenders.enable;
+      url = cfg.dynamicOffenders.url;
+      failOpen = cfg.dynamicOffenders.failOpen;
+      requireHTTPS = cfg.dynamicOffenders.requireHTTPS;
+      authTokenFile = cfg.dynamicOffenders.authTokenFile;
+      nodeId = cfg.dynamicOffenders.nodeId;
+      defaultEntryTTLSeconds = cfg.dynamicOffenders.defaultEntryTTLSeconds;
+      maxEntries = cfg.dynamicOffenders.maxEntries;
+    };
     observability = {
       structuredLogging = cfg.observability.structuredLogging;
       metrics = {
@@ -635,6 +645,93 @@ in
       };
     };
 
+    dynamicOffenders = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable dynamic temporary offender propagation from a remote JSON endpoint.
+          Entries are materialized into timeout-based nftables sets.
+        '';
+      };
+
+      url = mkOption {
+        type = types.str;
+        default = "";
+        example = "https://policy.example.org/nix-csf/dynamic-offenders.json";
+        description = ''
+          Endpoint that returns a dynamic offender snapshot with optional keys:
+          - schemaVersion (1)
+          - revision (string or number)
+          - ttlSeconds (non-negative integer; snapshot cache-age guard)
+          - banIPv4
+          - banIPv6
+
+          `banIPv4` and `banIPv6` entries may be:
+          - string CIDR (uses defaultEntryTTLSeconds)
+          - object:
+            - cidr (string, required)
+            - ttlSeconds (non-negative integer, optional)
+            - expiresAt (unix epoch seconds, optional)
+            - reason (string, optional)
+        '';
+      };
+
+      failOpen = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          If true, fetch/schema/cache-age failures are tolerated and dynamic bans are skipped.
+          If false, failures are fail-closed when no valid cache is available.
+        '';
+      };
+
+      requireHTTPS = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Require dynamicOffenders.url to use https://.
+          Disable only for controlled local/offline testing.
+        '';
+      };
+
+      authTokenFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "/run/secrets/nix-csf-dynamic-token";
+        description = ''
+          Optional absolute path to a bearer token file for dynamic offender requests.
+          Content is sent as Authorization: Bearer <token>.
+        '';
+      };
+
+      nodeId = mkOption {
+        type = types.str;
+        default = "";
+        example = "web-eu-01";
+        description = ''
+          Optional node identifier sent as HTTP header:
+          X-Nix-Csf-Node: <nodeId>.
+        '';
+      };
+
+      defaultEntryTTLSeconds = mkOption {
+        type = types.ints.positive;
+        default = 900;
+        description = ''
+          Fallback TTL for dynamic entries that do not provide ttlSeconds/expiresAt.
+        '';
+      };
+
+      maxEntries = mkOption {
+        type = types.ints.positive;
+        default = 20000;
+        description = ''
+          Maximum number of dynamic entries accepted per snapshot (banIPv4 + banIPv6).
+        '';
+      };
+    };
+
     observability = {
       structuredLogging = mkOption {
         type = types.bool;
@@ -779,6 +876,20 @@ in
       {
         assertion = cfg.clusterPolicy.authTokenFile == null || hasPrefix "/" cfg.clusterPolicy.authTokenFile;
         message = "services.nixCsf.clusterPolicy.authTokenFile must be an absolute path when set.";
+      }
+      {
+        assertion = !cfg.dynamicOffenders.enable || cfg.dynamicOffenders.url != "";
+        message = "services.nixCsf.dynamicOffenders.enable requires dynamicOffenders.url.";
+      }
+      {
+        assertion = !cfg.dynamicOffenders.enable
+          || !cfg.dynamicOffenders.requireHTTPS
+          || isHttpsUrl cfg.dynamicOffenders.url;
+        message = "services.nixCsf.dynamicOffenders.url must use https:// when dynamicOffenders.requireHTTPS = true.";
+      }
+      {
+        assertion = cfg.dynamicOffenders.authTokenFile == null || hasPrefix "/" cfg.dynamicOffenders.authTokenFile;
+        message = "services.nixCsf.dynamicOffenders.authTokenFile must be an absolute path when set.";
       }
       {
         assertion = !cfg.observability.metrics.enable || hasPrefix "/" cfg.observability.metrics.outputFile;

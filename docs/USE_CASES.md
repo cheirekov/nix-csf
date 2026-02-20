@@ -22,7 +22,8 @@ sudo nft list table inet nix_csf
 sudo journalctl -u nix-csf-refresh.service -n 80 --no-pager
 ```
 
-If you run strict mode (`blocklists.failOpen = false` or `clusterPolicy.failOpen = false`),
+If you run strict mode (`blocklists.failOpen = false`, `clusterPolicy.failOpen = false`, or
+`dynamicOffenders.failOpen = false`),
 warm caches after deployment:
 
 ```bash
@@ -185,7 +186,40 @@ services.nixCsf = {
 };
 ```
 
-## 7) Prometheus + structured logs for operations
+## 7) Dynamic temporary offender propagation (TTL)
+
+Use this when a centralized detector/control-plane publishes temporary bans that should expire automatically.
+
+```nix
+services.nixCsf = {
+  enable = true;
+  dynamicOffenders = {
+    enable = true;
+    url = "https://policy.example.org/nix-csf/dynamic-offenders.json";
+    failOpen = false;
+    authTokenFile = "/run/secrets/nix-csf-dynamic-token";
+    nodeId = "edge-us-01";
+    defaultEntryTTLSeconds = 900;
+    maxEntries = 20000;
+  };
+};
+```
+
+Expected dynamic snapshot keys:
+
+- `schemaVersion` (1 or 2)
+- `revision` (string/number)
+- `ttlSeconds` (non-negative integer)
+- `banIPv4` (array of CIDR strings or objects with `cidr` + `ttlSeconds`/`expiresAt`)
+- `banIPv6` (same format as `banIPv4`)
+
+Runtime notes:
+
+- `ttlSeconds` controls snapshot cache staleness.
+- strict mode (`dynamicOffenders.failOpen = false`) fails closed for expired cache.
+- temporary dynamic bans are evaluated after explicit allow rules so emergency allow/ignore overrides still work.
+
+## 8) Prometheus + structured logs for operations
 
 Use this when you need host-level firewall health and source counts in monitoring.
 
@@ -209,7 +243,7 @@ sudo cat /var/lib/node_exporter/textfile_collector/nix-csf.prom
 sudo journalctl -u nix-csf-apply.service -n 50 --no-pager
 ```
 
-## 8) Global opened ports baseline
+## 9) Global opened ports baseline
 
 Use this when you want globally exposed ports independent of geo filters.
 
@@ -221,7 +255,7 @@ services.nixCsf = {
 };
 ```
 
-## 9) Ports opened only to selected countries
+## 10) Ports opened only to selected countries
 
 Use country allow-mode with strict behavior.
 
@@ -238,7 +272,7 @@ services.nixCsf = {
 };
 ```
 
-## 10) ICMP baseline and roadmap
+## 11) ICMP baseline and roadmap
 
 Current module supports global ICMP enable/disable:
 

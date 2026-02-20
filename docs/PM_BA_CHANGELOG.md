@@ -410,3 +410,50 @@
   - firewall coexistence profile (`T-021`),
   - token lifecycle/secret handling (`T-020`),
   - Grafana/Prometheus monitoring pack (`T-019`).
+
+## 2026-02-20 — Batch DYNAMIC-OFFENDERS-016
+
+- Ticket(s): `T-016`
+- Summary:
+  - added module API for dynamic offender snapshots:
+    - `services.nixCsf.dynamicOffenders.{enable,url,failOpen,requireHTTPS,authTokenFile,nodeId,defaultEntryTTLSeconds,maxEntries}`,
+  - added module assertions for dynamic snapshot URL/auth path safety,
+  - implemented dynamic snapshot runtime pipeline in `nix-csf-apply.sh`:
+    - refresh/apply cache semantics with strict fail-closed support,
+    - schema validation for dynamic payload (`banIPv4`/`banIPv6` entries),
+    - snapshot TTL cache-age guard via payload `ttlSeconds`,
+    - per-entry expiration via `ttlSeconds` or `expiresAt` (fallback to `defaultEntryTTLSeconds`),
+    - max-entry guardrail (`maxEntries`),
+    - nft timeout-set rendering:
+      - `dynamic_ban_ipv4`,
+      - `dynamic_ban_ipv6`,
+  - integrated dynamic enforcement into rule chain with allow precedence retained,
+  - added dynamic observability:
+    - structured `dynamic_offenders_meta` event,
+    - Prometheus feature/source/set metrics and snapshot health gauges
+      (`schema`, `cache_age`, `ttl`, `cache_expired`),
+  - expanded tests:
+    - smoke suite covers timeout rendering, expired-entry exclusion, and allow-vs-dynamic precedence ordering,
+    - integration suite adds strict expired-cache scenario (`dynamicexpired`),
+  - updated docs:
+    - README dynamic configuration and payload examples,
+    - architecture/runtime model updates,
+    - operator use-case catalog dynamic section,
+    - roadmap + delivery board/session brief alignment.
+- BA requirement mapping:
+  - delivers CSF-like temporary cluster block behavior with explicit TTL and deterministic precedence in a Nix-native runtime model.
+- PM milestone mapping:
+  - closes dynamic offender propagation baseline and promotes Docker coexistence profile (`T-021`) as next delivery focus.
+- Risk impact:
+  - `medium` (new strict path can fail closed by design when dynamic snapshot cache is missing/expired under `failOpen = false`).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-smoke" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs`
+  - `./scripts/validate.sh`
+- Open follow-ups:
+  - firewall coexistence profile (`T-021`),
+  - token lifecycle/secret handling (`T-020`),
+  - Grafana/Prometheus monitoring pack (`T-019`),
+  - hybrid local+remote list reconciliation (`T-022`).

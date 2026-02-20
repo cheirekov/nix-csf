@@ -205,6 +205,44 @@ fetch_cluster_policy_to_cache() {
   return 1
 }
 
+fetch_dynamic_offenders_to_cache() {
+  local url="$1"
+  local cache_file="$2"
+  local tmp_file="${TMP_DIR}/dynamic-offenders-download.json"
+  local -a curl_args=(--fail --location --silent --show-error --max-time 40)
+
+  if [[ -n "${dynamic_offenders_node_id}" ]]; then
+    curl_args+=(-H "X-Nix-Csf-Node: ${dynamic_offenders_node_id}")
+  fi
+
+  if [[ -n "${dynamic_offenders_auth_token_file}" ]]; then
+    if [[ ! -f "${dynamic_offenders_auth_token_file}" ]]; then
+      fail "dynamic offenders authTokenFile does not exist: ${dynamic_offenders_auth_token_file}"
+    fi
+
+    local auth_token
+    auth_token="$(tr -d '\r\n' < "${dynamic_offenders_auth_token_file}")"
+    if [[ -z "${auth_token}" ]]; then
+      fail "dynamic offenders authTokenFile is empty: ${dynamic_offenders_auth_token_file}"
+    fi
+
+    curl_args+=(-H "Authorization: Bearer ${auth_token}")
+  fi
+
+  if curl "${curl_args[@]}" "${url}" -o "${tmp_file}"; then
+    if ! jq -e . "${tmp_file}" >/dev/null 2>&1; then
+      return 2
+    fi
+    if ! validate_dynamic_offenders_schema "${tmp_file}"; then
+      return 3
+    fi
+    install -m 0640 "${tmp_file}" "${cache_file}"
+    return 0
+  fi
+
+  return 1
+}
+
 validate_cluster_policy_schema() {
   local policy_file="$1"
 
@@ -257,6 +295,129 @@ validate_cluster_policy_schema() {
   ' "${policy_file}" >/dev/null 2>&1
 }
 
+validate_dynamic_offenders_schema() {
+  local policy_file="$1"
+
+  jq -e '
+    def is_nonneg_int:
+      (type == "number")
+      and ((floor) == .)
+      and (. >= 0);
+
+    def offender_entry_ok:
+      (type == "string")
+      or (
+        type == "object"
+        and ((.cidr? | type) == "string")
+        and (
+          (.ttlSeconds? == null)
+          or ((.ttlSeconds | is_nonneg_int))
+        )
+        and (
+          (.expiresAt? == null)
+          or ((.expiresAt | is_nonneg_int))
+        )
+        and (
+          (.reason? == null)
+          or ((.reason | type) == "string")
+        )
+      );
+
+    type == "object"
+    and (
+      (.schemaVersion? == null)
+      or (.schemaVersion == 1)
+      or (.schemaVersion == "1")
+      or (.schemaVersion == 2)
+      or (.schemaVersion == "2")
+    )
+    and (
+      (.revision? == null)
+      or ((.revision | type) == "string")
+      or ((.revision | type) == "number")
+    )
+    and (
+      (.ttlSeconds? == null)
+      or ((.ttlSeconds | is_nonneg_int))
+    )
+    and (
+      (.banIPv4? == null)
+      or ((.banIPv4 | type) == "array" and all(.banIPv4[]; offender_entry_ok))
+    )
+    and (
+      (.banIPv6? == null)
+      or ((.banIPv6 | type) == "array" and all(.banIPv6[]; offender_entry_ok))
+    )
+  ' "${policy_file}" >/dev/null 2>&1
+}
+
+sanitize_dynamic_entry_pairs() {
+  local in_file="$1"
+  local out_file="$2"
+
+  awk -F'|' '
+    {
+      cidr = $1;
+      ttl = $2;
+      gsub(/\r/, "", cidr);
+      sub(/#.*/, "", cidr);
+      gsub(/^[ \t]+|[ \t]+$/, "", cidr);
+      gsub(/^[ \t]+|[ \t]+$/, "", ttl);
+      if (cidr != "" && ttl ~ /^[0-9]+$/ && ttl > 0) {
+        printf "%s|%s\n", cidr, ttl;
+      }
+    }
+  ' "${in_file}" > "${out_file}"
+}
+
+build_dynamic_timeout_set_v4() {
+  local in_file="$1"
+  local out_file="$2"
+
+  if [[ ! -s "${in_file}" ]]; then
+    : > "${out_file}"
+    return 0
+  fi
+
+  awk -F'|' '
+    $1 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}(\/[0-9]{1,2})?$/ && $2 ~ /^[0-9]+$/ && $2 > 0 {
+      ttl = $2 + 0;
+      if (!($1 in best) || ttl > best[$1]) {
+        best[$1] = ttl;
+      }
+    }
+    END {
+      for (cidr in best) {
+        printf "%s timeout %ss\n", cidr, best[cidr];
+      }
+    }
+  ' "${in_file}" | sort > "${out_file}"
+}
+
+build_dynamic_timeout_set_v6() {
+  local in_file="$1"
+  local out_file="$2"
+
+  if [[ ! -s "${in_file}" ]]; then
+    : > "${out_file}"
+    return 0
+  fi
+
+  awk -F'|' '
+    $1 ~ /^[0-9A-Fa-f:]+(\/[0-9]{1,3})?$/ && index($1, ":") > 0 && $2 ~ /^[0-9]+$/ && $2 > 0 {
+      ttl = $2 + 0;
+      if (!($1 in best) || ttl > best[$1]) {
+        best[$1] = ttl;
+      }
+    }
+    END {
+      for (cidr in best) {
+        printf "%s timeout %ss\n", cidr, best[cidr];
+      }
+    }
+  ' "${in_file}" | sort > "${out_file}"
+}
+
 fetch_country_data_for_code() {
   local cc_lc="$1"
   local out_v4="$2"
@@ -305,10 +466,11 @@ emit_set() {
   local name="$1"
   local nft_type="$2"
   local source_file="$3"
+  local set_flags="${4:-interval}"
 
   echo "  set ${name} {"
   echo "    type ${nft_type}"
-  echo "    flags interval"
+  echo "    flags ${set_flags}"
   if [[ -s "${source_file}" ]]; then
     echo "    elements = {"
     awk '
@@ -375,6 +537,7 @@ write_metrics() {
     printf 'nix_csf_feature_enabled{feature="country_port_deny"} %s\n' "$(bool_to_num "${country_port_deny_enabled}")"
     printf 'nix_csf_feature_enabled{feature="blocklists"} %s\n' "$(bool_to_num "${blocklists_enabled}")"
     printf 'nix_csf_feature_enabled{feature="cluster_policy"} %s\n' "$(bool_to_num "${cluster_policy_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="dynamic_offenders"} %s\n' "$(bool_to_num "${dynamic_offenders_enabled}")"
     printf 'nix_csf_feature_enabled{feature="log_drops"} %s\n' "$(bool_to_num "${log_drops}")"
     printf 'nix_csf_feature_enabled{feature="legacy_syn_rate_limit"} %s\n' "$(bool_to_num "${legacy_syn_rate_limit_enabled}")"
     printf 'nix_csf_feature_enabled{feature="syn_flood"} %s\n' "$(bool_to_num "${syn_flood_enabled}")"
@@ -397,12 +560,15 @@ write_metrics() {
     printf 'nix_csf_set_entries{set="cluster_deny_ipv6"} %s\n' "${cluster_deny_v6_count}"
     printf 'nix_csf_set_entries{set="cluster_ignore_ipv4"} %s\n' "${cluster_ignore_v4_count}"
     printf 'nix_csf_set_entries{set="cluster_ignore_ipv6"} %s\n' "${cluster_ignore_v6_count}"
+    printf 'nix_csf_set_entries{set="dynamic_ban_ipv4"} %s\n' "${dynamic_ban_v4_count}"
+    printf 'nix_csf_set_entries{set="dynamic_ban_ipv6"} %s\n' "${dynamic_ban_v6_count}"
     echo "# HELP nix_csf_source_count Number of configured source identifiers."
     echo "# TYPE nix_csf_source_count gauge"
     printf 'nix_csf_source_count{source="country_codes"} %s\n' "${#country_codes[@]}"
     printf 'nix_csf_source_count{source="country_port_deny_codes"} %s\n' "${#country_port_deny_codes[@]}"
     printf 'nix_csf_source_count{source="blocklist_urls"} %s\n' "${#blocklist_urls[@]}"
     printf 'nix_csf_source_count{source="cluster_policy_urls"} %s\n' "${cluster_policy_source_count}"
+    printf 'nix_csf_source_count{source="dynamic_offender_urls"} %s\n' "${dynamic_offenders_source_count}"
     echo "# HELP nix_csf_cluster_policy_schema_version Active cluster policy schema version."
     echo "# TYPE nix_csf_cluster_policy_schema_version gauge"
     printf 'nix_csf_cluster_policy_schema_version %s\n' "${cluster_policy_schema_version}"
@@ -415,6 +581,18 @@ write_metrics() {
     echo "# HELP nix_csf_cluster_policy_cache_expired Cached cluster policy expiration status (1=expired)."
     echo "# TYPE nix_csf_cluster_policy_cache_expired gauge"
     printf 'nix_csf_cluster_policy_cache_expired %s\n' "$(bool_to_num "${cluster_policy_cache_expired}")"
+    echo "# HELP nix_csf_dynamic_snapshot_schema_version Active dynamic snapshot schema version."
+    echo "# TYPE nix_csf_dynamic_snapshot_schema_version gauge"
+    printf 'nix_csf_dynamic_snapshot_schema_version %s\n' "${dynamic_offenders_schema_version}"
+    echo "# HELP nix_csf_dynamic_snapshot_cache_age_seconds Age of cached dynamic snapshot in seconds."
+    echo "# TYPE nix_csf_dynamic_snapshot_cache_age_seconds gauge"
+    printf 'nix_csf_dynamic_snapshot_cache_age_seconds %s\n' "${dynamic_offenders_cache_age_seconds}"
+    echo "# HELP nix_csf_dynamic_snapshot_ttl_seconds Dynamic snapshot TTL in seconds (0 when unset)."
+    echo "# TYPE nix_csf_dynamic_snapshot_ttl_seconds gauge"
+    printf 'nix_csf_dynamic_snapshot_ttl_seconds %s\n' "${dynamic_offenders_ttl_seconds}"
+    echo "# HELP nix_csf_dynamic_snapshot_cache_expired Cached dynamic snapshot expiration status (1=expired)."
+    echo "# TYPE nix_csf_dynamic_snapshot_cache_expired gauge"
+    printf 'nix_csf_dynamic_snapshot_cache_expired %s\n' "$(bool_to_num "${dynamic_offenders_cache_expired}")"
     echo "# HELP nix_csf_rate_limit_burst_packets Burst thresholds for rate-limited controls."
     echo "# TYPE nix_csf_rate_limit_burst_packets gauge"
     printf 'nix_csf_rate_limit_burst_packets{limit="syn_flood",preset="%s"} %s\n' "${syn_flood_preset}" "${syn_flood_burst}"
@@ -446,9 +624,20 @@ conn_flood_burst="$(jq -r '.rateLimits.connFlood.burst // 0' "${CONFIG_FILE}")"
 structured_logging="$(jq -r '.observability.structuredLogging // false' "${CONFIG_FILE}")"
 metrics_enabled="$(jq -r '.observability.metrics.enable // false' "${CONFIG_FILE}")"
 metrics_output_file="$(jq -r '.observability.metrics.outputFile // "/var/lib/nix-csf/metrics.prom"' "${CONFIG_FILE}")"
+dynamic_offenders_enabled="$(jq -r '.dynamicOffenders.enable // false' "${CONFIG_FILE}")"
+dynamic_offenders_default_entry_ttl_seconds="$(jq -r '.dynamicOffenders.defaultEntryTTLSeconds // 900' "${CONFIG_FILE}")"
+dynamic_offenders_max_entries="$(jq -r '.dynamicOffenders.maxEntries // 20000' "${CONFIG_FILE}")"
 
 if [[ "${metrics_enabled}" == "true" && "${metrics_output_file}" != /* ]]; then
   fail "observability.metrics.outputFile must be an absolute path"
+fi
+
+if [[ ! "${dynamic_offenders_default_entry_ttl_seconds}" =~ ^[1-9][0-9]*$ ]]; then
+  fail "dynamicOffenders.defaultEntryTTLSeconds must be a positive integer"
+fi
+
+if [[ ! "${dynamic_offenders_max_entries}" =~ ^[1-9][0-9]*$ ]]; then
+  fail "dynamicOffenders.maxEntries must be a positive integer"
 fi
 
 log_event "stdout" "info" "run_start" "version=${module_version}" "metrics_enabled=${metrics_enabled}"
@@ -741,6 +930,134 @@ if [[ -s "${TMP_DIR}/cluster-ignore-v6.txt" ]]; then
   subtract_sorted_overlay "${TMP_DIR}/cluster-deny-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
 fi
 
+dynamic_offenders_url="$(jq -r '.dynamicOffenders.url // ""' "${CONFIG_FILE}")"
+dynamic_offenders_fail_open="$(jq -r 'if .dynamicOffenders.failOpen == null then true else .dynamicOffenders.failOpen end' "${CONFIG_FILE}")"
+dynamic_offenders_auth_token_file="$(jq -r '.dynamicOffenders.authTokenFile // ""' "${CONFIG_FILE}")"
+dynamic_offenders_node_id="$(jq -r '.dynamicOffenders.nodeId // ""' "${CONFIG_FILE}")"
+dynamic_offenders_source_count="0"
+dynamic_offenders_schema_version="1"
+dynamic_offenders_revision="none"
+dynamic_offenders_ttl_seconds="0"
+dynamic_offenders_cache_age_seconds="0"
+dynamic_offenders_cache_expired="false"
+
+: > "${TMP_DIR}/dynamic-ban-v4.txt"
+: > "${TMP_DIR}/dynamic-ban-v6.txt"
+
+if [[ "${dynamic_offenders_enabled}" == "true" ]]; then
+  dynamic_offenders_source_count="1"
+  dynamic_offenders_cache="${CACHE_DIR}/dynamic-offenders.json"
+
+  if [[ "${MODE}" == "refresh" ]]; then
+    dynamic_fetch_rc=0
+    if fetch_dynamic_offenders_to_cache "${dynamic_offenders_url}" "${dynamic_offenders_cache}"; then
+      dynamic_fetch_rc=0
+    else
+      dynamic_fetch_rc=$?
+      if [[ "${dynamic_fetch_rc}" -eq 2 ]]; then
+        if [[ -s "${dynamic_offenders_cache}" ]]; then
+          warn "invalid JSON from dynamic offenders ${dynamic_offenders_url}; using cached data"
+        elif [[ "${dynamic_offenders_fail_open}" == "true" ]]; then
+          warn "invalid JSON from dynamic offenders ${dynamic_offenders_url}; continuing due to failOpen"
+        else
+          fail "invalid JSON from dynamic offenders ${dynamic_offenders_url} and no cache exists"
+        fi
+      elif [[ "${dynamic_fetch_rc}" -eq 3 ]]; then
+        if [[ -s "${dynamic_offenders_cache}" ]]; then
+          warn "dynamic offenders ${dynamic_offenders_url} failed schema validation; using cached data"
+        elif [[ "${dynamic_offenders_fail_open}" == "true" ]]; then
+          warn "dynamic offenders ${dynamic_offenders_url} failed schema validation; continuing due to failOpen"
+        else
+          fail "dynamic offenders ${dynamic_offenders_url} failed schema validation and no cache exists"
+        fi
+      elif [[ -s "${dynamic_offenders_cache}" ]]; then
+        warn "failed to refresh dynamic offenders ${dynamic_offenders_url}; using cached data"
+      elif [[ "${dynamic_offenders_fail_open}" == "true" ]]; then
+        warn "failed to fetch dynamic offenders ${dynamic_offenders_url}; continuing due to failOpen"
+      else
+        fail "failed to fetch dynamic offenders ${dynamic_offenders_url} and no cache exists"
+      fi
+    fi
+  elif [[ "${dynamic_offenders_fail_open}" != "true" && ! -s "${dynamic_offenders_cache}" ]]; then
+    fail "dynamicOffenders.failOpen=false and no cached data is available for ${dynamic_offenders_url}"
+  fi
+
+  if [[ -s "${dynamic_offenders_cache}" ]]; then
+    if ! validate_dynamic_offenders_schema "${dynamic_offenders_cache}"; then
+      if [[ "${dynamic_offenders_fail_open}" == "true" ]]; then
+        warn "cached dynamic offenders snapshot failed schema validation; skipping merge due to failOpen"
+      else
+        fail "cached dynamic offenders snapshot failed schema validation"
+      fi
+    else
+      dynamic_offenders_schema_version="$(jq -r 'if .schemaVersion == null then "1" else (.schemaVersion | tostring) end' "${dynamic_offenders_cache}")"
+      dynamic_offenders_revision="$(jq -r 'if .revision == null then "none" else (.revision | tostring) end' "${dynamic_offenders_cache}")"
+      dynamic_offenders_ttl_seconds="$(jq -r '(.ttlSeconds // 0) | tostring' "${dynamic_offenders_cache}")"
+      dynamic_offenders_cache_age_seconds="$(( $(date +%s) - $(stat -c %Y "${dynamic_offenders_cache}") ))"
+
+      if [[ "${dynamic_offenders_ttl_seconds}" =~ ^[0-9]+$ ]] \
+        && [[ "${dynamic_offenders_ttl_seconds}" -gt 0 ]] \
+        && [[ "${dynamic_offenders_cache_age_seconds}" -gt "${dynamic_offenders_ttl_seconds}" ]]; then
+        dynamic_offenders_cache_expired="true"
+        if [[ "${dynamic_offenders_fail_open}" == "true" ]]; then
+          warn "cached dynamic offenders snapshot expired (ttlSeconds=${dynamic_offenders_ttl_seconds}, age=${dynamic_offenders_cache_age_seconds}); skipping merge due to failOpen"
+        else
+          fail "cached dynamic offenders snapshot expired (ttlSeconds=${dynamic_offenders_ttl_seconds}, age=${dynamic_offenders_cache_age_seconds})"
+        fi
+      else
+        dynamic_total_entries="$(jq -r '((.banIPv4 // []) | length) + ((.banIPv6 // []) | length)' "${dynamic_offenders_cache}")"
+        if [[ "${dynamic_total_entries}" =~ ^[0-9]+$ ]] \
+          && [[ "${dynamic_total_entries}" -gt "${dynamic_offenders_max_entries}" ]]; then
+          if [[ "${dynamic_offenders_fail_open}" == "true" ]]; then
+            warn "dynamic offenders snapshot exceeds maxEntries (${dynamic_total_entries} > ${dynamic_offenders_max_entries}); skipping merge due to failOpen"
+          else
+            fail "dynamic offenders snapshot exceeds maxEntries (${dynamic_total_entries} > ${dynamic_offenders_max_entries})"
+          fi
+        else
+          now_epoch="$(date +%s)"
+
+          jq -r \
+            --argjson now_epoch "${now_epoch}" \
+            --argjson default_ttl "${dynamic_offenders_default_entry_ttl_seconds}" '
+              (.banIPv4 // [])[]
+              | if type == "string" then
+                  "\(.)|\($default_ttl)"
+                else
+                  "\(.cidr)|\(
+                    if .expiresAt != null then ((.expiresAt | floor) - $now_epoch)
+                    elif .ttlSeconds != null then (.ttlSeconds | floor)
+                    else $default_ttl
+                    end
+                  )"
+                end
+            ' "${dynamic_offenders_cache}" > "${TMP_DIR}/dynamic-ban-v4.raw"
+
+          jq -r \
+            --argjson now_epoch "${now_epoch}" \
+            --argjson default_ttl "${dynamic_offenders_default_entry_ttl_seconds}" '
+              (.banIPv6 // [])[]
+              | if type == "string" then
+                  "\(.)|\($default_ttl)"
+                else
+                  "\(.cidr)|\(
+                    if .expiresAt != null then ((.expiresAt | floor) - $now_epoch)
+                    elif .ttlSeconds != null then (.ttlSeconds | floor)
+                    else $default_ttl
+                    end
+                  )"
+                end
+            ' "${dynamic_offenders_cache}" > "${TMP_DIR}/dynamic-ban-v6.raw"
+
+          sanitize_dynamic_entry_pairs "${TMP_DIR}/dynamic-ban-v4.raw" "${TMP_DIR}/dynamic-ban-v4.sanitized"
+          sanitize_dynamic_entry_pairs "${TMP_DIR}/dynamic-ban-v6.raw" "${TMP_DIR}/dynamic-ban-v6.sanitized"
+          build_dynamic_timeout_set_v4 "${TMP_DIR}/dynamic-ban-v4.sanitized" "${TMP_DIR}/dynamic-ban-v4.txt"
+          build_dynamic_timeout_set_v6 "${TMP_DIR}/dynamic-ban-v6.sanitized" "${TMP_DIR}/dynamic-ban-v6.txt"
+        fi
+      fi
+    fi
+  fi
+fi
+
 mapfile -t trusted_interfaces < <(jq -r '.trustedInterfaces[]?' "${CONFIG_FILE}")
 mapfile -t open_tcp_ports < <(jq -r '.openTCPPorts[]?' "${CONFIG_FILE}")
 mapfile -t open_udp_ports < <(jq -r '.openUDPPorts[]?' "${CONFIG_FILE}")
@@ -761,6 +1078,8 @@ cluster_deny_v4_count="$(count_file_lines "${TMP_DIR}/cluster-deny-v4.txt")"
 cluster_deny_v6_count="$(count_file_lines "${TMP_DIR}/cluster-deny-v6.txt")"
 cluster_ignore_v4_count="$(count_file_lines "${TMP_DIR}/cluster-ignore-v4.txt")"
 cluster_ignore_v6_count="$(count_file_lines "${TMP_DIR}/cluster-ignore-v6.txt")"
+dynamic_ban_v4_count="$(count_file_lines "${TMP_DIR}/dynamic-ban-v4.txt")"
+dynamic_ban_v6_count="$(count_file_lines "${TMP_DIR}/dynamic-ban-v6.txt")"
 
 log_event "stdout" "info" "set_counts" \
   "allow_v4=${allow_v4_count}" \
@@ -778,7 +1097,9 @@ log_event "stdout" "info" "set_counts" \
   "cluster_deny_v4=${cluster_deny_v4_count}" \
   "cluster_deny_v6=${cluster_deny_v6_count}" \
   "cluster_ignore_v4=${cluster_ignore_v4_count}" \
-  "cluster_ignore_v6=${cluster_ignore_v6_count}"
+  "cluster_ignore_v6=${cluster_ignore_v6_count}" \
+  "dynamic_ban_v4=${dynamic_ban_v4_count}" \
+  "dynamic_ban_v6=${dynamic_ban_v6_count}"
 
 if [[ "${cluster_policy_enabled}" == "true" ]]; then
   log_event "stdout" "info" "cluster_policy_meta" \
@@ -787,6 +1108,17 @@ if [[ "${cluster_policy_enabled}" == "true" ]]; then
     "ttl_seconds=${cluster_policy_ttl_seconds}" \
     "cache_age_seconds=${cluster_policy_cache_age_seconds}" \
     "cache_expired=${cluster_policy_cache_expired}"
+fi
+
+if [[ "${dynamic_offenders_enabled}" == "true" ]]; then
+  log_event "stdout" "info" "dynamic_offenders_meta" \
+    "schema_version=${dynamic_offenders_schema_version}" \
+    "revision=${dynamic_offenders_revision}" \
+    "ttl_seconds=${dynamic_offenders_ttl_seconds}" \
+    "cache_age_seconds=${dynamic_offenders_cache_age_seconds}" \
+    "cache_expired=${dynamic_offenders_cache_expired}" \
+    "ban_v4=${dynamic_ban_v4_count}" \
+    "ban_v6=${dynamic_ban_v6_count}"
 fi
 
 render_port_set() {
@@ -809,6 +1141,8 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
   emit_set "country_port_deny_ipv6" "ipv6_addr" "${TMP_DIR}/country-port-deny-v6.txt"
   emit_set "feed_ipv4" "ipv4_addr" "${TMP_DIR}/feeds-v4.txt"
   emit_set "feed_ipv6" "ipv6_addr" "${TMP_DIR}/feeds-v6.txt"
+  emit_set "dynamic_ban_ipv4" "ipv4_addr" "${TMP_DIR}/dynamic-ban-v4.txt" "interval,timeout"
+  emit_set "dynamic_ban_ipv6" "ipv6_addr" "${TMP_DIR}/dynamic-ban-v6.txt" "interval,timeout"
 
   echo "  chain input {"
   echo "    type filter hook input priority filter; policy ${default_policy};"
@@ -879,6 +1213,11 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
   if [[ "${blocklists_enabled}" == "true" ]]; then
     echo "    ip saddr @feed_ipv4 drop"
     echo "    ip6 saddr @feed_ipv6 drop"
+  fi
+
+  if [[ "${dynamic_offenders_enabled}" == "true" ]]; then
+    echo "    ip saddr @dynamic_ban_ipv4 drop"
+    echo "    ip6 saddr @dynamic_ban_ipv6 drop"
   fi
 
   if [[ "${#open_tcp_ports[@]}" -gt 0 ]]; then

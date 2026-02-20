@@ -98,6 +98,43 @@ pkgs.testers.runNixOSTest {
     system.stateVersion = "24.11";
   };
 
+  nodes.dynamicexpired = { ... }: {
+    imports = [ module ];
+
+    networking.hostName = "nix-csf-dynamicexpired";
+    networking.firewall.enable = false;
+
+    services.nixCsf = {
+      enable = true;
+      openTCPPorts = [ 22 ];
+      dynamicOffenders = {
+        enable = true;
+        url = "file:///etc/nix-csf-dynamic-offenders-expired.json";
+        requireHTTPS = false;
+        failOpen = false;
+      };
+      autoRefresh.runOnBoot = false;
+    };
+
+    systemd.services.nix-csf-apply.preStart = ''
+      mkdir -p /var/lib/nix-csf/cache
+      install -m 0640 /etc/nix-csf-dynamic-offenders-expired.json /var/lib/nix-csf/cache/dynamic-offenders.json
+      touch -d '1970-01-01 00:00:00 UTC' /var/lib/nix-csf/cache/dynamic-offenders.json
+    '';
+
+    environment.etc."nix-csf-dynamic-offenders-expired.json".text = ''
+      {
+        "schemaVersion": 1,
+        "revision": "dyn-expired-r1",
+        "ttlSeconds": 1,
+        "banIPv4": [ "198.51.100.101/32" ]
+      }
+    '';
+
+    environment.systemPackages = [ pkgs.nftables ];
+    system.stateVersion = "24.11";
+  };
+
   nodes.failclosed = { ... }: {
     imports = [ module ];
 
@@ -123,7 +160,7 @@ pkgs.testers.runNixOSTest {
 
   testScript = ''
     start_all()
-    blockapplyfailclosed, clusterexpired, failclosed, good, profileedge = machines
+    blockapplyfailclosed, clusterexpired, dynamicexpired, failclosed, good, profileedge = machines
 
     good.wait_for_unit("multi-user.target")
     good.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
@@ -155,6 +192,12 @@ pkgs.testers.runNixOSTest {
     clusterexpired.fail("test -e /var/lib/nix-csf/generated-ruleset.nft")
     clusterexpired.fail("nft list table inet nix_csf")
     clusterexpired.succeed("journalctl -u nix-csf-apply.service -n 30 | grep -F 'cached cluster policy expired (ttlSeconds=1'")
+
+    dynamicexpired.wait_for_unit("multi-user.target")
+    dynamicexpired.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")
+    dynamicexpired.fail("test -e /var/lib/nix-csf/generated-ruleset.nft")
+    dynamicexpired.fail("nft list table inet nix_csf")
+    dynamicexpired.succeed("journalctl -u nix-csf-apply.service -n 30 | grep -F 'cached dynamic offenders snapshot expired (ttlSeconds=1'")
 
     failclosed.wait_for_unit("multi-user.target")
     failclosed.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")

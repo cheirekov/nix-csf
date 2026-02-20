@@ -21,6 +21,7 @@ Kickoff baseline is implemented:
 - Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
 - Cluster policy propagation overlay (`clusterPolicy.*`)
 - Cluster policy schema v2 support (`ignore*`, `schemaVersion`, `revision`, `ttlSeconds`)
+- Dynamic offender snapshot propagation with timeout sets (`dynamicOffenders.*`)
 - Structured run logs + optional Prometheus textfile metrics (`observability.*`)
 - Early boot apply + scheduled refresh via systemd
 - Module/release version source via `VERSION` (SemVer)
@@ -149,6 +150,17 @@ services.nixCsf = {
     # authTokenFile = "/run/secrets/nix-csf-cluster-token";
   };
 
+  dynamicOffenders = {
+    enable = true;
+    url = "https://policy.example.org/nix-csf/dynamic-offenders.json";
+    failOpen = true;
+    defaultEntryTTLSeconds = 900;
+    maxEntries = 20000;
+    # Optional node identity and auth:
+    # nodeId = "edge-eu-01";
+    # authTokenFile = "/run/secrets/nix-csf-dynamic-token";
+  };
+
   observability = {
     structuredLogging = true;
     metrics = {
@@ -267,15 +279,52 @@ Expected remote JSON structure:
 }
 ```
 
+### 6) Dynamic temporary offender propagation (TTL)
+
+```nix
+services.nixCsf = {
+  enable = true;
+  dynamicOffenders = {
+    enable = true;
+    url = "https://policy.example.org/nix-csf/dynamic-offenders.json";
+    failOpen = false;
+    defaultEntryTTLSeconds = 900;
+    maxEntries = 20000;
+    authTokenFile = "/run/secrets/nix-csf-dynamic-token";
+    nodeId = "edge-eu-01";
+  };
+};
+```
+
+Expected dynamic snapshot JSON structure:
+
+```json
+{
+  "schemaVersion": 1,
+  "revision": "dyn-2026-02-20-01",
+  "ttlSeconds": 300,
+  "banIPv4": [
+    "203.0.116.8/32",
+    { "cidr": "203.0.116.9/32", "ttlSeconds": 600 },
+    { "cidr": "203.0.116.10/32", "expiresAt": 1771593600, "reason": "syn_flood" }
+  ],
+  "banIPv6": []
+}
+```
+
 ## Operational notes
 
 - This module expects `networking.firewall.enable = false` (asserted by the module).
 - Rule apply service runs before network stack comes up (`network-pre.target`).
 - Refresh service runs after network is online and can be periodic via timer.
 - With `blocklists.failOpen = false` or `clusterPolicy.failOpen = false`, `apply` requires cached data.
+- With `dynamicOffenders.failOpen = false`, `apply` also requires cached dynamic snapshot data.
   Run `sudo systemctl start nix-csf-refresh.service` at least once after network is available.
 - Cluster policy cache can be guarded by `ttlSeconds` from the snapshot payload.
   In strict mode (`clusterPolicy.failOpen = false`), expired cached policy fails closed.
+- Dynamic snapshots are also guarded by `ttlSeconds`.
+  In strict mode (`dynamicOffenders.failOpen = false`), expired cached snapshot fails closed.
+- Dynamic bans are evaluated after explicit allow rules, so allow/ignore overlays can override temporary bans.
 - Rule evaluation is deny-first for static allow/deny CIDRs (`denyIPv4/denyIPv6` are matched before `allowIPv4/allowIPv6`).
 - Generated runtime artifacts live in `/var/lib/nix-csf`.
 
@@ -300,7 +349,7 @@ The validation script runs:
 - `checks.x86_64-linux.eval-profiles` (profile defaults + override precedence)
 - `checks.x86_64-linux.shellcheck` (script lint)
 - `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
-- `checks.x86_64-linux.nix-csf-integration` (fail-closed, legacy-mode, and edge-profile integration coverage)
+- `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, and dynamic snapshot TTL expiry)
 
 If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
 

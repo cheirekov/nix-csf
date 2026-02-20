@@ -12,7 +12,9 @@ Define a professional, Nix-idiomatic path for CSF-style dynamic behavior:
 - safe coexistence with other firewall/dynamic agents (especially Docker),
 - clear observability and token/secret handling.
 
-This document is a recommendation and POC contract. Parts are already implemented (`clusterPolicy` schema v2); dynamic ban propagation is next.
+This document is a recommendation and POC contract. Baseline implementation now includes
+`clusterPolicy` schema v2 and dynamic offender snapshot propagation (`dynamicOffenders`).
+Remaining items focus on detector integrations, coexistence profiles, and operations hardening.
 
 ## 2) Nix-way constraints
 
@@ -50,7 +52,7 @@ Recommended operational contract:
 
 ### 3.3 Runtime dynamic plane (temporary bans)
 
-For CSF-like behavior, add a dedicated runtime path (next ticket):
+For CSF-like behavior, use a dedicated runtime path:
 
 - detector service emits offender events,
 - local node writes temporary entries into dedicated nft sets with timeout,
@@ -184,10 +186,9 @@ Current module supports `allowICMP = true|false` (global). Per-type/per-rate ICM
 
 ## 9) POC delivery slice
 
-Recommended priority after `T-015`:
+Recommended priority after `T-016`:
 
-1. `T-016` dynamic offender local pipeline + TTL sets
-2. `T-021` Docker coexistence compatibility profile + integration tests
-3. `T-020` token lifecycle and secret-manager examples
-4. `T-019` Grafana/Prometheus pack + alerting
-
+1. `T-021` Docker coexistence compatibility profile + integration tests
+2. `T-020` token lifecycle and secret-manager examples
+3. `T-019` Grafana/Prometheus pack + alerting
+4. `T-022` hybrid local-files + remote reconciliation contract

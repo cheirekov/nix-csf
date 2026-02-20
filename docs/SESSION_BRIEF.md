@@ -6,55 +6,60 @@ Owner: PM/BA + Codex
 ## 1) Batch contract
 
 - Batch type: `DAY (2-4h)`
-- Active ticket: `T-015` (Cluster policy schema v2).
-- Goal: deliver schema v2 semantics for centralized lists and close strict TTL behavior with integration evidence.
+- Active ticket: `T-016` (Dynamic offender propagation).
+- Goal: deliver CSF-like temporary offender propagation with deterministic TTL behavior and strict-mode safety.
 - In scope:
-  - extend cluster payload contract with `ignore*`, `schemaVersion`, `revision`, `ttlSeconds`,
-  - enforce schema validation + cache TTL behavior in runtime apply/refresh,
-  - expose cluster schema/TTL metadata in logs and metrics,
-  - add VM checks for ignore precedence and strict TTL fail-closed behavior,
-  - publish architecture POC recommendation for dynamic cluster workflow and Docker coexistence.
+  - add module API for dynamic offender snapshots (`services.nixCsf.dynamicOffenders.*`),
+  - fetch/cache/validate dynamic snapshot JSON in runtime apply/refresh pipeline,
+  - convert snapshot entries into nft timeout sets (`dynamic_ban_ipv4`/`dynamic_ban_ipv6`),
+  - enforce snapshot TTL cache-age behavior for fail-open/fail-closed modes,
+  - expose dynamic snapshot health + cardinality metrics,
+  - expand VM smoke/integration coverage for dynamic TTL semantics.
 - Out of scope:
-  - dynamic offender propagation runtime pipeline (`T-016`),
-  - Docker coexistence implementation (`T-021`),
-  - ICMP type/rate controls (`T-017`).
+  - Docker/firewall coexistence implementation (`T-021`),
+  - cluster token lifecycle automation (`T-020`),
+  - ICMP per-type/per-rate controls (`T-017`),
+  - hybrid local-file + remote list reconciliation (`T-022`).
 - Stop/rollback condition:
-  - any regression in strict `clusterPolicy.failOpen = false` behavior or existing integration scenarios.
+  - any regression in strict fail-closed semantics for existing blocklist/cluster/country paths.
 
 ## 2) Definition of done
 
-- Cluster policy schema v2 keys are accepted and validated.
-- `ignore` lists can override deny-style overlays safely.
-- Cache TTL behavior is explicit and fail-closed in strict mode.
-- Integration tests include stale-cache strict failure and pass.
-- Delivery board, changelog, and architecture/docs are updated with next-priority handoff.
+- Dynamic offender API is available and validated in module assertions.
+- Dynamic snapshot supports temporary bans with `ttlSeconds`/`expiresAt` semantics.
+- Timeout-based nft sets are rendered and enforced.
+- Strict mode fails closed on missing/expired snapshot cache.
+- Metrics/logs include dynamic snapshot health/state.
+- Delivery board, session brief, changelog, and docs are updated.
 
 ## 3) End-of-batch result
 
 - Decision: `continue`
 - Completed:
-  - closed `T-015`:
-    - runtime supports cluster policy v2 fields:
-      - `ignoreIPv4`, `ignoreIPv6`,
-      - `schemaVersion`, `revision`, `ttlSeconds`,
-    - schema validation added for fetched/cached cluster policy,
-    - TTL cache guard implemented with strict fail-closed semantics,
-    - cluster ignore precedence implemented (subtract from deny-style sources, merge into allow),
-    - cluster schema/TTL metadata exposed in structured logs and metrics,
-    - smoke test expanded for ignore precedence and schema metrics,
-    - integration suite expanded with `clusterexpired` stale-cache strict scenario,
-    - fixed regression in fail-open parsing where explicit `clusterPolicy.failOpen = false` was being coerced to `true`.
-  - architecture/product follow-through:
-    - added `docs/DYNAMIC_CLUSTER_POC.md` with team recommendation for:
-      - CSF-style dynamic ban propagation,
-      - local-files + remote snapshot reconciliation,
-      - token lifecycle handling,
-      - Docker coexistence posture,
-      - Grafana/Prometheus monitoring model.
+  - closed `T-016`:
+    - added `services.nixCsf.dynamicOffenders` options:
+      - `enable`, `url`, `failOpen`, `requireHTTPS`,
+      - `authTokenFile`, `nodeId`,
+      - `defaultEntryTTLSeconds`, `maxEntries`,
+    - runtime dynamic snapshot pipeline in `scripts/nix-csf-apply.sh`:
+      - fetch + cache + schema validation,
+      - strict/fail-open behavior for fetch/schema/cache-age failures,
+      - snapshot TTL (`ttlSeconds`) cache-age guard,
+      - per-entry TTL resolution (`ttlSeconds`/`expiresAt` fallback to default TTL),
+      - nft timeout set rendering (`dynamic_ban_ipv4`, `dynamic_ban_ipv6`),
+    - observability updates:
+      - structured `dynamic_offenders_meta` event,
+      - Prometheus metrics for dynamic feature/source/counts and snapshot health,
+    - tests:
+      - smoke suite asserts timeout rendering, expired-entry exclusion, and allow-vs-dynamic precedence order,
+      - integration suite adds strict expired-cache failure scenario (`dynamicexpired` node),
+    - docs updated:
+      - README, architecture, roadmap, and use-case catalog.
 - Validation evidence:
   - `bash -n scripts/nix-csf-apply.sh`
   - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-smoke" --print-build-logs`
   - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs`
+  - `./scripts/validate.sh`
 - Next ticket candidate:
-  - `T-016` dynamic offender propagation, then `T-021` Docker/dynamic-daemon coexistence profile.
-
+  - `T-021` firewall coexistence profile (Docker + dynamic daemons), then `T-020`.

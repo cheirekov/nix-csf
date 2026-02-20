@@ -30,6 +30,7 @@
   - `nix-csf-refresh.timer`: periodic refresh schedule.
 - Runtime state
   - `/var/lib/nix-csf/cache`: cached remote feeds.
+  - `/var/lib/nix-csf/cache/dynamic-offenders.json`: cached dynamic offender snapshot.
   - `/var/lib/nix-csf/generated-ruleset.nft`: last generated ruleset.
   - optional Prometheus textfile metrics output (default: `/var/lib/nix-csf/metrics.prom`).
 
@@ -43,7 +44,8 @@
    - cached feed data.
 4. Refresh service (manual/timer) downloads latest feed files and optional cluster policy overlay JSON.
 5. Cluster policy cache metadata (schema/revision/TTL) is validated before merge.
-6. Rules are regenerated and atomically re-applied.
+6. Dynamic offender snapshot is validated and converted into timeout-based nft sets.
+7. Rules are regenerated and atomically re-applied.
 7. Optional observability export writes:
    - structured event logs to journald,
    - snapshot metrics in Prometheus textfile format (including build/version metadata).
@@ -56,12 +58,20 @@
 - In strict mode (`failOpen = false`), `apply` requires cache presence for remote sources and fails closed when cache is absent.
 - Blocklist sources can be governed by catalog IDs (`blocklists.sources`) with schema-backed metadata.
 - Cluster ignore overlays can explicitly subtract CIDRs from deny-style sources.
+- Dynamic offender snapshots enforce schema + optional TTL cache-age guardrails.
+- Dynamic snapshots are bounded by `dynamicOffenders.maxEntries` to avoid oversized runtime merges.
 
-## Centralized dynamic POC
+## Centralized dynamic model
 
-See `docs/DYNAMIC_CLUSTER_POC.md` for the team recommendation on:
+Baseline implementation now includes:
 
-- CSF-style dynamic temporary bans,
+- `dynamicOffenders` remote snapshot fetch/caching,
+- per-entry TTL/expiry conversion into nft timeout sets,
+- strict fail-closed behavior on expired snapshots (`failOpen = false`),
+- observability metrics for dynamic snapshot schema/cache-age/TTL/expiry.
+
+See `docs/DYNAMIC_CLUSTER_POC.md` for extended roadmap recommendations:
+
 - hybrid local-files + remote cluster list workflows,
 - token lifecycle handling for cluster auth,
 - Grafana/Prometheus operational model,
