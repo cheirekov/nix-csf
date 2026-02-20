@@ -13,8 +13,9 @@ Define a professional, Nix-idiomatic path for CSF-style dynamic behavior:
 - clear observability and token/secret handling.
 
 This document is a recommendation and POC contract. Baseline implementation now includes
-`clusterPolicy` schema v2 and dynamic offender snapshot propagation (`dynamicOffenders`).
-Remaining items focus on detector integrations, coexistence profiles, and operations hardening.
+`clusterPolicy` schema v2, dynamic offender snapshot propagation (`dynamicOffenders`), and
+coexistence profiles (`coexistence.profile`, including `docker-coexist`).
+Remaining items focus on detector integrations, monitoring pack, and operations hardening.
 
 ## 2) Nix-way constraints
 
@@ -88,18 +89,25 @@ Notes:
 
 ## 5) Token generation and distribution
 
-Cluster auth should be secret-managed, not embedded in repo/config text.
+Token lifecycle baseline is implemented in `T-020`:
+
+- `clusterPolicy.authTokenFiles` and `dynamicOffenders.authTokenFiles` support ordered fallback.
+- Legacy `authTokenFile` is still supported for single-token deployments.
+- Runtime enforces secret-file checks:
+  - file exists and is readable,
+  - no group/other permission bits,
+  - token value is non-empty and whitespace-free.
+- Observability includes auth candidate counts and selected token slot metrics.
 
 Recommended process:
 
-1. Generate token out-of-band (`openssl rand -hex 32` or equivalent).
-2. Store token in secret manager (`sops-nix`, `agenix`, Vault, or cloud secret store).
-3. Materialize per-node token at runtime (`/run/secrets/nix-csf-cluster-token`).
-4. Point `services.nixCsf.clusterPolicy.authTokenFile` to that runtime file.
-5. Rotate token by staged overlap:
-   - control plane accepts old+new for a window,
-   - roll nodes,
-   - remove old token.
+1. Generate tokens out-of-band (`openssl rand -hex 32` or equivalent).
+2. Store tokens in secret manager (`sops-nix`, `agenix`, Vault, or cloud secret store).
+3. Materialize runtime files per node (for example in `/run/secrets`).
+4. Configure ordered overlap for rotation:
+   - `authTokenFiles = [ "/run/secrets/current" "/run/secrets/next" ];`
+   - control-plane accepts both for a rotation window.
+5. Roll control-plane and nodes, then remove old token from both endpoint and host config.
 
 ## 6) Docker and other firewall daemons
 
@@ -107,20 +115,23 @@ Recommended process:
 
 Docker mutates firewall state dynamically (bridge/NAT rules). Hard replacement of all chains can break container networking.
 
-### 6.2 Recommended coexistence strategy (POC)
+### 6.2 Coexistence strategy status
 
-- Add explicit compatibility mode in module design (`T-021`):
-  - keep `nix-csf` ownership focused on filter policy,
-  - avoid deleting non-`nix_csf` tables/chains,
-  - include explicit interface/network exemptions for container bridges where needed.
-- Define host profiles:
+- Baseline implemented in `T-021`:
+  - explicit host profiles:
   - `exclusive-firewall` (nix-csf full ownership),
   - `docker-coexist` (nix-csf filter policy + Docker-managed NAT).
-- Add integration tests with Docker-enabled nodes before marking production-ready.
+  - integration test coverage with Docker-enabled nodes.
+- Recommended next hardening:
+  - add targeted interface/network exemption patterns for non-Docker daemons when required.
 
 ## 7) Monitoring and Grafana model
 
-Current metrics already expose cluster policy health (`schema`, `ttl`, `cache_age`, `expired`).
+Current metrics already expose:
+
+- cluster policy health (`schema`, `ttl`, `cache_age`, `expired`),
+- dynamic offender snapshot health,
+- token candidate/selected-slot state for remote auth.
 
 POC monitoring pack should include:
 
@@ -186,9 +197,8 @@ Current module supports `allowICMP = true|false` (global). Per-type/per-rate ICM
 
 ## 9) POC delivery slice
 
-Recommended priority after `T-016`:
+Current priority after `T-020`:
 
-1. `T-021` Docker coexistence compatibility profile + integration tests
-2. `T-020` token lifecycle and secret-manager examples
-3. `T-019` Grafana/Prometheus pack + alerting
-4. `T-022` hybrid local-files + remote reconciliation contract
+1. `T-019` Grafana/Prometheus pack + alerting
+2. `T-017` ICMP policy profiles (type/rate controls)
+3. `T-022` hybrid local-files + remote reconciliation contract

@@ -152,6 +152,7 @@ let
       failOpen = cfg.clusterPolicy.failOpen;
       requireHTTPS = cfg.clusterPolicy.requireHTTPS;
       authTokenFile = cfg.clusterPolicy.authTokenFile;
+      authTokenFiles = cfg.clusterPolicy.authTokenFiles;
       nodeId = cfg.clusterPolicy.nodeId;
     };
     dynamicOffenders = {
@@ -160,9 +161,13 @@ let
       failOpen = cfg.dynamicOffenders.failOpen;
       requireHTTPS = cfg.dynamicOffenders.requireHTTPS;
       authTokenFile = cfg.dynamicOffenders.authTokenFile;
+      authTokenFiles = cfg.dynamicOffenders.authTokenFiles;
       nodeId = cfg.dynamicOffenders.nodeId;
       defaultEntryTTLSeconds = cfg.dynamicOffenders.defaultEntryTTLSeconds;
       maxEntries = cfg.dynamicOffenders.maxEntries;
+    };
+    coexistence = {
+      profile = cfg.coexistence.profile;
     };
     observability = {
       structuredLogging = cfg.observability.structuredLogging;
@@ -634,6 +639,20 @@ in
         '';
       };
 
+      authTokenFiles = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [
+          "/run/secrets/nix-csf-cluster-token-current"
+          "/run/secrets/nix-csf-cluster-token-next"
+        ];
+        description = ''
+          Ordered bearer token files for cluster policy auth rotation.
+          Tokens are tried in order until a request succeeds.
+          Cannot be combined with clusterPolicy.authTokenFile.
+        '';
+      };
+
       nodeId = mkOption {
         type = types.str;
         default = "";
@@ -705,6 +724,20 @@ in
         '';
       };
 
+      authTokenFiles = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [
+          "/run/secrets/nix-csf-dynamic-token-current"
+          "/run/secrets/nix-csf-dynamic-token-next"
+        ];
+        description = ''
+          Ordered bearer token files for dynamic offender auth rotation.
+          Tokens are tried in order until a request succeeds.
+          Cannot be combined with dynamicOffenders.authTokenFile.
+        '';
+      };
+
       nodeId = mkOption {
         type = types.str;
         default = "";
@@ -728,6 +761,19 @@ in
         default = 20000;
         description = ''
           Maximum number of dynamic entries accepted per snapshot (banIPv4 + banIPv6).
+        '';
+      };
+    };
+
+    coexistence = {
+      profile = mkOption {
+        type = types.enum [ "exclusive-firewall" "docker-coexist" ];
+        default = "exclusive-firewall";
+        description = ''
+          Firewall ownership/coexistence profile:
+          - exclusive-firewall: nix-csf owns host filtering posture.
+          - docker-coexist: preserve Docker/dynamic daemon forwarding behavior while
+            still enforcing nix-csf deny-style overlays.
         '';
       };
     };
@@ -878,6 +924,17 @@ in
         message = "services.nixCsf.clusterPolicy.authTokenFile must be an absolute path when set.";
       }
       {
+        assertion = all (path: hasPrefix "/" path) cfg.clusterPolicy.authTokenFiles;
+        message = "services.nixCsf.clusterPolicy.authTokenFiles entries must be absolute paths.";
+      }
+      {
+        assertion = cfg.clusterPolicy.authTokenFile == null || cfg.clusterPolicy.authTokenFiles == [ ];
+        message = ''
+          services.nixCsf.clusterPolicy.authTokenFile cannot be combined with
+          services.nixCsf.clusterPolicy.authTokenFiles.
+        '';
+      }
+      {
         assertion = !cfg.dynamicOffenders.enable || cfg.dynamicOffenders.url != "";
         message = "services.nixCsf.dynamicOffenders.enable requires dynamicOffenders.url.";
       }
@@ -890,6 +947,24 @@ in
       {
         assertion = cfg.dynamicOffenders.authTokenFile == null || hasPrefix "/" cfg.dynamicOffenders.authTokenFile;
         message = "services.nixCsf.dynamicOffenders.authTokenFile must be an absolute path when set.";
+      }
+      {
+        assertion = all (path: hasPrefix "/" path) cfg.dynamicOffenders.authTokenFiles;
+        message = "services.nixCsf.dynamicOffenders.authTokenFiles entries must be absolute paths.";
+      }
+      {
+        assertion = cfg.dynamicOffenders.authTokenFile == null || cfg.dynamicOffenders.authTokenFiles == [ ];
+        message = ''
+          services.nixCsf.dynamicOffenders.authTokenFile cannot be combined with
+          services.nixCsf.dynamicOffenders.authTokenFiles.
+        '';
+      }
+      {
+        assertion = cfg.coexistence.profile != "docker-coexist" || cfg.forwardPolicy == "accept";
+        message = ''
+          services.nixCsf.coexistence.profile = "docker-coexist" requires
+          services.nixCsf.forwardPolicy = "accept" to avoid breaking container forwarding.
+        '';
       }
       {
         assertion = !cfg.observability.metrics.enable || hasPrefix "/" cfg.observability.metrics.outputFile;

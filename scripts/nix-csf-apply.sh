@@ -59,6 +59,15 @@ run_started_epoch="$(date +%s)"
 structured_logging="false"
 metrics_enabled="false"
 metrics_output_file="/var/lib/nix-csf/metrics.prom"
+declare -a cluster_policy_auth_token_files=()
+declare -a cluster_policy_auth_tokens=()
+declare -a dynamic_offenders_auth_token_files=()
+declare -a dynamic_offenders_auth_tokens=()
+cluster_policy_auth_token_candidate_count="0"
+cluster_policy_auth_token_selected_slot="0"
+dynamic_offenders_auth_token_candidate_count="0"
+dynamic_offenders_auth_token_selected_slot="0"
+auth_selected_slot_result="0"
 
 log_event() {
   local sink="$1"
@@ -167,31 +176,114 @@ fetch_to_cache() {
   return 1
 }
 
+validate_auth_token_file() {
+  local source_label="$1"
+  local token_file="$2"
+  local raw_mode mode_value group_perm other_perm
+
+  if [[ ! -f "${token_file}" ]]; then
+    fail "${source_label} auth token file does not exist: ${token_file}"
+  fi
+
+  if [[ ! -r "${token_file}" ]]; then
+    fail "${source_label} auth token file is not readable: ${token_file}"
+  fi
+
+  raw_mode="$(stat -c '%a' "${token_file}")" || fail "${source_label} auth token file mode check failed: ${token_file}"
+  mode_value="$((10#${raw_mode}))"
+  group_perm="$(( (mode_value / 10) % 10 ))"
+  other_perm="$(( mode_value % 10 ))"
+
+  if (( group_perm != 0 || other_perm != 0 )); then
+    fail "${source_label} auth token file must not grant group/other permissions: ${token_file} (mode ${raw_mode})"
+  fi
+}
+
+load_auth_tokens_from_files() {
+  local source_label="$1"
+  local -n token_files_ref="$2"
+  local -n token_values_ref="$3"
+  local token_file token_value
+
+  token_values_ref=()
+
+  for token_file in "${token_files_ref[@]}"; do
+    validate_auth_token_file "${source_label}" "${token_file}"
+
+    token_value="$(tr -d '\r\n' < "${token_file}")"
+    if [[ -z "${token_value}" ]]; then
+      fail "${source_label} auth token file is empty: ${token_file}"
+    fi
+    if [[ "${token_value}" =~ [[:space:]] ]]; then
+      fail "${source_label} auth token file must not contain whitespace: ${token_file}"
+    fi
+
+    token_values_ref+=("${token_value}")
+  done
+}
+
+fetch_json_with_auth_candidates() {
+  local source_tag="$1"
+  local source_label="$2"
+  local url="$3"
+  local output_file="$4"
+  local node_id="$5"
+  local -n auth_tokens_ref="$6"
+  local -a base_curl_args=(--fail --location --silent --show-error --max-time 40)
+  local -a curl_args
+  local token_count slot auth_token
+
+  auth_selected_slot_result="0"
+  token_count="${#auth_tokens_ref[@]}"
+
+  if [[ -n "${node_id}" ]]; then
+    base_curl_args+=(-H "X-Nix-Csf-Node: ${node_id}")
+  fi
+
+  if [[ "${token_count}" -eq 0 ]]; then
+    if curl "${base_curl_args[@]}" "${url}" -o "${output_file}"; then
+      return 0
+    fi
+    return 1
+  fi
+
+  slot=0
+  for auth_token in "${auth_tokens_ref[@]}"; do
+    slot=$(( slot + 1 ))
+    curl_args=("${base_curl_args[@]}" -H "Authorization: Bearer ${auth_token}")
+
+    if curl "${curl_args[@]}" "${url}" -o "${output_file}"; then
+      auth_selected_slot_result="${slot}"
+      if [[ "${slot}" -gt 1 ]]; then
+        log_event "stdout" "info" "auth_fallback_success" \
+          "source=${source_tag}" \
+          "selected_slot=${slot}" \
+          "candidate_count=${token_count}"
+      fi
+      return 0
+    fi
+
+    if [[ "${slot}" -lt "${token_count}" ]]; then
+      warn "${source_label} auth token slot ${slot} failed; trying next token"
+    fi
+  done
+
+  return 1
+}
+
 fetch_cluster_policy_to_cache() {
   local url="$1"
   local cache_file="$2"
   local tmp_file="${TMP_DIR}/cluster-policy-download.json"
-  local -a curl_args=(--fail --location --silent --show-error --max-time 40)
 
-  if [[ -n "${cluster_policy_node_id}" ]]; then
-    curl_args+=(-H "X-Nix-Csf-Node: ${cluster_policy_node_id}")
-  fi
-
-  if [[ -n "${cluster_policy_auth_token_file}" ]]; then
-    if [[ ! -f "${cluster_policy_auth_token_file}" ]]; then
-      fail "cluster policy authTokenFile does not exist: ${cluster_policy_auth_token_file}"
-    fi
-
-    local auth_token
-    auth_token="$(tr -d '\r\n' < "${cluster_policy_auth_token_file}")"
-    if [[ -z "${auth_token}" ]]; then
-      fail "cluster policy authTokenFile is empty: ${cluster_policy_auth_token_file}"
-    fi
-
-    curl_args+=(-H "Authorization: Bearer ${auth_token}")
-  fi
-
-  if curl "${curl_args[@]}" "${url}" -o "${tmp_file}"; then
+  if fetch_json_with_auth_candidates \
+    "cluster_policy" \
+    "cluster policy" \
+    "${url}" \
+    "${tmp_file}" \
+    "${cluster_policy_node_id}" \
+    cluster_policy_auth_tokens; then
+    cluster_policy_auth_token_selected_slot="${auth_selected_slot_result}"
     if ! jq -e . "${tmp_file}" >/dev/null 2>&1; then
       return 2
     fi
@@ -209,27 +301,15 @@ fetch_dynamic_offenders_to_cache() {
   local url="$1"
   local cache_file="$2"
   local tmp_file="${TMP_DIR}/dynamic-offenders-download.json"
-  local -a curl_args=(--fail --location --silent --show-error --max-time 40)
 
-  if [[ -n "${dynamic_offenders_node_id}" ]]; then
-    curl_args+=(-H "X-Nix-Csf-Node: ${dynamic_offenders_node_id}")
-  fi
-
-  if [[ -n "${dynamic_offenders_auth_token_file}" ]]; then
-    if [[ ! -f "${dynamic_offenders_auth_token_file}" ]]; then
-      fail "dynamic offenders authTokenFile does not exist: ${dynamic_offenders_auth_token_file}"
-    fi
-
-    local auth_token
-    auth_token="$(tr -d '\r\n' < "${dynamic_offenders_auth_token_file}")"
-    if [[ -z "${auth_token}" ]]; then
-      fail "dynamic offenders authTokenFile is empty: ${dynamic_offenders_auth_token_file}"
-    fi
-
-    curl_args+=(-H "Authorization: Bearer ${auth_token}")
-  fi
-
-  if curl "${curl_args[@]}" "${url}" -o "${tmp_file}"; then
+  if fetch_json_with_auth_candidates \
+    "dynamic_offenders" \
+    "dynamic offenders" \
+    "${url}" \
+    "${tmp_file}" \
+    "${dynamic_offenders_node_id}" \
+    dynamic_offenders_auth_tokens; then
+    dynamic_offenders_auth_token_selected_slot="${auth_selected_slot_result}"
     if ! jq -e . "${tmp_file}" >/dev/null 2>&1; then
       return 2
     fi
@@ -538,10 +618,20 @@ write_metrics() {
     printf 'nix_csf_feature_enabled{feature="blocklists"} %s\n' "$(bool_to_num "${blocklists_enabled}")"
     printf 'nix_csf_feature_enabled{feature="cluster_policy"} %s\n' "$(bool_to_num "${cluster_policy_enabled}")"
     printf 'nix_csf_feature_enabled{feature="dynamic_offenders"} %s\n' "$(bool_to_num "${dynamic_offenders_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="coexist_docker"} %s\n' "$(bool_to_num "${coexistence_docker_enabled}")"
     printf 'nix_csf_feature_enabled{feature="log_drops"} %s\n' "$(bool_to_num "${log_drops}")"
     printf 'nix_csf_feature_enabled{feature="legacy_syn_rate_limit"} %s\n' "$(bool_to_num "${legacy_syn_rate_limit_enabled}")"
     printf 'nix_csf_feature_enabled{feature="syn_flood"} %s\n' "$(bool_to_num "${syn_flood_enabled}")"
     printf 'nix_csf_feature_enabled{feature="conn_flood"} %s\n' "$(bool_to_num "${conn_flood_enabled}")"
+    echo "# HELP nix_csf_coexistence_profile Active coexistence profile (1 active, 0 inactive)."
+    echo "# TYPE nix_csf_coexistence_profile gauge"
+    if [[ "${coexistence_profile}" == "exclusive-firewall" ]]; then
+      echo 'nix_csf_coexistence_profile{profile="exclusive-firewall"} 1'
+      echo 'nix_csf_coexistence_profile{profile="docker-coexist"} 0'
+    else
+      echo 'nix_csf_coexistence_profile{profile="exclusive-firewall"} 0'
+      echo 'nix_csf_coexistence_profile{profile="docker-coexist"} 1'
+    fi
     echo "# HELP nix_csf_set_entries Number of CIDR elements loaded into nft sets."
     echo "# TYPE nix_csf_set_entries gauge"
     printf 'nix_csf_set_entries{set="allow_ipv4"} %s\n' "${allow_v4_count}"
@@ -569,6 +659,14 @@ write_metrics() {
     printf 'nix_csf_source_count{source="blocklist_urls"} %s\n' "${#blocklist_urls[@]}"
     printf 'nix_csf_source_count{source="cluster_policy_urls"} %s\n' "${cluster_policy_source_count}"
     printf 'nix_csf_source_count{source="dynamic_offender_urls"} %s\n' "${dynamic_offenders_source_count}"
+    echo "# HELP nix_csf_auth_token_candidates Number of configured auth token candidates per remote source."
+    echo "# TYPE nix_csf_auth_token_candidates gauge"
+    printf 'nix_csf_auth_token_candidates{source="cluster_policy"} %s\n' "${cluster_policy_auth_token_candidate_count}"
+    printf 'nix_csf_auth_token_candidates{source="dynamic_offenders"} %s\n' "${dynamic_offenders_auth_token_candidate_count}"
+    echo "# HELP nix_csf_auth_token_selected_slot Selected auth token candidate slot for successful fetches (0 when none selected)."
+    echo "# TYPE nix_csf_auth_token_selected_slot gauge"
+    printf 'nix_csf_auth_token_selected_slot{source="cluster_policy"} %s\n' "${cluster_policy_auth_token_selected_slot}"
+    printf 'nix_csf_auth_token_selected_slot{source="dynamic_offenders"} %s\n' "${dynamic_offenders_auth_token_selected_slot}"
     echo "# HELP nix_csf_cluster_policy_schema_version Active cluster policy schema version."
     echo "# TYPE nix_csf_cluster_policy_schema_version gauge"
     printf 'nix_csf_cluster_policy_schema_version %s\n' "${cluster_policy_schema_version}"
@@ -605,6 +703,7 @@ write_metrics() {
 
 default_policy="$(jq -r '.defaultPolicy' "${CONFIG_FILE}")"
 forward_policy="$(jq -r '.forwardPolicy' "${CONFIG_FILE}")"
+coexistence_profile="$(jq -r '.coexistence.profile // "exclusive-firewall"' "${CONFIG_FILE}")"
 allow_icmp="$(jq -r '.allowICMP' "${CONFIG_FILE}")"
 log_drops="$(jq -r '.logDrops' "${CONFIG_FILE}")"
 module_version="$(jq -r '.moduleVersion // "0.0.0-dev"' "${CONFIG_FILE}")"
@@ -627,6 +726,15 @@ metrics_output_file="$(jq -r '.observability.metrics.outputFile // "/var/lib/nix
 dynamic_offenders_enabled="$(jq -r '.dynamicOffenders.enable // false' "${CONFIG_FILE}")"
 dynamic_offenders_default_entry_ttl_seconds="$(jq -r '.dynamicOffenders.defaultEntryTTLSeconds // 900' "${CONFIG_FILE}")"
 dynamic_offenders_max_entries="$(jq -r '.dynamicOffenders.maxEntries // 20000' "${CONFIG_FILE}")"
+coexistence_docker_enabled="false"
+
+if [[ "${coexistence_profile}" != "exclusive-firewall" && "${coexistence_profile}" != "docker-coexist" ]]; then
+  fail "coexistence.profile must be one of: exclusive-firewall, docker-coexist"
+fi
+
+if [[ "${coexistence_profile}" == "docker-coexist" ]]; then
+  coexistence_docker_enabled="true"
+fi
 
 if [[ "${metrics_enabled}" == "true" && "${metrics_output_file}" != /* ]]; then
   fail "observability.metrics.outputFile must be an absolute path"
@@ -640,7 +748,14 @@ if [[ ! "${dynamic_offenders_max_entries}" =~ ^[1-9][0-9]*$ ]]; then
   fail "dynamicOffenders.maxEntries must be a positive integer"
 fi
 
-log_event "stdout" "info" "run_start" "version=${module_version}" "metrics_enabled=${metrics_enabled}"
+if [[ "${coexistence_profile}" == "docker-coexist" && "${forward_policy}" != "accept" ]]; then
+  fail "coexistence.profile=docker-coexist requires forwardPolicy=accept"
+fi
+
+log_event "stdout" "info" "run_start" \
+  "version=${module_version}" \
+  "metrics_enabled=${metrics_enabled}" \
+  "coexistence_profile=${coexistence_profile}"
 
 if [[ "${syn_flood_enabled}" == "true" ]]; then
   if [[ -z "${syn_flood_rate}" || ! "${syn_flood_burst}" =~ ^[1-9][0-9]*$ ]]; then
@@ -805,7 +920,8 @@ sort_unique "${TMP_DIR}/feeds-v6.norm" "${TMP_DIR}/feeds-v6.txt"
 cluster_policy_enabled="$(jq -r '.clusterPolicy.enable // false' "${CONFIG_FILE}")"
 cluster_policy_url="$(jq -r '.clusterPolicy.url // ""' "${CONFIG_FILE}")"
 cluster_policy_fail_open="$(jq -r 'if .clusterPolicy.failOpen == null then true else .clusterPolicy.failOpen end' "${CONFIG_FILE}")"
-cluster_policy_auth_token_file="$(jq -r '.clusterPolicy.authTokenFile // ""' "${CONFIG_FILE}")"
+cluster_policy_auth_token_file_legacy="$(jq -r '.clusterPolicy.authTokenFile // ""' "${CONFIG_FILE}")"
+mapfile -t cluster_policy_auth_token_files < <(jq -r '.clusterPolicy.authTokenFiles[]?' "${CONFIG_FILE}")
 cluster_policy_node_id="$(jq -r '.clusterPolicy.nodeId // ""' "${CONFIG_FILE}")"
 cluster_policy_source_count="0"
 cluster_policy_schema_version="1"
@@ -813,6 +929,14 @@ cluster_policy_revision="none"
 cluster_policy_ttl_seconds="0"
 cluster_policy_cache_age_seconds="0"
 cluster_policy_cache_expired="false"
+
+if [[ -n "${cluster_policy_auth_token_file_legacy}" && "${#cluster_policy_auth_token_files[@]}" -gt 0 ]]; then
+  fail "clusterPolicy.authTokenFile cannot be combined with clusterPolicy.authTokenFiles"
+fi
+
+if [[ -n "${cluster_policy_auth_token_file_legacy}" ]]; then
+  cluster_policy_auth_token_files=( "${cluster_policy_auth_token_file_legacy}" )
+fi
 
 : > "${TMP_DIR}/cluster-allow-v4.raw"
 : > "${TMP_DIR}/cluster-allow-v6.raw"
@@ -824,6 +948,12 @@ cluster_policy_cache_expired="false"
 if [[ "${cluster_policy_enabled}" == "true" ]]; then
   cluster_policy_source_count="1"
   cluster_policy_cache="${CACHE_DIR}/cluster-policy.json"
+  if [[ "${#cluster_policy_auth_token_files[@]}" -gt 0 ]]; then
+    load_auth_tokens_from_files "cluster policy" cluster_policy_auth_token_files cluster_policy_auth_tokens
+  else
+    cluster_policy_auth_tokens=()
+  fi
+  cluster_policy_auth_token_candidate_count="${#cluster_policy_auth_tokens[@]}"
 
   if [[ "${MODE}" == "refresh" ]]; then
     cluster_fetch_rc=0
@@ -932,7 +1062,8 @@ fi
 
 dynamic_offenders_url="$(jq -r '.dynamicOffenders.url // ""' "${CONFIG_FILE}")"
 dynamic_offenders_fail_open="$(jq -r 'if .dynamicOffenders.failOpen == null then true else .dynamicOffenders.failOpen end' "${CONFIG_FILE}")"
-dynamic_offenders_auth_token_file="$(jq -r '.dynamicOffenders.authTokenFile // ""' "${CONFIG_FILE}")"
+dynamic_offenders_auth_token_file_legacy="$(jq -r '.dynamicOffenders.authTokenFile // ""' "${CONFIG_FILE}")"
+mapfile -t dynamic_offenders_auth_token_files < <(jq -r '.dynamicOffenders.authTokenFiles[]?' "${CONFIG_FILE}")
 dynamic_offenders_node_id="$(jq -r '.dynamicOffenders.nodeId // ""' "${CONFIG_FILE}")"
 dynamic_offenders_source_count="0"
 dynamic_offenders_schema_version="1"
@@ -941,12 +1072,26 @@ dynamic_offenders_ttl_seconds="0"
 dynamic_offenders_cache_age_seconds="0"
 dynamic_offenders_cache_expired="false"
 
+if [[ -n "${dynamic_offenders_auth_token_file_legacy}" && "${#dynamic_offenders_auth_token_files[@]}" -gt 0 ]]; then
+  fail "dynamicOffenders.authTokenFile cannot be combined with dynamicOffenders.authTokenFiles"
+fi
+
+if [[ -n "${dynamic_offenders_auth_token_file_legacy}" ]]; then
+  dynamic_offenders_auth_token_files=( "${dynamic_offenders_auth_token_file_legacy}" )
+fi
+
 : > "${TMP_DIR}/dynamic-ban-v4.txt"
 : > "${TMP_DIR}/dynamic-ban-v6.txt"
 
 if [[ "${dynamic_offenders_enabled}" == "true" ]]; then
   dynamic_offenders_source_count="1"
   dynamic_offenders_cache="${CACHE_DIR}/dynamic-offenders.json"
+  if [[ "${#dynamic_offenders_auth_token_files[@]}" -gt 0 ]]; then
+    load_auth_tokens_from_files "dynamic offenders" dynamic_offenders_auth_token_files dynamic_offenders_auth_tokens
+  else
+    dynamic_offenders_auth_tokens=()
+  fi
+  dynamic_offenders_auth_token_candidate_count="${#dynamic_offenders_auth_tokens[@]}"
 
   if [[ "${MODE}" == "refresh" ]]; then
     dynamic_fetch_rc=0
@@ -1107,7 +1252,9 @@ if [[ "${cluster_policy_enabled}" == "true" ]]; then
     "revision=${cluster_policy_revision}" \
     "ttl_seconds=${cluster_policy_ttl_seconds}" \
     "cache_age_seconds=${cluster_policy_cache_age_seconds}" \
-    "cache_expired=${cluster_policy_cache_expired}"
+    "cache_expired=${cluster_policy_cache_expired}" \
+    "auth_candidates=${cluster_policy_auth_token_candidate_count}" \
+    "auth_selected_slot=${cluster_policy_auth_token_selected_slot}"
 fi
 
 if [[ "${dynamic_offenders_enabled}" == "true" ]]; then
@@ -1117,6 +1264,8 @@ if [[ "${dynamic_offenders_enabled}" == "true" ]]; then
     "ttl_seconds=${dynamic_offenders_ttl_seconds}" \
     "cache_age_seconds=${dynamic_offenders_cache_age_seconds}" \
     "cache_expired=${dynamic_offenders_cache_expired}" \
+    "auth_candidates=${dynamic_offenders_auth_token_candidate_count}" \
+    "auth_selected_slot=${dynamic_offenders_auth_token_selected_slot}" \
     "ban_v4=${dynamic_ban_v4_count}" \
     "ban_v6=${dynamic_ban_v6_count}"
 fi
@@ -1243,6 +1392,50 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
   echo "  }"
   echo "  chain forward {"
   echo "    type filter hook forward priority filter; policy ${forward_policy};"
+
+  if [[ "${coexistence_profile}" == "docker-coexist" ]]; then
+    # In coexistence mode keep default forward acceptance for Docker/dynamic daemons,
+    # but still enforce nix-csf deny-style overlays.
+    echo "    ct state invalid drop"
+    echo "    ip saddr @deny_ipv4 drop"
+    echo "    ip6 saddr @deny_ipv6 drop"
+
+    if [[ "${country_enabled}" == "true" && "${country_mode}" == "deny" ]]; then
+      echo "    ip saddr @country_ipv4 drop"
+      echo "    ip6 saddr @country_ipv6 drop"
+    fi
+
+    if [[ "${country_port_deny_enabled}" == "true" ]]; then
+      if [[ "${#country_port_deny_tcp_ports[@]}" -gt 0 ]]; then
+        if [[ "${country_port_deny_v4_enforced}" == "true" ]]; then
+          printf '    ip saddr @country_port_deny_ipv4 tcp dport { %s } drop\n' "$(render_port_set country_port_deny_tcp_ports)"
+        fi
+        if [[ "${country_port_deny_v6_enforced}" == "true" ]]; then
+          printf '    ip6 saddr @country_port_deny_ipv6 tcp dport { %s } drop\n' "$(render_port_set country_port_deny_tcp_ports)"
+        fi
+      fi
+
+      if [[ "${#country_port_deny_udp_ports[@]}" -gt 0 ]]; then
+        if [[ "${country_port_deny_v4_enforced}" == "true" ]]; then
+          printf '    ip saddr @country_port_deny_ipv4 udp dport { %s } drop\n' "$(render_port_set country_port_deny_udp_ports)"
+        fi
+        if [[ "${country_port_deny_v6_enforced}" == "true" ]]; then
+          printf '    ip6 saddr @country_port_deny_ipv6 udp dport { %s } drop\n' "$(render_port_set country_port_deny_udp_ports)"
+        fi
+      fi
+    fi
+
+    if [[ "${blocklists_enabled}" == "true" ]]; then
+      echo "    ip saddr @feed_ipv4 drop"
+      echo "    ip6 saddr @feed_ipv6 drop"
+    fi
+
+    if [[ "${dynamic_offenders_enabled}" == "true" ]]; then
+      echo "    ip saddr @dynamic_ban_ipv4 drop"
+      echo "    ip6 saddr @dynamic_ban_ipv6 drop"
+    fi
+  fi
+
   echo "  }"
   echo "  chain output {"
   echo "    type filter hook output priority filter; policy accept;"

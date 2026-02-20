@@ -26,19 +26,16 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Scope freeze |
 |---|---|---|---|
-| T-021 | TODO | Firewall coexistence profile (Docker and dynamic daemons) | nftables coexistence + no breakage of container networking |
+| T-019 | TODO | Grafana/Prometheus monitoring pack | dashboards + alert rules + runbook |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-021 | TODO | Firewall coexistence profile (Docker and dynamic daemons) | nftables coexistence + no breakage of container networking |
-| 2 | T-020 | TODO | Cluster auth/token lifecycle and secret handling | secure token distribution/rotation |
-| 3 | T-019 | TODO | Grafana/Prometheus monitoring pack | dashboards + alert rules + runbook |
-| 4 | T-017 | TODO | ICMP policy profiles (type/rate controls) | safer ICMP defaults + explicit tuning |
-| 5 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) | per-port country allow model |
-| 6 | T-022 | TODO | Hybrid local+remote list reconciliation | local files + remote policy merge contract |
-| 7 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
+| 1 | T-017 | TODO | ICMP policy profiles (type/rate controls) | safer ICMP defaults + explicit tuning |
+| 2 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) | per-port country allow model |
+| 3 | T-022 | TODO | Hybrid local+remote list reconciliation | local files + remote policy merge contract |
+| 4 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
 
 ### LATER
 
@@ -68,6 +65,8 @@ Ship a production-usable NixOS firewall module that is:
 | T-014 | DONE | Strict apply semantics + deny precedence hardening |
 | T-015 | DONE | Cluster policy schema v2 (`allow`/`deny`/`ignore` + revision/TTL) |
 | T-016 | DONE | Dynamic offender propagation (rate-limit ban sync) |
+| T-020 | DONE | Cluster auth/token lifecycle and secret handling |
+| T-021 | DONE | Firewall coexistence profile (Docker and dynamic daemons) |
 
 ## Triage protocol
 

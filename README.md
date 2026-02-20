@@ -22,6 +22,8 @@ Kickoff baseline is implemented:
 - Cluster policy propagation overlay (`clusterPolicy.*`)
 - Cluster policy schema v2 support (`ignore*`, `schemaVersion`, `revision`, `ttlSeconds`)
 - Dynamic offender snapshot propagation with timeout sets (`dynamicOffenders.*`)
+- Auth token lifecycle with ordered rotation fallback (`*.authTokenFiles`)
+- Firewall coexistence profiles (`coexistence.profile`, including Docker coexist mode)
 - Structured run logs + optional Prometheus textfile metrics (`observability.*`)
 - Early boot apply + scheduled refresh via systemd
 - Module/release version source via `VERSION` (SemVer)
@@ -148,6 +150,10 @@ services.nixCsf = {
     # Optional node identity and auth:
     # nodeId = "edge-eu-01";
     # authTokenFile = "/run/secrets/nix-csf-cluster-token";
+    # authTokenFiles = [
+    #   "/run/secrets/nix-csf-cluster-token-current"
+    #   "/run/secrets/nix-csf-cluster-token-next"
+    # ];
   };
 
   dynamicOffenders = {
@@ -159,7 +165,13 @@ services.nixCsf = {
     # Optional node identity and auth:
     # nodeId = "edge-eu-01";
     # authTokenFile = "/run/secrets/nix-csf-dynamic-token";
+    # authTokenFiles = [
+    #   "/run/secrets/nix-csf-dynamic-token-current"
+    #   "/run/secrets/nix-csf-dynamic-token-next"
+    # ];
   };
+
+  coexistence.profile = "exclusive-firewall"; # or "docker-coexist" for container hosts
 
   observability = {
     structuredLogging = true;
@@ -257,7 +269,10 @@ services.nixCsf = {
     enable = true;
     url = "https://policy.example.org/nix-csf/prod-edge.json";
     failOpen = false; # fail refresh if policy is unreachable and no cache exists
-    authTokenFile = "/run/secrets/nix-csf-cluster-token";
+    authTokenFiles = [
+      "/run/secrets/nix-csf-cluster-token-current"
+      "/run/secrets/nix-csf-cluster-token-next"
+    ];
     nodeId = "edge-eu-01";
   };
 };
@@ -290,7 +305,10 @@ services.nixCsf = {
     failOpen = false;
     defaultEntryTTLSeconds = 900;
     maxEntries = 20000;
-    authTokenFile = "/run/secrets/nix-csf-dynamic-token";
+    authTokenFiles = [
+      "/run/secrets/nix-csf-dynamic-token-current"
+      "/run/secrets/nix-csf-dynamic-token-next"
+    ];
     nodeId = "edge-eu-01";
   };
 };
@@ -312,6 +330,17 @@ Expected dynamic snapshot JSON structure:
 }
 ```
 
+### 7) Docker host coexistence profile
+
+```nix
+services.nixCsf = {
+  enable = true;
+  coexistence.profile = "docker-coexist";
+  forwardPolicy = "accept"; # required by docker-coexist profile
+  denyIPv4 = [ "198.51.100.0/24" ];
+};
+```
+
 ## Operational notes
 
 - This module expects `networking.firewall.enable = false` (asserted by the module).
@@ -325,6 +354,12 @@ Expected dynamic snapshot JSON structure:
 - Dynamic snapshots are also guarded by `ttlSeconds`.
   In strict mode (`dynamicOffenders.failOpen = false`), expired cached snapshot fails closed.
 - Dynamic bans are evaluated after explicit allow rules, so allow/ignore overlays can override temporary bans.
+- `clusterPolicy.authTokenFiles` and `dynamicOffenders.authTokenFiles` allow staged token rotation;
+  candidates are tried in order until one succeeds.
+- Auth token files are validated strictly at runtime:
+  absolute paths, readable files, no group/other permission bits, and no whitespace in token values.
+- `coexistence.profile = "docker-coexist"` keeps forward policy in accept mode so Docker/dynamic daemons can manage forwarding,
+  while nix-csf still applies deny-style overlays in the forward hook.
 - Rule evaluation is deny-first for static allow/deny CIDRs (`denyIPv4/denyIPv6` are matched before `allowIPv4/allowIPv6`).
 - Generated runtime artifacts live in `/var/lib/nix-csf`.
 
@@ -349,7 +384,7 @@ The validation script runs:
 - `checks.x86_64-linux.eval-profiles` (profile defaults + override precedence)
 - `checks.x86_64-linux.shellcheck` (script lint)
 - `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
-- `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, and dynamic snapshot TTL expiry)
+- `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, and auth-token rotation fallback)
 
 If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
 

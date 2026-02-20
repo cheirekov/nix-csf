@@ -457,3 +457,85 @@
   - token lifecycle/secret handling (`T-020`),
   - Grafana/Prometheus monitoring pack (`T-019`),
   - hybrid local+remote list reconciliation (`T-022`).
+
+## 2026-02-20 — Batch DOCKER-COEXIST-021
+
+- Ticket(s): `T-021`
+- Summary:
+  - completed coexistence profile API in module options:
+    - `services.nixCsf.coexistence.profile = "exclusive-firewall"|"docker-coexist"`,
+  - added eval-time assertion:
+    - `docker-coexist` requires `services.nixCsf.forwardPolicy = "accept"`,
+  - implemented runtime coexistence behavior in `nix-csf-apply.sh`:
+    - parse + validate profile from generated config,
+    - fail fast for invalid `docker-coexist` forward-policy combinations,
+    - in `docker-coexist`, compile deny-style forward overlays while preserving policy accept for Docker forwarding,
+  - added coexistence observability metrics:
+    - `nix_csf_feature_enabled{feature="coexist_docker"}`,
+    - `nix_csf_coexistence_profile{profile="..."}`,
+  - expanded integration coverage with Docker-enabled node:
+    - validates apply success and coexistence forward-chain rendering,
+    - validates Docker daemon/network operations (`docker network create/inspect/rm`),
+  - updated docs/roadmap/board/session artifacts with coexistence examples and operational notes.
+- BA requirement mapping:
+  - addresses CSF-style cluster host reality where Docker or another daemon mutates firewall state, while keeping declarative deny controls in place.
+- PM milestone mapping:
+  - closes firewall coexistence profile milestone and advances next priorities to token lifecycle (`T-020`) and monitoring pack (`T-019`).
+- Risk impact:
+  - `medium` (new forward-path behavior for coexist mode; mitigated by explicit profile opt-in and integration tests).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs`
+- Open follow-ups:
+  - cluster auth/token lifecycle + secret handling (`T-020`),
+  - Grafana/Prometheus monitoring pack (`T-019`),
+  - ICMP policy profiles (`T-017`),
+  - hybrid local+remote list reconciliation (`T-022`).
+
+## 2026-02-20 — Batch TOKEN-LIFECYCLE-020
+
+- Ticket(s): `T-020`
+- Summary:
+  - added ordered auth token rotation options in module API:
+    - `services.nixCsf.clusterPolicy.authTokenFiles`,
+    - `services.nixCsf.dynamicOffenders.authTokenFiles`,
+  - kept backward compatibility with legacy single-token options:
+    - `clusterPolicy.authTokenFile`,
+    - `dynamicOffenders.authTokenFile`,
+  - added eval-time safety assertions:
+    - token file paths must be absolute,
+    - legacy `authTokenFile` cannot be combined with `authTokenFiles`,
+  - implemented secure token lifecycle handling in `nix-csf-apply.sh`:
+    - validates secret files exist and are readable,
+    - enforces strict file permissions (no group/other bits),
+    - rejects empty tokens and whitespace-containing token values,
+    - attempts token candidates in order and falls back on auth failures,
+  - added auth fallback observability:
+    - structured `auth_fallback_success` event,
+    - auth candidate/selected-slot fields in cluster and dynamic metadata events,
+    - Prometheus gauges:
+      - `nix_csf_auth_token_candidates{source="cluster_policy|dynamic_offenders"}`,
+      - `nix_csf_auth_token_selected_slot{source="cluster_policy|dynamic_offenders"}`,
+  - expanded integration coverage (`tokenrotation` node):
+    - local fixture server requires rotated tokens for cluster + dynamic endpoints,
+    - validates fallback from slot 1 to slot 2,
+    - validates cache revision updates, nft rendering, and metrics output.
+- BA requirement mapping:
+  - addresses professional secret/token handling for centralized cluster operation and supports staged token rotation without declarative churn.
+- PM milestone mapping:
+  - closes cluster auth/token lifecycle milestone and advances monitoring pack (`T-019`) as the next NOW ticket.
+- Risk impact:
+  - `medium` (strict secret-file validation can fail refresh/apply when file modes or token format are unsafe by design).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-smoke" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs`
+  - `./scripts/validate.sh`
+- Open follow-ups:
+  - Grafana/Prometheus monitoring pack (`T-019`),
+  - ICMP policy profiles (`T-017`),
+  - country allow-by-port parity (`T-018`),
+  - hybrid local+remote list reconciliation (`T-022`).

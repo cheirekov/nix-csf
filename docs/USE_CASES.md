@@ -135,11 +135,20 @@ services.nixCsf = {
     enable = true;
     url = "https://policy.example.org/nix-csf/prod-edge.json";
     failOpen = false;
-    authTokenFile = "/run/secrets/nix-csf-cluster-token";
+    authTokenFiles = [
+      "/run/secrets/nix-csf-cluster-token-current"
+      "/run/secrets/nix-csf-cluster-token-next"
+    ];
     nodeId = "edge-us-01";
   };
 };
 ```
+
+Auth token notes:
+
+- use `authTokenFiles` for staged rotation overlap (first success wins),
+- all token files must be readable only by owner (for example `0600` or `0400`),
+- legacy `authTokenFile` remains supported for single-token deployments.
 
 Expected JSON keys from the policy endpoint:
 
@@ -197,7 +206,10 @@ services.nixCsf = {
     enable = true;
     url = "https://policy.example.org/nix-csf/dynamic-offenders.json";
     failOpen = false;
-    authTokenFile = "/run/secrets/nix-csf-dynamic-token";
+    authTokenFiles = [
+      "/run/secrets/nix-csf-dynamic-token-current"
+      "/run/secrets/nix-csf-dynamic-token-next"
+    ];
     nodeId = "edge-us-01";
     defaultEntryTTLSeconds = 900;
     maxEntries = 20000;
@@ -218,8 +230,40 @@ Runtime notes:
 - `ttlSeconds` controls snapshot cache staleness.
 - strict mode (`dynamicOffenders.failOpen = false`) fails closed for expired cache.
 - temporary dynamic bans are evaluated after explicit allow rules so emergency allow/ignore overrides still work.
+- metrics expose auth candidate count and selected slot per source:
+  - `nix_csf_auth_token_candidates{source="..."}`,
+  - `nix_csf_auth_token_selected_slot{source="..."}`.
 
-## 8) Prometheus + structured logs for operations
+## 8) Docker coexistence host profile
+
+Use this when Docker (or another dynamic firewall daemon) manages forwarding/NAT and you still want nix-csf deny overlays.
+
+```nix
+services.nixCsf = {
+  enable = true;
+  forwardPolicy = "accept";
+  coexistence.profile = "docker-coexist";
+
+  # deny-style overlays still apply in forward path:
+  denyIPv4 = [ "198.51.100.0/24" ];
+  dynamicOffenders = {
+    enable = true;
+    url = "https://policy.example.org/nix-csf/dynamic-offenders.json";
+    failOpen = true;
+  };
+};
+```
+
+Operational checks:
+
+```bash
+sudo systemctl status docker.service --no-pager
+sudo grep -A25 '^  chain forward {' /var/lib/nix-csf/generated-ruleset.nft
+sudo docker network create nixcsf-check
+sudo docker network rm nixcsf-check
+```
+
+## 9) Prometheus + structured logs for operations
 
 Use this when you need host-level firewall health and source counts in monitoring.
 
@@ -243,7 +287,7 @@ sudo cat /var/lib/node_exporter/textfile_collector/nix-csf.prom
 sudo journalctl -u nix-csf-apply.service -n 50 --no-pager
 ```
 
-## 9) Global opened ports baseline
+## 10) Global opened ports baseline
 
 Use this when you want globally exposed ports independent of geo filters.
 
@@ -255,7 +299,7 @@ services.nixCsf = {
 };
 ```
 
-## 10) Ports opened only to selected countries
+## 11) Ports opened only to selected countries
 
 Use country allow-mode with strict behavior.
 
@@ -272,7 +316,7 @@ services.nixCsf = {
 };
 ```
 
-## 11) ICMP baseline and roadmap
+## 12) ICMP baseline and roadmap
 
 Current module supports global ICMP enable/disable:
 

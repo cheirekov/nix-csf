@@ -36,9 +36,9 @@
 - Cluster policy schema v2 (`allow`/`deny`/`ignore`, revision/TTL). [done 2026-02-20]
 - Operator use-case catalog and deployment examples. [baseline done 2026-02-19]
 - Dynamic offender propagation across cluster nodes. [baseline done 2026-02-20]
-- Firewall coexistence profile (Docker/other dynamic firewall daemons).
+- Firewall coexistence profile (Docker/other dynamic firewall daemons). [done 2026-02-20]
 - Hybrid local-files + remote-cluster list reconciliation.
-- Cluster auth/token lifecycle and secret-management guidance.
+- Cluster auth/token lifecycle and secret-management guidance. [done 2026-02-20]
 - Grafana/Prometheus monitoring pack and alert rules.
 - Troubleshooting command set and runbook.
 

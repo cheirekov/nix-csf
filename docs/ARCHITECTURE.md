@@ -11,6 +11,7 @@
 - Centralized cluster policy propagation for multi-host allow/deny overlays.
 - Cluster policy schema v2 governance (`allow`/`deny`/`ignore` + revision/TTL).
 - Clear separation between declarative policy state and runtime dynamic offender state.
+- Secret-managed auth lifecycle for remote cluster and dynamic endpoints.
 - Coexistence strategy for hosts that run additional firewall mutators (for example Docker).
 - Repeatable SemVer-based release lifecycle.
 
@@ -43,12 +44,16 @@
    - static config values,
    - cached feed data.
 4. Refresh service (manual/timer) downloads latest feed files and optional cluster policy overlay JSON.
-5. Cluster policy cache metadata (schema/revision/TTL) is validated before merge.
-6. Dynamic offender snapshot is validated and converted into timeout-based nft sets.
-7. Rules are regenerated and atomically re-applied.
-7. Optional observability export writes:
+5. Remote auth token files are loaded from secret paths, validated, and used with ordered fallback when multiple candidates are configured.
+6. Cluster policy cache metadata (schema/revision/TTL) is validated before merge.
+7. Dynamic offender snapshot is validated and converted into timeout-based nft sets.
+8. Coexistence profile determines forward-hook ownership:
+   - `exclusive-firewall`: forward policy is fully module-driven,
+   - `docker-coexist`: keep forward policy `accept` and enforce deny-style overlays only.
+9. Rules are regenerated and atomically re-applied.
+10. Optional observability export writes:
    - structured event logs to journald,
-   - snapshot metrics in Prometheus textfile format (including build/version metadata).
+   - snapshot metrics in Prometheus textfile format (including build/version metadata and auth-slot telemetry).
 
 ## Security boundaries
 
@@ -60,6 +65,8 @@
 - Cluster ignore overlays can explicitly subtract CIDRs from deny-style sources.
 - Dynamic offender snapshots enforce schema + optional TTL cache-age guardrails.
 - Dynamic snapshots are bounded by `dynamicOffenders.maxEntries` to avoid oversized runtime merges.
+- Auth token files are validated at runtime for strict permissions/content before remote fetches (`authTokenFile`/`authTokenFiles`).
+- Docker coexistence mode is explicit (`coexistence.profile = "docker-coexist"`) and guarded by `forwardPolicy = "accept"` to reduce forwarding regressions.
 
 ## Centralized dynamic model
 
@@ -68,11 +75,12 @@ Baseline implementation now includes:
 - `dynamicOffenders` remote snapshot fetch/caching,
 - per-entry TTL/expiry conversion into nft timeout sets,
 - strict fail-closed behavior on expired snapshots (`failOpen = false`),
-- observability metrics for dynamic snapshot schema/cache-age/TTL/expiry.
+- auth token rotation fallback (`authTokenFiles`) for cluster and dynamic endpoints,
+- observability metrics for dynamic snapshot schema/cache-age/TTL/expiry and auth token slot selection.
 
 See `docs/DYNAMIC_CLUSTER_POC.md` for extended roadmap recommendations:
 
 - hybrid local-files + remote cluster list workflows,
-- token lifecycle handling for cluster auth,
+- token lifecycle handling for cluster auth (baseline implemented with `authTokenFiles`),
 - Grafana/Prometheus operational model,
-- Docker and other dynamic-firewall coexistence strategy.
+- Docker and other dynamic-firewall coexistence strategy (baseline implemented via `coexistence.profile`).
