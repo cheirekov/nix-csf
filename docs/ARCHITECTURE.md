@@ -13,6 +13,7 @@
 - Clear separation between declarative policy state and runtime dynamic offender state.
 - Secret-managed auth lifecycle for remote cluster and dynamic endpoints.
 - Coexistence strategy for hosts that run additional firewall mutators (for example Docker).
+- Operator-ready monitoring pack (Prometheus alerts + Grafana dashboards + runbook).
 - Repeatable SemVer-based release lifecycle.
 
 ## Components
@@ -25,6 +26,12 @@
   - Single source of truth for module/project SemVer.
 - `scripts/release.sh`
   - Maintainer release automation (validate, version bump, tag flow).
+- `docs/monitoring/prometheus-alert-rules.yml`
+  - Prometheus alert policy for nix-csf runtime health.
+- `docs/monitoring/grafana-dashboard.json`
+  - Grafana dashboard template for nix-csf operational visibility.
+- `docs/MONITORING.md`
+  - Monitoring runbook and wiring examples.
 - `systemd` units
   - `nix-csf-apply.service`: early boot apply.
   - `nix-csf-refresh.service`: network-online refresh.

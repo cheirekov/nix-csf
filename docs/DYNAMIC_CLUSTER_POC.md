@@ -146,6 +146,10 @@ POC monitoring pack should include:
   - repeated apply failures,
   - sudden dynamic-ban spikes.
 
+Optional extension path:
+
+- Netdata mapping of the same `nix_csf_*` metric surface (`T-023`) to avoid dual semantics.
+
 ## 8) Nix-style examples
 
 ### 8.1 Global open ports
@@ -202,3 +206,4 @@ Current priority after `T-020`:
 1. `T-019` Grafana/Prometheus pack + alerting
 2. `T-017` ICMP policy profiles (type/rate controls)
 3. `T-022` hybrid local-files + remote reconciliation contract
+4. `T-023` Netdata monitoring integration (optional story)

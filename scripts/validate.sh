@@ -7,12 +7,14 @@ cd "${ROOT_DIR}"
 echo "[nix-csf] running flake checks (eval + lint + check definitions)"
 nix flake check "path:${ROOT_DIR}" --all-systems --no-build
 
-echo "[nix-csf] running x86_64 lightweight checks (version + eval + profile eval + shellcheck)"
+echo "[nix-csf] running x86_64 lightweight checks (version + eval + profile eval + monitoring eval + shellcheck + monitoring pack)"
 nix build \
   "path:${ROOT_DIR}#checks.x86_64-linux.version-semver" \
   "path:${ROOT_DIR}#checks.x86_64-linux.eval-basic" \
   "path:${ROOT_DIR}#checks.x86_64-linux.eval-profiles" \
-  "path:${ROOT_DIR}#checks.x86_64-linux.shellcheck"
+  "path:${ROOT_DIR}#checks.x86_64-linux.eval-monitoring" \
+  "path:${ROOT_DIR}#checks.x86_64-linux.shellcheck" \
+  "path:${ROOT_DIR}#checks.x86_64-linux.monitoring-pack"
 
 echo "[nix-csf] running x86_64 VM test builds (smoke + integration)"
 nix build \

@@ -6,69 +6,57 @@ Owner: PM/BA + Codex
 ## 1) Batch contract
 
 - Batch type: `DAY (2-4h)`
-- Active ticket: `T-020` (Cluster auth/token lifecycle and secret handling).
-- Goal: deliver secure token rotation and secret handling for cluster policy and dynamic offender endpoints without breaking strict-mode behavior.
+- Active ticket: `T-019` (Grafana/Prometheus monitoring pack).
+- Goal: ship an operator-ready monitoring bundle (dashboard + alert rules + runbook) aligned with existing `nix_csf_*` metrics.
 - In scope:
-  - add ordered auth token rotation options:
-    - `services.nixCsf.clusterPolicy.authTokenFiles`,
-    - `services.nixCsf.dynamicOffenders.authTokenFiles`,
-  - enforce secret file safety checks in runtime:
-    - existence/readability checks,
-    - permission hardening (no group/other access),
-    - non-empty and whitespace-free token values,
-  - implement ordered fetch fallback (try token candidates sequentially),
-  - expose auth fallback observability in logs and metrics,
-  - expand integration tests with auth-rotation fixture coverage,
-  - update README/architecture/use-cases/board/changelog docs.
+  - deliver Grafana dashboard JSON for `nix-csf` health and capacity views,
+  - deliver Prometheus alert rules for staleness, cache expiry, auth fallback, and performance,
+  - deliver monitoring runbook with NixOS wiring examples,
+  - add validation checks for monitoring assets in flake/validate pipeline,
+  - triage optional Netdata story and register it as a backlog ticket.
 - Out of scope:
-  - Grafana/Prometheus monitoring pack (`T-019`),
   - ICMP per-type/per-rate controls (`T-017`),
+  - country allow-by-port parity (`T-018`),
   - hybrid local-file + remote list reconciliation (`T-022`).
 - Stop/rollback condition:
-  - any regression that weakens strict fail-closed semantics or allows insecure secret-file handling.
+  - any alert/dashboard asset that cannot be validated deterministically in CI checks.
 
 ## 2) Definition of done
 
-- Rotation-capable auth options are available and validated in module assertions.
-- Runtime supports legacy single-token mode and ordered multi-token fallback mode.
-- Secret-file checks reject insecure permissions and malformed tokens.
-- Logs/metrics expose candidate counts and selected token slot.
-- Integration tests validate rotation fallback for both cluster and dynamic sources.
-- Delivery board, session brief, changelog, and docs are updated.
+- Monitoring assets exist in-repo with stable file paths.
+- Prometheus alert rules are parse-validated.
+- Grafana dashboard JSON is parse/shape validated.
+- Validation pipeline includes dedicated monitoring checks.
+- Documentation (README/use-cases/architecture/monitoring doc) references and explains the pack.
+- Delivery board, session brief, changelog, and roadmap are updated.
 
 ## 3) End-of-batch result
 
 - Decision: `continue`
 - Completed:
-  - closed `T-020`:
-    - added module options:
-      - `services.nixCsf.clusterPolicy.authTokenFiles`,
-      - `services.nixCsf.dynamicOffenders.authTokenFiles`,
-    - added eval-time assertions:
-      - `authTokenFiles` entries must be absolute paths,
-      - `authTokenFile` cannot be combined with `authTokenFiles`,
-    - implemented runtime token lifecycle in `scripts/nix-csf-apply.sh`:
-      - auth token file validation (`exists`, `readable`, strict mode bits),
-      - token content validation (non-empty, no whitespace),
-      - ordered bearer-token fallback on fetch (`slot 1..N`),
-      - compatibility mapping from legacy `authTokenFile` to candidate list,
-    - observability updates:
-      - structured `auth_fallback_success` event,
-      - auth fields in `cluster_policy_meta` and `dynamic_offenders_meta`,
-      - Prometheus metrics:
-        - `nix_csf_auth_token_candidates{source=...}`,
-        - `nix_csf_auth_token_selected_slot{source=...}`,
-    - expanded integration test coverage (`tokenrotation` node):
-      - auth-protected fixture endpoint requiring rotated tokens,
-      - deterministic fallback-from-slot-1-to-slot-2 validation,
-      - cache revision + nft rendering assertions after refresh,
-      - metrics assertions for candidate count and selected slot.
+  - closed `T-019`:
+    - added monitoring assets:
+      - `docs/monitoring/prometheus-alert-rules.yml`,
+      - `docs/monitoring/grafana-dashboard.json`,
+      - `docs/MONITORING.md`,
+    - alert coverage includes:
+      - refresh staleness,
+      - cluster policy cache expiry,
+      - dynamic snapshot cache expiry,
+      - dynamic-ban cardinality spike,
+      - auth fallback slot activity,
+      - elevated refresh duration,
+    - added monitoring validation checks in `flake.nix`:
+      - `checks.<system>.eval-monitoring`,
+      - `checks.<system>.monitoring-pack`,
+    - extended `scripts/validate.sh` to include monitoring checks before VM tests,
+    - updated docs:
+      - README, architecture, use-case catalog, roadmap, and dynamic cluster POC.
+  - triaged and registered optional Netdata story:
+    - `T-023` (Netdata monitoring integration) added to delivery board and roadmap.
 - Validation evidence:
-  - `bash -n scripts/nix-csf-apply.sh`
-  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
-  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
-  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-smoke" --print-build-logs`
-  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-monitoring" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.monitoring-pack" --print-build-logs`
   - `./scripts/validate.sh`
 - Next ticket candidate:
-  - `T-019` Grafana/Prometheus monitoring pack, then `T-017`.
+  - `T-017` ICMP policy profiles, then `T-018`.

@@ -1,0 +1,63 @@
+groups:
+  - name: nix-csf-health
+    interval: 1m
+    rules:
+      - alert: NixCsfRefreshStale
+        expr: time() - nix_csf_last_run_timestamp_seconds{mode="refresh"} > 7200
+        for: 15m
+        labels:
+          severity: warning
+          component: nix-csf
+        annotations:
+          summary: "nix-csf refresh data is stale"
+          description: "No successful refresh metric update in over 2 hours. Check nix-csf-refresh.timer/service and remote feed reachability."
+
+      - alert: NixCsfClusterPolicyCacheExpired
+        expr: nix_csf_cluster_policy_cache_expired == 1 and on(instance, job) nix_csf_feature_enabled{feature="cluster_policy"} == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: nix-csf
+        annotations:
+          summary: "nix-csf cluster policy cache expired"
+          description: "Cluster policy is enabled and cached policy TTL is expired. Strict nodes may fail closed."
+
+      - alert: NixCsfDynamicSnapshotExpired
+        expr: nix_csf_dynamic_snapshot_cache_expired == 1 and on(instance, job) nix_csf_feature_enabled{feature="dynamic_offenders"} == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: nix-csf
+        annotations:
+          summary: "nix-csf dynamic offender snapshot expired"
+          description: "Dynamic offender feed is enabled and cached snapshot TTL is expired. Strict nodes may fail closed."
+
+      - alert: NixCsfDynamicBanCardinalitySpike
+        expr: sum by (instance, job) (nix_csf_set_entries{set=~"dynamic_ban_ipv4|dynamic_ban_ipv6"}) > 20000
+        for: 10m
+        labels:
+          severity: warning
+          component: nix-csf
+        annotations:
+          summary: "nix-csf dynamic ban set is unusually large"
+          description: "Dynamic ban entries exceed 20k. Verify detector behavior and potential abuse events."
+
+      - alert: NixCsfAuthFallbackActive
+        expr: nix_csf_auth_token_selected_slot{source=~"cluster_policy|dynamic_offenders"} > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: nix-csf
+        annotations:
+          summary: "nix-csf remote auth fallback token in use"
+          description: "A non-primary auth token slot is being used. Rotation may be in progress or primary token may be invalid."
+
+      - alert: NixCsfRefreshDurationHigh
+        expr: nix_csf_last_run_duration_seconds{mode="refresh"} > 45
+        for: 15m
+        labels:
+          severity: warning
+          component: nix-csf
+        annotations:
+          summary: "nix-csf refresh runtime is elevated"
+          description: "Refresh runs are taking over 45s. Investigate feed latency, DNS, or host resource pressure."

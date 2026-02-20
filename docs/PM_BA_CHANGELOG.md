@@ -539,3 +539,56 @@
   - ICMP policy profiles (`T-017`),
   - country allow-by-port parity (`T-018`),
   - hybrid local+remote list reconciliation (`T-022`).
+
+## 2026-02-20 — Batch MONITORING-PACK-019
+
+- Ticket(s): `T-019`
+- Summary:
+  - delivered monitoring artifacts:
+    - Prometheus alert rules: `docs/monitoring/prometheus-alert-rules.yml`,
+    - Grafana dashboard: `docs/monitoring/grafana-dashboard.json`,
+    - operations runbook: `docs/MONITORING.md`,
+  - implemented alert coverage for:
+    - refresh staleness,
+    - cluster policy cache expiry,
+    - dynamic snapshot cache expiry,
+    - dynamic-ban cardinality spikes,
+    - auth token fallback slot activity,
+    - elevated refresh runtime,
+  - added monitoring-focused validation checks in `flake.nix`:
+    - `checks.<system>.eval-monitoring`,
+    - `checks.<system>.monitoring-pack`,
+  - updated validation pipeline in `scripts/validate.sh` to execute monitoring checks prior to VM suites,
+  - updated user/operator docs:
+    - `README.md`,
+    - `docs/ARCHITECTURE.md`,
+    - `docs/USE_CASES.md`,
+    - `docs/DYNAMIC_CLUSTER_POC.md`,
+    - `docs/ROADMAP.md`,
+    - `docs/DELIVERY_BOARD.md`.
+- BA requirement mapping:
+  - fulfills requested detailed monitoring guidance with operational examples and actionable alerting around centralized/dynamic firewall behavior.
+- PM milestone mapping:
+  - closes Grafana/Prometheus monitoring pack milestone and advances ICMP profile work (`T-017`) as next NOW ticket.
+- Risk impact:
+  - `low` (monitoring/docs/check-path expansion only; runtime firewall enforcement semantics unchanged).
+- Validation evidence:
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-monitoring" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.monitoring-pack" --print-build-logs`
+  - `./scripts/validate.sh`
+- Open follow-ups:
+  - ICMP policy profiles (`T-017`),
+  - country allow-by-port parity (`T-018`),
+  - hybrid local+remote list reconciliation (`T-022`),
+  - Netdata monitoring integration (`T-023`, optional enhancement).
+
+## 2026-02-20 — Triage NETDATA-023
+
+- Ticket(s): `T-023`
+- Decision:
+  - accepted as separate story (not blocker for core monitoring pack).
+- Priority/severity:
+  - `P3` enhancement.
+- Scope:
+  - map existing `nix_csf_*` metrics into Netdata charts + alarms,
+  - keep semantic alignment with Prometheus/Grafana monitoring pack to avoid drift.

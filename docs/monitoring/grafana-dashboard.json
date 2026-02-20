@@ -1,0 +1,175 @@
+{
+  "id": null,
+  "uid": "nix-csf-ops",
+  "title": "nix-csf Operations",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["nix-csf", "firewall", "nftables"],
+  "timezone": "",
+  "editable": true,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "label": "Data Source"
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "$datasource" },
+        "query": "label_values(nix_csf_last_run_success, instance)",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "label": "Instance"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Run Success",
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "nix_csf_last_run_success{instance=~\"$instance\",mode=~\"apply|refresh\"}",
+          "legendFormat": "{{instance}} {{mode}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Run Duration (seconds)",
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "nix_csf_last_run_duration_seconds{instance=~\"$instance\",mode=~\"apply|refresh\"}",
+          "legendFormat": "{{instance}} {{mode}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Cluster Cache Age vs TTL",
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "nix_csf_cluster_policy_cache_age_seconds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} age"
+        },
+        {
+          "expr": "nix_csf_cluster_policy_ttl_seconds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} ttl"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Dynamic Snapshot Age vs TTL",
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "nix_csf_dynamic_snapshot_cache_age_seconds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} age"
+        },
+        {
+          "expr": "nix_csf_dynamic_snapshot_ttl_seconds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}} ttl"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Set Cardinality (Total)",
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "sum by (instance) (nix_csf_set_entries{instance=~\"$instance\"})",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Dynamic Ban Entries",
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "nix_csf_set_entries{instance=~\"$instance\",set=~\"dynamic_ban_ipv4|dynamic_ban_ipv6\"}",
+          "legendFormat": "{{instance}} {{set}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Auth Token Fallback Slot",
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "nix_csf_auth_token_selected_slot{instance=~\"$instance\",source=~\"cluster_policy|dynamic_offenders\"}",
+          "legendFormat": "{{instance}} {{source}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Expired Cache Flags",
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "nix_csf_cluster_policy_cache_expired{instance=~\"$instance\"}",
+          "legendFormat": "cluster"
+        },
+        {
+          "expr": "nix_csf_dynamic_snapshot_cache_expired{instance=~\"$instance\"}",
+          "legendFormat": "dynamic"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 24 }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Coexistence Profile",
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "nix_csf_coexistence_profile{instance=~\"$instance\",profile=\"docker-coexist\"}",
+          "legendFormat": "docker-coexist"
+        }
+      ],
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 24 }
+    }
+  ]
+}

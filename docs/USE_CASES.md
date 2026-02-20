@@ -287,6 +287,12 @@ sudo cat /var/lib/node_exporter/textfile_collector/nix-csf.prom
 sudo journalctl -u nix-csf-apply.service -n 50 --no-pager
 ```
 
+Pack assets shipped in-repo:
+
+- Prometheus alerts: `docs/monitoring/prometheus-alert-rules.yml`
+- Grafana dashboard: `docs/monitoring/grafana-dashboard.json`
+- Runbook: `docs/MONITORING.md`
+
 ## 10) Global opened ports baseline
 
 Use this when you want globally exposed ports independent of geo filters.

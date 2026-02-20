@@ -24,6 +24,7 @@ Kickoff baseline is implemented:
 - Dynamic offender snapshot propagation with timeout sets (`dynamicOffenders.*`)
 - Auth token lifecycle with ordered rotation fallback (`*.authTokenFiles`)
 - Firewall coexistence profiles (`coexistence.profile`, including Docker coexist mode)
+- Monitoring pack assets (`docs/MONITORING.md`, Grafana dashboard, Prometheus alert rules)
 - Structured run logs + optional Prometheus textfile metrics (`observability.*`)
 - Early boot apply + scheduled refresh via systemd
 - Module/release version source via `VERSION` (SemVer)
@@ -382,7 +383,9 @@ The validation script runs:
 - `checks.x86_64-linux.version-semver` (VERSION SemVer gate)
 - `checks.x86_64-linux.eval-basic` (module evaluation wiring)
 - `checks.x86_64-linux.eval-profiles` (profile defaults + override precedence)
+- `checks.x86_64-linux.eval-monitoring` (Prometheus/Grafana wiring evaluation)
 - `checks.x86_64-linux.shellcheck` (script lint)
+- `checks.x86_64-linux.monitoring-pack` (Grafana JSON + Prometheus alert rule lint)
 - `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
 - `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, and auth-token rotation fallback)
 
@@ -420,6 +423,7 @@ Consumers can pin by tag:
 - Architecture: `docs/ARCHITECTURE.md`
 - Dynamic cluster POC recommendation: `docs/DYNAMIC_CLUSTER_POC.md`
 - Operator use-case catalog: `docs/USE_CASES.md`
+- Monitoring pack and runbook: `docs/MONITORING.md`
 - Release/compatibility policy: `docs/RELEASE.md`
 - Delivery board: `docs/DELIVERY_BOARD.md`
 - Team rules: `docs/TEAM_OPERATING_RULES.md`

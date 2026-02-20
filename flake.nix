@@ -50,6 +50,24 @@
               autoRefresh.onCalendar = "weekly";
             };
           });
+          monitoringEval = mkEvalSystem ({ ... }: {
+            services.prometheus = {
+              enable = true;
+              ruleFiles = [ ./docs/monitoring/prometheus-alert-rules.yml ];
+              scrapeConfigs = [
+                {
+                  job_name = "node";
+                  static_configs = [
+                    {
+                      targets = [ "127.0.0.1:9100" ];
+                      labels = { role = "firewall"; };
+                    }
+                  ];
+                }
+              ];
+            };
+            services.grafana.enable = true;
+          });
         in
         {
           version-semver = pkgs.runCommand "nix-csf-version-semver" {
@@ -91,10 +109,38 @@
             test "$edgeOverrideOnCalendar" = "weekly"
             touch "$out"
           '';
+          eval-monitoring = pkgs.runCommand "nix-csf-eval-monitoring" {
+            prometheusEnabled = boolText monitoringEval.config.services.prometheus.enable;
+            grafanaEnabled = boolText monitoringEval.config.services.grafana.enable;
+            ruleFileCount = toString (builtins.length monitoringEval.config.services.prometheus.ruleFiles);
+          } ''
+            test "$prometheusEnabled" = "true"
+            test "$grafanaEnabled" = "true"
+            test "$ruleFileCount" = "1"
+            touch "$out"
+          '';
           shellcheck = pkgs.runCommand "nix-csf-shellcheck" {
             nativeBuildInputs = [ pkgs.shellcheck ];
           } ''
             shellcheck ${./scripts/nix-csf-apply.sh} ${./scripts/validate.sh} ${./scripts/release.sh}
+            touch "$out"
+          '';
+          monitoring-pack = pkgs.runCommand "nix-csf-monitoring-pack" {
+            nativeBuildInputs = [ pkgs.gnugrep pkgs.jq pkgs.yq-go ];
+          } ''
+            jq -e '
+              .uid == "nix-csf-ops" and
+              .schemaVersion >= 39 and
+              (.panels | length) >= 8 and
+              (.templating.list | length) >= 2
+            ' ${./docs/monitoring/grafana-dashboard.json} >/dev/null
+
+            yq -e '.groups | length >= 1' ${./docs/monitoring/prometheus-alert-rules.yml} >/dev/null
+            yq -e '.groups[].rules[] | select(.alert == "NixCsfClusterPolicyCacheExpired") | .alert' ${./docs/monitoring/prometheus-alert-rules.yml} >/dev/null
+            yq -e '.groups[].rules[] | select(.alert == "NixCsfDynamicSnapshotExpired") | .alert' ${./docs/monitoring/prometheus-alert-rules.yml} >/dev/null
+
+            grep -q 'Optional Netdata Story (`T-023`)' ${./docs/MONITORING.md}
+
             touch "$out"
           '';
         });
