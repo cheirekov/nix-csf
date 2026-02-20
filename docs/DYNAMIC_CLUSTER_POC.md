@@ -14,8 +14,12 @@ Define a professional, Nix-idiomatic path for CSF-style dynamic behavior:
 
 This document is a recommendation and POC contract. Baseline implementation now includes
 `clusterPolicy` schema v2, dynamic offender snapshot propagation (`dynamicOffenders`), and
-coexistence profiles (`coexistence.profile`, including `docker-coexist`).
-Remaining items focus on detector integrations, monitoring pack, and operations hardening.
+coexistence profiles (`coexistence.profile`, including `docker-coexist`), plus control-plane
+snapshot publishing/mutation baseline (`controlPlane`, `T-024`).
+Remaining items focus on escalation policy, operator workflow, and reconciliation hardening.
+
+For the detailed remote-control-plane retro and write-path design, see
+`docs/CLUSTER_CONTROL_PLANE_POC.md`.
 
 ## 2) Nix-way constraints
 
@@ -201,9 +205,9 @@ Current module supports `allowICMP = true|false` (global). Per-type/per-rate ICM
 
 ## 9) POC delivery slice
 
-Current priority after `T-020`:
+Current cluster-first priority:
 
-1. `T-019` Grafana/Prometheus pack + alerting
-2. `T-017` ICMP policy profiles (type/rate controls)
+1. `T-026` dynamic escalation policy PoC (`N` temp bans => permanent deny)
+2. `T-025` operator mutation workflow PoC (`nix-csfctl`)
 3. `T-022` hybrid local-files + remote reconciliation contract
 4. `T-023` Netdata monitoring integration (optional story)

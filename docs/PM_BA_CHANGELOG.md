@@ -592,3 +592,77 @@
 - Scope:
   - map existing `nix_csf_*` metrics into Netdata charts + alarms,
   - keep semantic alignment with Prometheus/Grafana monitoring pack to avoid drift.
+
+## 2026-02-20 — Batch CLUSTER-RETRO-PLAN-024
+
+- Ticket(s): `T-024` (planning kickoff), `T-025` (new), `T-026` (new)
+- Summary:
+  - performed clustering retro focused on CSF-like day-2 workflow gaps:
+    - no built-in cluster write-path command/API,
+    - no built-in local mutation fan-out flow,
+    - no built-in escalation rule from temporary to permanent bans,
+  - created dedicated design/PoC artifact:
+    - `docs/CLUSTER_CONTROL_PLANE_POC.md`,
+  - defined and queued new cluster-first PoC tickets:
+    - `T-024` control-plane + snapshot publisher,
+    - `T-025` operator mutation workflow (`nix-csfctl`),
+    - `T-026` escalation policy (`N` temporary bans => permanent deny),
+  - reordered delivery board priorities to cluster-first sequence and aligned roadmap/session docs.
+- BA requirement mapping:
+  - directly addresses operator request for easy remote policy management and CSF-style cluster behavior while preserving Nix declarative boundaries.
+- PM milestone mapping:
+  - establishes the next execution lane for cluster control-plane usability and dynamic escalation maturity.
+- Risk impact:
+  - `none` (planning/documentation-only change; runtime firewall behavior unchanged).
+- Validation evidence:
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+- Open follow-ups:
+  - implement `T-024`,
+  - implement `T-025`,
+  - implement `T-026`.
+
+## 2026-02-20 — Batch CONTROL-PLANE-POC-024
+
+- Ticket(s): `T-024`
+- Summary:
+  - implemented in-repo control-plane PoC service:
+    - `scripts/nix-csf-control-plane.py`,
+    - mutable state persisted under `controlPlane.dataDir` (default `/var/lib/nix-csf-control-plane`),
+    - read endpoints:
+      - `GET /healthz`,
+      - `GET /snapshots/<env>/cluster-policy.json`,
+      - `GET /snapshots/<env>/dynamic-offenders.json`,
+    - write endpoints:
+      - `POST /v1/policy/{allow|deny|ignore}`,
+      - `DELETE /v1/policy/{allow|deny|ignore}`,
+      - `POST /v1/offenders/ban-temp`,
+      - `POST /v1/offenders/unban`,
+  - added module API and systemd wiring:
+    - `services.nixCsf.controlPlane.*`,
+    - `systemd.services.nix-csf-control-plane`,
+    - tmpfiles/assertions for runtime state and auth configuration,
+  - extended integration coverage with `controlplanepoc` node:
+    - API mutation -> `nix-csf-refresh.service` -> cache update -> nft set/ruleset verification,
+  - added validation gates:
+    - `checks.<system>.eval-control-plane`,
+    - `checks.<system>.control-plane-lint`,
+    - `scripts/validate.sh` wiring for both checks,
+  - improved VM test robustness for Docker coexist path in slow/no-KVM runs:
+    - `systemd.services.docker.path = [ pkgs.nftables ]`,
+    - `systemd.services.docker.serviceConfig.TimeoutStartSec = "300s"`.
+- BA requirement mapping:
+  - addresses requested "non-static list" operations in NixOS by keeping mutable runtime policy data outside declarative rebuild artifacts while preserving pull-based client safety.
+- PM milestone mapping:
+  - closes cluster control-plane snapshot publisher PoC and promotes escalation work (`T-026`) as NOW priority.
+- Risk impact:
+  - `medium` (new optional service surface + API path; defaults remain unchanged unless `controlPlane.enable = true`).
+- Validation evidence:
+  - `bash -n scripts/validate.sh`
+  - `python3 -m py_compile scripts/nix-csf-control-plane.py`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-control-plane" "path:/home/yc/work/nix-csf#checks.x86_64-linux.control-plane-lint" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs` (slow/no-KVM TCG runtime)
+- Open follow-ups:
+  - implement escalation policy (`T-026`) with explicit local-only mode compatibility,
+  - implement operator CLI (`T-025`),
+  - define hybrid local-files reconciliation contract (`T-022`).

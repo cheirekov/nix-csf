@@ -68,6 +68,13 @@
             };
             services.grafana.enable = true;
           });
+          controlPlaneEval = mkEvalSystem ({ ... }: {
+            services.nixCsf.controlPlane = {
+              enable = true;
+              requireAuth = false;
+              environment = "lab";
+            };
+          });
         in
         {
           version-semver = pkgs.runCommand "nix-csf-version-semver" {
@@ -119,10 +126,24 @@
             test "$ruleFileCount" = "1"
             touch "$out"
           '';
+          eval-control-plane = pkgs.runCommand "nix-csf-eval-control-plane" {
+            controlPlaneEnabled = boolText controlPlaneEval.config.services.nixCsf.controlPlane.enable;
+            controlPlaneExec = controlPlaneEval.config.systemd.services.nix-csf-control-plane.serviceConfig.ExecStart;
+          } ''
+            test "$controlPlaneEnabled" = "true"
+            test -n "$controlPlaneExec"
+            printf '%s\n' "$controlPlaneExec" > "$out"
+          '';
           shellcheck = pkgs.runCommand "nix-csf-shellcheck" {
             nativeBuildInputs = [ pkgs.shellcheck ];
           } ''
             shellcheck ${./scripts/nix-csf-apply.sh} ${./scripts/validate.sh} ${./scripts/release.sh}
+            touch "$out"
+          '';
+          control-plane-lint = pkgs.runCommand "nix-csf-control-plane-lint" {
+            nativeBuildInputs = [ pkgs.python3 ];
+          } ''
+            python3 -m py_compile ${./scripts/nix-csf-control-plane.py}
             touch "$out"
           '';
           monitoring-pack = pkgs.runCommand "nix-csf-monitoring-pack" {

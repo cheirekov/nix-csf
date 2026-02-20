@@ -91,6 +91,14 @@ let
     text = builtins.readFile ../../scripts/nix-csf-apply.sh;
   };
 
+  controlPlaneTool = pkgs.writeShellApplication {
+    name = "nix-csf-control-plane";
+    runtimeInputs = with pkgs; [ python3 ];
+    text = ''
+      exec ${pkgs.python3}/bin/python3 ${../../scripts/nix-csf-control-plane.py} "$@"
+    '';
+  };
+
   runtimeConfigFile = (pkgs.formats.json { }).generate "nix-csf-runtime-config.json" {
     moduleVersion = cfg.moduleVersion;
     threatProfile = cfg.threatProfile;
@@ -177,6 +185,23 @@ let
       };
     };
   };
+
+  controlPlaneExecStart =
+    let
+      baseArgs = [
+        "--bind-address" cfg.controlPlane.bindAddress
+        "--port" (toString cfg.controlPlane.port)
+        "--data-dir" cfg.controlPlane.dataDir
+        "--environment" cfg.controlPlane.environment
+        "--cluster-policy-ttl-seconds" (toString cfg.controlPlane.clusterPolicyTTLSeconds)
+        "--dynamic-snapshot-ttl-seconds" (toString cfg.controlPlane.dynamicSnapshotTTLSeconds)
+        "--default-ban-ttl-seconds" (toString cfg.controlPlane.defaultBanTTLSeconds)
+      ];
+      authArgs =
+        (if cfg.controlPlane.requireAuth then [ "--require-auth" ] else [ ])
+        ++ (if cfg.controlPlane.authTokenFile != null then [ "--auth-token-file" cfg.controlPlane.authTokenFile ] else [ ]);
+    in
+    "${controlPlaneTool}/bin/nix-csf-control-plane ${lib.escapeShellArgs (baseArgs ++ authArgs)}";
 
   validCountryCode = cc: builtins.match "^[A-Z]{2}$" (toUpper cc) != null;
 
@@ -765,6 +790,87 @@ in
       };
     };
 
+    controlPlane = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable the local nix-csf control-plane PoC service.
+          This service stores mutable runtime cluster state outside nixos-rebuild-managed files
+          and publishes cluster policy/dynamic offender snapshots for client nodes.
+        '';
+      };
+
+      bindAddress = mkOption {
+        type = types.str;
+        default = "127.0.0.1";
+        example = "0.0.0.0";
+        description = "Bind address for the control-plane HTTP service.";
+      };
+
+      port = mkOption {
+        type = types.port;
+        default = 18081;
+        description = "TCP port for the control-plane HTTP service.";
+      };
+
+      dataDir = mkOption {
+        type = types.str;
+        default = "/var/lib/nix-csf-control-plane";
+        description = ''
+          Absolute path where mutable control-plane state is stored.
+          This directory is runtime state and is not overwritten by nixos-rebuild.
+        '';
+      };
+
+      environment = mkOption {
+        type = types.str;
+        default = "prod";
+        example = "lab";
+        description = ''
+          Snapshot environment namespace expected in request paths:
+          /snapshots/<environment>/cluster-policy.json
+        '';
+      };
+
+      clusterPolicyTTLSeconds = mkOption {
+        type = types.ints.positive;
+        default = 300;
+        description = "ttlSeconds value emitted in cluster policy snapshots.";
+      };
+
+      dynamicSnapshotTTLSeconds = mkOption {
+        type = types.ints.positive;
+        default = 120;
+        description = "ttlSeconds value emitted in dynamic offender snapshots.";
+      };
+
+      defaultBanTTLSeconds = mkOption {
+        type = types.ints.positive;
+        default = 900;
+        description = "Default TTL for /v1/offenders/ban-temp requests without ttlSeconds.";
+      };
+
+      requireAuth = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Require Authorization: Bearer token for snapshot and mutation endpoints.
+          /healthz remains unauthenticated.
+        '';
+      };
+
+      authTokenFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "/run/secrets/nix-csf-control-plane-token";
+        description = ''
+          Absolute path to bearer token used by control-plane API auth.
+          Required when controlPlane.requireAuth = true.
+        '';
+      };
+    };
+
     coexistence = {
       profile = mkOption {
         type = types.enum [ "exclusive-firewall" "docker-coexist" ];
@@ -845,6 +951,47 @@ in
     (mkIf (cfg.enable && cfg.threatProfile == "server") threatProfileDefaults.server)
     (mkIf (cfg.enable && cfg.threatProfile == "workstation") threatProfileDefaults.workstation)
     (mkIf (cfg.enable && cfg.threatProfile == "edge") threatProfileDefaults.edge)
+    (mkIf cfg.controlPlane.enable {
+    assertions = [
+      {
+        assertion = hasPrefix "/" cfg.controlPlane.dataDir;
+        message = "services.nixCsf.controlPlane.dataDir must be an absolute path.";
+      }
+      {
+        assertion = cfg.controlPlane.environment != "";
+        message = "services.nixCsf.controlPlane.environment must not be empty.";
+      }
+      {
+        assertion = !cfg.controlPlane.requireAuth || cfg.controlPlane.authTokenFile != null;
+        message = ''
+          services.nixCsf.controlPlane.requireAuth = true requires
+          services.nixCsf.controlPlane.authTokenFile.
+        '';
+      }
+      {
+        assertion = cfg.controlPlane.authTokenFile == null || hasPrefix "/" cfg.controlPlane.authTokenFile;
+        message = "services.nixCsf.controlPlane.authTokenFile must be an absolute path when set.";
+      }
+    ];
+
+    systemd.tmpfiles.rules = [
+      "d ${cfg.controlPlane.dataDir} 0750 root root -"
+    ];
+
+    environment.systemPackages = [ controlPlaneTool ];
+
+    systemd.services.nix-csf-control-plane = {
+      description = "nix-csf control-plane snapshot publisher (POC)";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "local-fs.target" "network.target" ];
+      serviceConfig = {
+        Type = "simple";
+        Restart = "on-failure";
+        RestartSec = "5s";
+        ExecStart = controlPlaneExecStart;
+      };
+    };
+    })
     (mkIf cfg.enable {
     assertions = [
       {

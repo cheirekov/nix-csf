@@ -142,6 +142,10 @@ pkgs.testers.runNixOSTest {
     networking.firewall.enable = false;
 
     virtualisation.docker.enable = true;
+    systemd.services.docker = {
+      path = [ pkgs.nftables ];
+      serviceConfig.TimeoutStartSec = "300s";
+    };
 
     services.nixCsf = {
       enable = true;
@@ -294,6 +298,47 @@ pkgs.testers.runNixOSTest {
     system.stateVersion = "24.11";
   };
 
+  nodes.controlplanepoc = { ... }: {
+    imports = [ module ];
+
+    networking.hostName = "nix-csf-controlplanepoc";
+    networking.firewall.enable = false;
+
+    services.nixCsf = {
+      enable = true;
+      openTCPPorts = [ 22 ];
+      clusterPolicy = {
+        enable = true;
+        url = "http://127.0.0.1:18081/snapshots/lab/cluster-policy.json";
+        requireHTTPS = false;
+        failOpen = true;
+      };
+      dynamicOffenders = {
+        enable = true;
+        url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
+        requireHTTPS = false;
+        failOpen = true;
+        defaultEntryTTLSeconds = 300;
+      };
+      controlPlane = {
+        enable = true;
+        bindAddress = "127.0.0.1";
+        port = 18081;
+        environment = "lab";
+        dataDir = "/var/lib/nix-csf-control-plane";
+        requireAuth = false;
+      };
+      observability.metrics = {
+        enable = true;
+        outputFile = "/var/lib/nix-csf/metrics.prom";
+      };
+      autoRefresh.runOnBoot = false;
+    };
+
+    environment.systemPackages = [ pkgs.nftables pkgs.curl pkgs.jq ];
+    system.stateVersion = "24.11";
+  };
+
   nodes.failclosed = { ... }: {
     imports = [ module ];
 
@@ -319,7 +364,7 @@ pkgs.testers.runNixOSTest {
 
   testScript = ''
     start_all()
-    blockapplyfailclosed, clusterexpired, dockercoexist, dynamicexpired, failclosed, good, profileedge, tokenrotation = machines
+    blockapplyfailclosed, clusterexpired, controlplanepoc, dockercoexist, dynamicexpired, failclosed, good, profileedge, tokenrotation = machines
 
     good.wait_for_unit("multi-user.target")
     good.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
@@ -384,6 +429,19 @@ pkgs.testers.runNixOSTest {
     tokenrotation.succeed("grep -F 'nix_csf_auth_token_candidates{source=\"dynamic_offenders\"} 2' /var/lib/nix-csf/metrics.prom")
     tokenrotation.succeed("grep -F 'nix_csf_auth_token_selected_slot{source=\"cluster_policy\"} 2' /var/lib/nix-csf/metrics.prom")
     tokenrotation.succeed("grep -F 'nix_csf_auth_token_selected_slot{source=\"dynamic_offenders\"} 2' /var/lib/nix-csf/metrics.prom")
+
+    controlplanepoc.wait_for_unit("multi-user.target")
+    controlplanepoc.wait_for_unit("nix-csf-control-plane.service")
+    controlplanepoc.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
+    controlplanepoc.succeed("curl -sf http://127.0.0.1:18081/healthz | jq -e '.status == \"ok\"'")
+    controlplanepoc.succeed("curl -sf -X POST -H 'Content-Type: application/json' --data '{\"cidr\":\"203.0.119.9/32\"}' http://127.0.0.1:18081/v1/policy/deny | jq -e '.changed == true'")
+    controlplanepoc.succeed("curl -sf -X POST -H 'Content-Type: application/json' --data '{\"cidr\":\"203.0.119.10/32\",\"ttlSeconds\":600,\"reason\":\"syn_flood\"}' http://127.0.0.1:18081/v1/offenders/ban-temp | jq -e '.changed == true'")
+    controlplanepoc.succeed("systemctl start nix-csf-refresh.service")
+    controlplanepoc.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx success")
+    controlplanepoc.succeed("grep -F '\"203.0.119.9/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
+    controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.10/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.succeed("nft list set inet nix_csf deny_ipv4 | grep -F '203.0.119.9/32'")
+    controlplanepoc.succeed("grep -F '203.0.119.10/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
 
     failclosed.wait_for_unit("multi-user.target")
     failclosed.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")

@@ -26,24 +26,26 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Scope freeze |
 |---|---|---|---|
-| T-017 | TODO | ICMP policy profiles (type/rate controls) | safer ICMP defaults + explicit tuning |
+| T-026 | TODO | Dynamic escalation policy POC (`N` temp bans => permanent deny) | local-first + cluster-compatible deterministic promotion |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) | per-port country allow model |
+| 1 | T-025 | TODO | `nix-csfctl` operator workflow POC (allow/deny/ignore mutations) | easy write-path from master or any approved node |
 | 2 | T-022 | TODO | Hybrid local+remote list reconciliation | local files + remote policy merge contract |
-| 3 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
-| 4 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
+| 3 | T-017 | TODO | ICMP policy profiles (type/rate controls) | safer ICMP defaults + explicit tuning |
+| 4 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) | per-port country allow model |
+| 5 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
+| 6 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) |
-| 2 | T-013 | TODO | Troubleshooting command set and runbook |
-| 3 | T-022 | TODO | Hybrid local+remote list reconciliation |
+| 1 | T-017 | TODO | ICMP policy profiles (type/rate controls) |
+| 2 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) |
+| 3 | T-013 | TODO | Troubleshooting command set and runbook |
 | 4 | T-023 | TODO | Netdata monitoring integration |
 
 ## Completed baseline
@@ -69,6 +71,7 @@ Ship a production-usable NixOS firewall module that is:
 | T-019 | DONE | Grafana/Prometheus monitoring pack |
 | T-020 | DONE | Cluster auth/token lifecycle and secret handling |
 | T-021 | DONE | Firewall coexistence profile (Docker and dynamic daemons) |
+| T-024 | DONE | Cluster control-plane and snapshot publisher POC |
 
 ## Triage protocol
 

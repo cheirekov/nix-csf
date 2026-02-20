@@ -38,6 +38,9 @@
 - Dynamic offender propagation across cluster nodes. [baseline done 2026-02-20]
 - Firewall coexistence profile (Docker/other dynamic firewall daemons). [done 2026-02-20]
 - Hybrid local-files + remote-cluster list reconciliation.
+- Cluster control-plane and snapshot publisher POC (`T-024`). [done 2026-02-20]
+- `nix-csfctl` operator write-path POC for cluster allow/deny/ignore (`T-025`).
+- Dynamic escalation policy POC (`T-026`: N temporary bans => permanent deny promotion).
 - Cluster auth/token lifecycle and secret-management guidance. [done 2026-02-20]
 - Grafana/Prometheus monitoring pack and alert rules. [done 2026-02-20]
 - Netdata monitoring integration (optional story on top of Prometheus/textfile metrics).

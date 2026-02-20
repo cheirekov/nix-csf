@@ -22,6 +22,8 @@
   - NixOS module options and service wiring.
 - `scripts/nix-csf-apply.sh`
   - Runtime rule compiler and loader for nftables.
+- `scripts/nix-csf-control-plane.py`
+  - Optional mutable-state control-plane service (PoC) for policy/dynamic snapshot publishing.
 - `VERSION`
   - Single source of truth for module/project SemVer.
 - `scripts/release.sh`
@@ -36,11 +38,13 @@
   - `nix-csf-apply.service`: early boot apply.
   - `nix-csf-refresh.service`: network-online refresh.
   - `nix-csf-refresh.timer`: periodic refresh schedule.
+  - `nix-csf-control-plane.service` (optional): local/master mutable policy API + snapshot publisher.
 - Runtime state
   - `/var/lib/nix-csf/cache`: cached remote feeds.
   - `/var/lib/nix-csf/cache/dynamic-offenders.json`: cached dynamic offender snapshot.
   - `/var/lib/nix-csf/generated-ruleset.nft`: last generated ruleset.
   - optional Prometheus textfile metrics output (default: `/var/lib/nix-csf/metrics.prom`).
+  - `/var/lib/nix-csf-control-plane/state.json`: mutable control-plane state (outside declarative rebuild output).
 
 ## Data flow
 
@@ -57,8 +61,10 @@
 8. Coexistence profile determines forward-hook ownership:
    - `exclusive-firewall`: forward policy is fully module-driven,
    - `docker-coexist`: keep forward policy `accept` and enforce deny-style overlays only.
-9. Rules are regenerated and atomically re-applied.
-10. Optional observability export writes:
+9. Optional control-plane mode stores mutable policy/dynamic state in `controlPlane.dataDir`
+   and serves snapshots consumed by standard `clusterPolicy`/`dynamicOffenders` client flow.
+10. Rules are regenerated and atomically re-applied.
+11. Optional observability export writes:
    - structured event logs to journald,
    - snapshot metrics in Prometheus textfile format (including build/version metadata and auth-slot telemetry).
 
@@ -73,6 +79,7 @@
 - Dynamic offender snapshots enforce schema + optional TTL cache-age guardrails.
 - Dynamic snapshots are bounded by `dynamicOffenders.maxEntries` to avoid oversized runtime merges.
 - Auth token files are validated at runtime for strict permissions/content before remote fetches (`authTokenFile`/`authTokenFiles`).
+- Optional control-plane mutation endpoints can require bearer auth via `controlPlane.requireAuth` + `controlPlane.authTokenFile`.
 - Docker coexistence mode is explicit (`coexistence.profile = "docker-coexist"`) and guarded by `forwardPolicy = "accept"` to reduce forwarding regressions.
 
 ## Centralized dynamic model
@@ -83,6 +90,7 @@ Baseline implementation now includes:
 - per-entry TTL/expiry conversion into nft timeout sets,
 - strict fail-closed behavior on expired snapshots (`failOpen = false`),
 - auth token rotation fallback (`authTokenFiles`) for cluster and dynamic endpoints,
+- optional local/master control-plane API + snapshot publisher for mutable day-2 workflows (`controlPlane.*`),
 - observability metrics for dynamic snapshot schema/cache-age/TTL/expiry and auth token slot selection.
 
 See `docs/DYNAMIC_CLUSTER_POC.md` for extended roadmap recommendations:
@@ -91,3 +99,7 @@ See `docs/DYNAMIC_CLUSTER_POC.md` for extended roadmap recommendations:
 - token lifecycle handling for cluster auth (baseline implemented with `authTokenFiles`),
 - Grafana/Prometheus operational model,
 - Docker and other dynamic-firewall coexistence strategy (baseline implemented via `coexistence.profile`).
+
+For cluster write-path/control-plane POC design, see:
+
+- `docs/CLUSTER_CONTROL_PLANE_POC.md`.

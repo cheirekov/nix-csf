@@ -22,6 +22,7 @@ Kickoff baseline is implemented:
 - Cluster policy propagation overlay (`clusterPolicy.*`)
 - Cluster policy schema v2 support (`ignore*`, `schemaVersion`, `revision`, `ttlSeconds`)
 - Dynamic offender snapshot propagation with timeout sets (`dynamicOffenders.*`)
+- Optional local control-plane snapshot publisher and mutation API (`controlPlane.*`)
 - Auth token lifecycle with ordered rotation fallback (`*.authTokenFiles`)
 - Firewall coexistence profiles (`coexistence.profile`, including Docker coexist mode)
 - Monitoring pack assets (`docs/MONITORING.md`, Grafana dashboard, Prometheus alert rules)
@@ -171,6 +172,16 @@ services.nixCsf = {
     #   "/run/secrets/nix-csf-dynamic-token-next"
     # ];
   };
+
+  # Optional: local mutable control-plane (single-node or master-node mode).
+  # Keeps runtime mutable state under /var/lib/nix-csf-control-plane.
+  # controlPlane = {
+  #   enable = true;
+  #   bindAddress = "127.0.0.1";
+  #   port = 18081;
+  #   environment = "lab";
+  #   requireAuth = false; # set true in production and provide authTokenFile
+  # };
 
   coexistence.profile = "exclusive-firewall"; # or "docker-coexist" for container hosts
 
@@ -342,6 +353,47 @@ services.nixCsf = {
 };
 ```
 
+### 8) Local mutable deny/temp-ban workflow (no external cluster required)
+
+```nix
+services.nixCsf = {
+  enable = true;
+  clusterPolicy = {
+    enable = true;
+    url = "http://127.0.0.1:18081/snapshots/lab/cluster-policy.json";
+    requireHTTPS = false;
+    failOpen = true;
+  };
+  dynamicOffenders = {
+    enable = true;
+    url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
+    requireHTTPS = false;
+    failOpen = true;
+  };
+  controlPlane = {
+    enable = true;
+    bindAddress = "127.0.0.1";
+    port = 18081;
+    environment = "lab";
+    requireAuth = false;
+  };
+};
+```
+
+Example runtime mutations:
+
+```bash
+curl -sf -X POST -H 'Content-Type: application/json' \
+  --data '{"cidr":"203.0.119.9/32"}' \
+  http://127.0.0.1:18081/v1/policy/deny
+
+curl -sf -X POST -H 'Content-Type: application/json' \
+  --data '{"cidr":"203.0.119.10/32","ttlSeconds":900,"reason":"syn_flood"}' \
+  http://127.0.0.1:18081/v1/offenders/ban-temp
+
+sudo systemctl start nix-csf-refresh.service
+```
+
 ## Operational notes
 
 - This module expects `networking.firewall.enable = false` (asserted by the module).
@@ -363,6 +415,10 @@ services.nixCsf = {
   while nix-csf still applies deny-style overlays in the forward hook.
 - Rule evaluation is deny-first for static allow/deny CIDRs (`denyIPv4/denyIPv6` are matched before `allowIPv4/allowIPv6`).
 - Generated runtime artifacts live in `/var/lib/nix-csf`.
+- `services.nixCsf.controlPlane.dataDir` (default `/var/lib/nix-csf-control-plane`) is runtime mutable state
+  and is not overwritten by `nixos-rebuild`.
+- Dynamic escalation policy (`N` temporary bans => permanent deny) is tracked separately (`T-026`);
+  goal is support both local-only and clustered control-plane deployments.
 
 ## Validation
 
@@ -383,8 +439,10 @@ The validation script runs:
 - `checks.x86_64-linux.version-semver` (VERSION SemVer gate)
 - `checks.x86_64-linux.eval-basic` (module evaluation wiring)
 - `checks.x86_64-linux.eval-profiles` (profile defaults + override precedence)
+- `checks.x86_64-linux.eval-control-plane` (control-plane service wiring evaluation)
 - `checks.x86_64-linux.eval-monitoring` (Prometheus/Grafana wiring evaluation)
 - `checks.x86_64-linux.shellcheck` (script lint)
+- `checks.x86_64-linux.control-plane-lint` (control-plane script syntax)
 - `checks.x86_64-linux.monitoring-pack` (Grafana JSON + Prometheus alert rule lint)
 - `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
 - `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, and auth-token rotation fallback)
@@ -422,6 +480,7 @@ Consumers can pin by tag:
 
 - Architecture: `docs/ARCHITECTURE.md`
 - Dynamic cluster POC recommendation: `docs/DYNAMIC_CLUSTER_POC.md`
+- Cluster control-plane retro/POC: `docs/CLUSTER_CONTROL_PLANE_POC.md`
 - Operator use-case catalog: `docs/USE_CASES.md`
 - Monitoring pack and runbook: `docs/MONITORING.md`
 - Release/compatibility policy: `docs/RELEASE.md`
