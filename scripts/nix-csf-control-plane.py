@@ -35,6 +35,10 @@ def default_state() -> dict[str, Any]:
         "dynamic": {
             "entries": [],
         },
+        "escalation": {
+            "eventHistory": {},
+            "promotions": [],
+        },
     }
 
 
@@ -113,6 +117,58 @@ class StateStore:
                 )
             state["dynamic"]["entries"] = sanitized_entries
 
+        escalation = loaded.get("escalation", {}) if isinstance(loaded.get("escalation", {}), dict) else {}
+        event_history = escalation.get("eventHistory", {})
+        if isinstance(event_history, dict):
+            sanitized_history: dict[str, list[int]] = {}
+            for key, values in event_history.items():
+                if not isinstance(key, str) or "|" not in key or not isinstance(values, list):
+                    continue
+                normalized_values = [value for value in values if isinstance(value, int)]
+                if normalized_values:
+                    sanitized_history[key] = sorted(normalized_values)
+            state["escalation"]["eventHistory"] = sanitized_history
+
+        promotions = escalation.get("promotions", [])
+        if isinstance(promotions, list):
+            sanitized_promotions: list[dict[str, Any]] = []
+            for entry in promotions:
+                if not isinstance(entry, dict):
+                    continue
+                cidr = entry.get("cidr")
+                family = entry.get("family")
+                first_seen = entry.get("firstSeen")
+                last_seen = entry.get("lastSeen")
+                event_count = entry.get("eventCountWindow")
+                promoted_at = entry.get("promotedAt")
+                promoted_by = entry.get("promotedBy")
+                reason = entry.get("reason")
+                if not isinstance(cidr, str) or family not in ("ipv4", "ipv6"):
+                    continue
+                if not isinstance(first_seen, int) or not isinstance(last_seen, int):
+                    continue
+                if not isinstance(event_count, int) or event_count <= 0:
+                    continue
+                if not isinstance(promoted_at, int):
+                    continue
+                if not isinstance(promoted_by, str):
+                    continue
+                if reason is not None and not isinstance(reason, str):
+                    reason = None
+                sanitized_entry: dict[str, Any] = {
+                    "cidr": cidr,
+                    "family": family,
+                    "firstSeen": first_seen,
+                    "lastSeen": last_seen,
+                    "eventCountWindow": event_count,
+                    "promotedAt": promoted_at,
+                    "promotedBy": promoted_by,
+                }
+                if reason is not None:
+                    sanitized_entry["reason"] = reason
+                sanitized_promotions.append(sanitized_entry)
+            state["escalation"]["promotions"] = sanitized_promotions
+
         atomic_write_json(self.state_file, state)
         return state
 
@@ -133,6 +189,97 @@ class StateStore:
         self._state["dynamicRevision"] += 1
         self._save_locked()
         return True
+
+    def _escalation_key(self, cidr: str, family: str) -> str:
+        return f"{family}|{cidr}"
+
+    def _apply_escalation_locked(
+        self,
+        *,
+        cidr: str,
+        family: str,
+        now_epoch: int,
+        reason: str | None,
+        enable: bool,
+        threshold: int,
+        window_seconds: int,
+        max_audit_entries: int,
+    ) -> dict[str, Any]:
+        if not enable:
+            return {
+                "enabled": False,
+                "escalated": False,
+                "eventCountWindow": 0,
+                "threshold": threshold,
+                "windowSeconds": window_seconds,
+                "promotionChanged": False,
+                "dynamicChanged": False,
+                "stateChanged": False,
+            }
+
+        key = self._escalation_key(cidr, family)
+        history = self._state["escalation"]["eventHistory"]
+        existing = history.get(key, [])
+        keep_after = now_epoch - window_seconds
+        filtered = [value for value in existing if value >= keep_after]
+        filtered.append(now_epoch)
+        filtered.sort()
+        history[key] = filtered
+
+        event_count = len(filtered)
+        escalated = event_count >= threshold
+        promotion_changed = False
+        dynamic_changed = False
+
+        if escalated:
+            deny_key = self._policy_key("deny", family)
+            deny_entries: list[str] = self._state["policy"][deny_key]
+            if cidr not in deny_entries:
+                deny_entries.append(cidr)
+                deny_entries.sort()
+                self._state["policyRevision"] += 1
+                promotion_changed = True
+
+            dynamic_entries: list[dict[str, Any]] = self._state["dynamic"]["entries"]
+            kept_dynamic = [
+                entry for entry in dynamic_entries
+                if not (entry["cidr"] == cidr and entry["family"] == family)
+            ]
+            if len(kept_dynamic) != len(dynamic_entries):
+                self._state["dynamic"]["entries"] = kept_dynamic
+                dynamic_changed = True
+
+            if promotion_changed:
+                promotions: list[dict[str, Any]] = self._state["escalation"]["promotions"]
+                promotion_record: dict[str, Any] = {
+                    "cidr": cidr,
+                    "family": family,
+                    "firstSeen": filtered[0],
+                    "lastSeen": filtered[-1],
+                    "eventCountWindow": event_count,
+                    "promotedAt": now_epoch,
+                    "promotedBy": "auto-escalation",
+                }
+                if reason is not None:
+                    promotion_record["reason"] = reason
+                promotions.append(promotion_record)
+                if len(promotions) > max_audit_entries:
+                    del promotions[0 : len(promotions) - max_audit_entries]
+
+            # Reset the rolling history after promotion to avoid repeated promotions
+            # from the same burst window.
+            history[key] = []
+
+        return {
+            "enabled": True,
+            "escalated": escalated,
+            "eventCountWindow": event_count,
+            "threshold": threshold,
+            "windowSeconds": window_seconds,
+            "promotionChanged": promotion_changed,
+            "dynamicChanged": dynamic_changed,
+            "stateChanged": True,
+        }
 
     def add_policy(self, list_name: str, cidr: str) -> dict[str, Any]:
         normalized, family = normalize_cidr(cidr)
@@ -175,7 +322,17 @@ class StateStore:
                 "policyRevision": self._state["policyRevision"],
             }
 
-    def ban_temp(self, cidr: str, ttl_seconds: int, reason: str | None) -> dict[str, Any]:
+    def ban_temp(
+        self,
+        cidr: str,
+        ttl_seconds: int,
+        reason: str | None,
+        *,
+        escalation_enable: bool,
+        escalation_threshold: int,
+        escalation_window_seconds: int,
+        escalation_max_audit_entries: int,
+    ) -> dict[str, Any]:
         normalized, family = normalize_cidr(cidr)
         now_epoch = int(time.time())
         expires_at = now_epoch + ttl_seconds
@@ -205,9 +362,24 @@ class StateStore:
                 )
                 changed = True
 
-            if changed:
-                self._state["dynamicRevision"] += 1
-                entries.sort(key=lambda item: (item["family"], item["cidr"]))
+            escalation_result = self._apply_escalation_locked(
+                cidr=normalized,
+                family=family,
+                now_epoch=now_epoch,
+                reason=reason,
+                enable=escalation_enable,
+                threshold=escalation_threshold,
+                window_seconds=escalation_window_seconds,
+                max_audit_entries=escalation_max_audit_entries,
+            )
+
+            needs_save = changed or escalation_result["stateChanged"]
+            if needs_save:
+                if changed or escalation_result["dynamicChanged"]:
+                    self._state["dynamicRevision"] += 1
+                self._state["dynamic"]["entries"].sort(
+                    key=lambda item: (item["family"], item["cidr"])
+                )
                 self._save_locked()
 
             return {
@@ -216,6 +388,7 @@ class StateStore:
                 "family": family,
                 "expiresAt": expires_at,
                 "dynamicRevision": self._state["dynamicRevision"],
+                "escalation": escalation_result,
             }
 
     def unban(self, cidr: str) -> dict[str, Any]:
@@ -278,6 +451,14 @@ class StateStore:
 
             return policy_snapshot, dynamic_snapshot
 
+    def promotion_audit(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self._lock:
+            promotions: list[dict[str, Any]] = self._state["escalation"]["promotions"]
+            if limit <= 0:
+                return []
+            selected = promotions[-limit:]
+            return [dict(item) for item in selected]
+
 
 class ControlPlaneServer(ThreadingHTTPServer):
     def __init__(
@@ -290,6 +471,10 @@ class ControlPlaneServer(ThreadingHTTPServer):
         cluster_snapshot_ttl: int,
         dynamic_snapshot_ttl: int,
         default_ban_ttl: int,
+        escalation_enable: bool,
+        escalation_threshold: int,
+        escalation_window_seconds: int,
+        escalation_max_audit_entries: int,
         require_auth: bool,
         auth_token_file: str | None,
     ) -> None:
@@ -299,6 +484,10 @@ class ControlPlaneServer(ThreadingHTTPServer):
         self.cluster_snapshot_ttl = cluster_snapshot_ttl
         self.dynamic_snapshot_ttl = dynamic_snapshot_ttl
         self.default_ban_ttl = default_ban_ttl
+        self.escalation_enable = escalation_enable
+        self.escalation_threshold = escalation_threshold
+        self.escalation_window_seconds = escalation_window_seconds
+        self.escalation_max_audit_entries = escalation_max_audit_entries
         self.require_auth = require_auth
         self.auth_token_file = auth_token_file
 
@@ -395,6 +584,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, dynamic_snapshot)
                 return
 
+        if parts == ["v1", "escalation", "promotions"]:
+            limit_raw = self.headers.get("X-Nix-Csf-Limit", "200")
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid X-Nix-Csf-Limit"})
+                return
+            promotions = self.server.store.promotion_audit(limit=limit)
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "escalation": {
+                        "enabled": self.server.escalation_enable,
+                        "threshold": self.server.escalation_threshold,
+                        "windowSeconds": self.server.escalation_window_seconds,
+                    },
+                    "promotions": promotions,
+                },
+            )
+            return
+
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -444,7 +654,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             try:
-                result = self.server.store.ban_temp(cidr, ttl_seconds, reason)
+                result = self.server.store.ban_temp(
+                    cidr,
+                    ttl_seconds,
+                    reason,
+                    escalation_enable=self.server.escalation_enable,
+                    escalation_threshold=self.server.escalation_threshold,
+                    escalation_window_seconds=self.server.escalation_window_seconds,
+                    escalation_max_audit_entries=self.server.escalation_max_audit_entries,
+                )
             except ValueError as err:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(err)})
                 return
@@ -517,6 +735,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cluster-policy-ttl-seconds", default=300, type=int)
     parser.add_argument("--dynamic-snapshot-ttl-seconds", default=120, type=int)
     parser.add_argument("--default-ban-ttl-seconds", default=900, type=int)
+    parser.add_argument("--escalation-enable", action="store_true")
+    parser.add_argument("--escalation-threshold", default=5, type=int)
+    parser.add_argument("--escalation-window-seconds", default=900, type=int)
+    parser.add_argument("--escalation-max-audit-entries", default=5000, type=int)
     parser.add_argument("--require-auth", action="store_true")
     parser.add_argument("--auth-token-file")
     return parser.parse_args()
@@ -539,6 +761,18 @@ def main() -> int:
 
     if args.default_ban_ttl_seconds <= 0:
         print("--default-ban-ttl-seconds must be positive", file=sys.stderr)
+        return 2
+
+    if args.escalation_threshold <= 0:
+        print("--escalation-threshold must be positive", file=sys.stderr)
+        return 2
+
+    if args.escalation_window_seconds <= 0:
+        print("--escalation-window-seconds must be positive", file=sys.stderr)
+        return 2
+
+    if args.escalation_max_audit_entries <= 0:
+        print("--escalation-max-audit-entries must be positive", file=sys.stderr)
         return 2
 
     data_dir = Path(args.data_dir)
@@ -569,6 +803,10 @@ def main() -> int:
         cluster_snapshot_ttl=args.cluster_policy_ttl_seconds,
         dynamic_snapshot_ttl=args.dynamic_snapshot_ttl_seconds,
         default_ban_ttl=args.default_ban_ttl_seconds,
+        escalation_enable=args.escalation_enable,
+        escalation_threshold=args.escalation_threshold,
+        escalation_window_seconds=args.escalation_window_seconds,
+        escalation_max_audit_entries=args.escalation_max_audit_entries,
         require_auth=args.require_auth,
         auth_token_file=auth_token_file,
     )
@@ -578,6 +816,9 @@ def main() -> int:
         f"{args.bind_address}:{args.port} "
         f"env={args.environment} "
         f"data_dir={data_dir} "
+        f"escalation_enabled={'true' if args.escalation_enable else 'false'} "
+        f"escalation_threshold={args.escalation_threshold} "
+        f"escalation_window_seconds={args.escalation_window_seconds} "
         f"require_auth={'true' if args.require_auth else 'false'}"
     )
     sys.stdout.flush()

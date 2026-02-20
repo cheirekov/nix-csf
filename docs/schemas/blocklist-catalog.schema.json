@@ -18,7 +18,7 @@
       "url": {
         "type": "string",
         "pattern": "^(https|file)://[^\\s]+$",
-        "description": "Remote or local feed URL. Production sources should prefer https://."
+        "description": "Remote or local feed URL. Expected content: CIDR/IP text (or ipset-style add lines). Production sources should prefer https://."
       },
       "family": {
         "type": "string",

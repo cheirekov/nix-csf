@@ -666,3 +666,64 @@
   - implement escalation policy (`T-026`) with explicit local-only mode compatibility,
   - implement operator CLI (`T-025`),
   - define hybrid local-files reconciliation contract (`T-022`).
+
+## 2026-02-20 — Batch FEED-HOTFIX-027
+
+- Ticket(s): `T-027`
+- Summary:
+  - triaged and fixed a `P0` feed reliability regression affecting country/blocklist enforcement quality:
+    - updated default Spamhaus catalog endpoints from deprecated URLs to current public endpoints:
+      - `https://www.spamhaus.org/drop/drop.txt`
+      - `https://www.spamhaus.org/drop/dropv6.txt`,
+    - hardened feed parser normalization:
+      - strip `;` inline annotations (Spamhaus-style lines),
+      - accept ipset-style feed entries:
+        - `add <set> <cidr_or_ip>`
+        - `ipset add <set> <cidr_or_ip>`,
+    - extended deterministic smoke coverage:
+      - semicolon-annotated blocklist fixture parsing,
+      - ipset-style blocklist line parsing,
+      - country template fetch path with semicolon-annotated local fixture.
+- BA requirement mapping:
+  - resolves operator-reported risk that country/blocklist source ingestion may silently miss entries.
+- PM milestone mapping:
+  - emergency quality hardening to preserve trust in source governance and refresh semantics.
+- Risk impact:
+  - `low` (parser compatibility and source URL fixes; no policy precedence changes).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
+- Open follow-ups:
+  - continue `T-026` escalation policy completion,
+  - evaluate richer feed-kind taxonomy (`COUNTRY_`, `CLOUD_*`, `TOR`, `OPEN_PROXY`) as a separate scope-controlled epic.
+
+## 2026-02-20 — Batch ESCALATION-026
+
+- Ticket(s): `T-026`
+- Summary:
+  - implemented deterministic escalation policy in control-plane runtime:
+    - rolling event history keyed by `family|cidr`,
+    - promotion rule: `N` temp-ban events within `windowSeconds` => permanent deny promotion,
+    - promoted CIDR is written into policy deny list and removed from dynamic entries,
+    - persisted promotion audit trail with bounded retention (`maxAuditEntries`),
+  - added control-plane API exposure:
+    - `GET /v1/escalation/promotions` (audit visibility),
+    - `ban-temp` response now returns escalation metadata,
+  - added Nix module wiring/options:
+    - `services.nixCsf.controlPlane.escalation.enable`,
+    - `services.nixCsf.controlPlane.escalation.tempBanThreshold`,
+    - `services.nixCsf.controlPlane.escalation.windowSeconds`,
+    - `services.nixCsf.controlPlane.escalation.maxAuditEntries`,
+  - extended integration scenario assertions for promotion path and cache/nft reconciliation.
+- BA requirement mapping:
+  - addresses CSF-style "repeated temporary bans become permanent deny" behavior in a deterministic Nix-compatible runtime model.
+- PM milestone mapping:
+  - closes escalation policy PoC milestone and unblocks focus on operator CLI (`T-025`).
+- Risk impact:
+  - `medium` (mutable runtime behavior expansion in optional control-plane path; default disabled unless configured).
+- Validation evidence:
+  - `python3 -m py_compile scripts/nix-csf-control-plane.py`
+  - `./scripts/validate-fast.sh`
+  - `./scripts/validate-capture.sh` (operator run; succeeded)
+- Open follow-ups:
+  - complete and validate `T-025` operator CLI workflow.

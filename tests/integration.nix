@@ -327,6 +327,12 @@ pkgs.testers.runNixOSTest {
         environment = "lab";
         dataDir = "/var/lib/nix-csf-control-plane";
         requireAuth = false;
+        escalation = {
+          enable = true;
+          tempBanThreshold = 2;
+          windowSeconds = 900;
+          maxAuditEntries = 100;
+        };
       };
       observability.metrics = {
         enable = true;
@@ -433,14 +439,23 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.wait_for_unit("multi-user.target")
     controlplanepoc.wait_for_unit("nix-csf-control-plane.service")
     controlplanepoc.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
-    controlplanepoc.succeed("curl -sf http://127.0.0.1:18081/healthz | jq -e '.status == \"ok\"'")
-    controlplanepoc.succeed("curl -sf -X POST -H 'Content-Type: application/json' --data '{\"cidr\":\"203.0.119.9/32\"}' http://127.0.0.1:18081/v1/policy/deny | jq -e '.changed == true'")
-    controlplanepoc.succeed("curl -sf -X POST -H 'Content-Type: application/json' --data '{\"cidr\":\"203.0.119.10/32\",\"ttlSeconds\":600,\"reason\":\"syn_flood\"}' http://127.0.0.1:18081/v1/offenders/ban-temp | jq -e '.changed == true'")
+    controlplanepoc.succeed("command -v nix-csfctl >/dev/null")
+    controlplanepoc.succeed("nix-csfctl --output pretty health | jq -e '.status == \"ok\"'")
+    controlplanepoc.succeed("nix-csfctl --output pretty policy add deny 203.0.119.9/32 | jq -e '.changed == true'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.10/32 --ttl 600 --reason syn_flood | jq -e '.changed == true'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.enabled == true and .escalation.escalated == false'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == true and .escalation.promotionChanged == true'")
+    controlplanepoc.succeed("nix-csfctl --output pretty promotions --limit 20 | jq -e '.promotions | map(.cidr) | index(\"203.0.119.11/32\") != null'")
     controlplanepoc.succeed("systemctl start nix-csf-refresh.service")
     controlplanepoc.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx success")
     controlplanepoc.succeed("grep -F '\"203.0.119.9/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
+    controlplanepoc.succeed("grep -F '\"203.0.119.11/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.10/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
-    controlplanepoc.succeed("nft list set inet nix_csf deny_ipv4 | grep -F '203.0.119.9/32'")
+    controlplanepoc.fail("grep -F '\"cidr\": \"203.0.119.11/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.succeed("nft list set inet nix_csf deny_ipv4 | grep -E '203\\.0\\.119\\.9(/32)?'")
+    controlplanepoc.succeed("nft list set inet nix_csf deny_ipv4 | grep -E '203\\.0\\.119\\.11(/32)?'")
+    controlplanepoc.succeed("grep -E '203\\.0\\.119\\.9(/32)?' /var/lib/nix-csf/generated-ruleset.nft")
+    controlplanepoc.succeed("grep -E '203\\.0\\.119\\.11(/32)?' /var/lib/nix-csf/generated-ruleset.nft")
     controlplanepoc.succeed("grep -F '203.0.119.10/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
 
     failclosed.wait_for_unit("multi-user.target")

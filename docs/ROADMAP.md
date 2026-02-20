@@ -18,6 +18,7 @@
 - Clear failure semantics for feed outages.
 - Safer defaults and improved assertions.
 - Blocklist source governance catalog + schema. [done 2026-02-19]
+- Feed reliability hotfix: Spamhaus endpoint refresh + parser compatibility for annotated/ipset feeds (`T-027`). [done 2026-02-20]
 
 ## Phase 2 — CSF-style policy expansion
 
@@ -40,7 +41,7 @@
 - Hybrid local-files + remote-cluster list reconciliation.
 - Cluster control-plane and snapshot publisher POC (`T-024`). [done 2026-02-20]
 - `nix-csfctl` operator write-path POC for cluster allow/deny/ignore (`T-025`).
-- Dynamic escalation policy POC (`T-026`: N temporary bans => permanent deny promotion).
+- Dynamic escalation policy POC (`T-026`: N temporary bans => permanent deny promotion). [done 2026-02-20]
 - Cluster auth/token lifecycle and secret-management guidance. [done 2026-02-20]
 - Grafana/Prometheus monitoring pack and alert rules. [done 2026-02-20]
 - Netdata monitoring integration (optional story on top of Prometheus/textfile metrics).

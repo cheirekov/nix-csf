@@ -137,7 +137,13 @@
           shellcheck = pkgs.runCommand "nix-csf-shellcheck" {
             nativeBuildInputs = [ pkgs.shellcheck ];
           } ''
-            shellcheck ${./scripts/nix-csf-apply.sh} ${./scripts/validate.sh} ${./scripts/release.sh}
+            shellcheck \
+              ${./scripts/nix-csf-apply.sh} \
+              ${./scripts/nix-csfctl.sh} \
+              ${./scripts/validate.sh} \
+              ${./scripts/validate-fast.sh} \
+              ${./scripts/validate-capture.sh} \
+              ${./scripts/release.sh}
             touch "$out"
           '';
           control-plane-lint = pkgs.runCommand "nix-csf-control-plane-lint" {
@@ -191,6 +197,11 @@
         in
         {
           version = pkgs.writeText "nix-csf-version" "${version}\n";
+          nix-csfctl = pkgs.writeShellApplication {
+            name = "nix-csfctl";
+            runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.jq ];
+            text = builtins.readFile ./scripts/nix-csfctl.sh;
+          };
           validate = pkgs.writeShellApplication {
             name = "nix-csf-validate";
             runtimeInputs = [ pkgs.nix ];

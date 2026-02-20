@@ -1,2 +1,4 @@
 references/
 result*
+.artifacts/
+__pycache__/

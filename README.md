@@ -23,6 +23,8 @@ Kickoff baseline is implemented:
 - Cluster policy schema v2 support (`ignore*`, `schemaVersion`, `revision`, `ttlSeconds`)
 - Dynamic offender snapshot propagation with timeout sets (`dynamicOffenders.*`)
 - Optional local control-plane snapshot publisher and mutation API (`controlPlane.*`)
+- Operator mutation CLI (`nix-csfctl`) for control-plane workflows
+- Dynamic escalation (`N` temporary bans => permanent deny via control-plane)
 - Auth token lifecycle with ordered rotation fallback (`*.authTokenFiles`)
 - Firewall coexistence profiles (`coexistence.profile`, including Docker coexist mode)
 - Monitoring pack assets (`docs/MONITORING.md`, Grafana dashboard, Prometheus alert rules)
@@ -136,6 +138,8 @@ services.nixCsf = {
     enable = true;
     # Enable trusted catalog entries:
     sources = [ "spamhaus-drop-v4" "spamhaus-drop-v6" ];
+    # Parser accepts plain CIDR/IP lines and ipset-style lines:
+    #   add <set_name> <cidr_or_ip>
     # Optional governance hardening:
     enforceCatalog = true;
 
@@ -383,15 +387,20 @@ services.nixCsf = {
 Example runtime mutations:
 
 ```bash
-curl -sf -X POST -H 'Content-Type: application/json' \
-  --data '{"cidr":"203.0.119.9/32"}' \
-  http://127.0.0.1:18081/v1/policy/deny
+nix-csfctl policy add deny 203.0.119.9/32
 
-curl -sf -X POST -H 'Content-Type: application/json' \
-  --data '{"cidr":"203.0.119.10/32","ttlSeconds":900,"reason":"syn_flood"}' \
-  http://127.0.0.1:18081/v1/offenders/ban-temp
+nix-csfctl ban-temp 203.0.119.10/32 --ttl 900 --reason syn_flood
+
+nix-csfctl promotions --limit 20
 
 sudo systemctl start nix-csf-refresh.service
+```
+
+When control-plane auth is enabled:
+
+```bash
+nix-csfctl --auth-token-file /run/secrets/nix-csf-control-plane-token \
+  policy add deny 203.0.120.4/32
 ```
 
 ## Operational notes
@@ -417,21 +426,27 @@ sudo systemctl start nix-csf-refresh.service
 - Generated runtime artifacts live in `/var/lib/nix-csf`.
 - `services.nixCsf.controlPlane.dataDir` (default `/var/lib/nix-csf-control-plane`) is runtime mutable state
   and is not overwritten by `nixos-rebuild`.
-- Dynamic escalation policy (`N` temporary bans => permanent deny) is tracked separately (`T-026`);
-  goal is support both local-only and clustered control-plane deployments.
+- Enabling `services.nixCsf.controlPlane.enable = true` installs both:
+  `nix-csf-control-plane` and `nix-csfctl`.
 
 ## Validation
 
-Quick check (evaluation only):
+Fast iteration check (no VM tests):
 
 ```bash
-nix flake check "path:$(pwd)" --all-systems --no-build
+./scripts/validate-fast.sh
 ```
 
-Full validation (includes x86_64 VM smoke test):
+Full validation (includes x86_64 VM smoke + integration):
 
 ```bash
 ./scripts/validate.sh
+```
+
+Full validation with log capture (recommended for operator handoff):
+
+```bash
+./scripts/validate-capture.sh
 ```
 
 The validation script runs:
@@ -448,6 +463,12 @@ The validation script runs:
 - `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, and auth-token rotation fallback)
 
 If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
+
+Suggested collaboration loop:
+
+1. Agent runs `./scripts/validate-fast.sh` after each implementation step.
+2. Operator runs `./scripts/validate-capture.sh` for VM/full checks.
+3. If failing, share `*.summary.log` from `.artifacts/validate` for focused triage.
 
 ## Versioning and releases
 

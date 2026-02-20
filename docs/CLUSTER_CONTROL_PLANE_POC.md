@@ -2,7 +2,7 @@
 
 Last updated: 2026-02-20  
 Owners: Security Architect + Nix Module Engineer + SRE + PM/BA
-Status: baseline implemented (`T-024`) with follow-up tickets `T-025` and `T-026` open.
+Status: baseline implemented (`T-024`), escalation PoC completed (`T-026`), operator workflow (`T-025`) in progress.
 
 ## 1) Objective
 

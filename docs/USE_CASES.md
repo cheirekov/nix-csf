@@ -234,6 +234,15 @@ Runtime notes:
   - `nix_csf_auth_token_candidates{source="..."}`,
   - `nix_csf_auth_token_selected_slot{source="..."}`.
 
+Operator mutation examples (control-plane write path):
+
+```bash
+nix-csfctl policy add deny 203.0.119.9/32
+nix-csfctl ban-temp 203.0.119.10/32 --ttl 900 --reason syn_flood
+nix-csfctl promotions --limit 20
+sudo systemctl start nix-csf-refresh.service
+```
+
 ## 8) Docker coexistence host profile
 
 Use this when Docker (or another dynamic firewall daemon) manages forwarding/NAT and you still want nix-csf deny overlays.

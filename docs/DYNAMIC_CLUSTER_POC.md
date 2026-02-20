@@ -207,7 +207,10 @@ Current module supports `allowICMP = true|false` (global). Per-type/per-rate ICM
 
 Current cluster-first priority:
 
-1. `T-026` dynamic escalation policy PoC (`N` temp bans => permanent deny)
-2. `T-025` operator mutation workflow PoC (`nix-csfctl`)
-3. `T-022` hybrid local-files + remote reconciliation contract
-4. `T-023` Netdata monitoring integration (optional story)
+1. `T-025` operator mutation workflow PoC (`nix-csfctl`)
+2. `T-022` hybrid local-files + remote reconciliation contract
+3. `T-023` Netdata monitoring integration (optional story)
+
+Completed:
+
+- `T-026` dynamic escalation policy PoC (`N` temp bans => permanent deny)

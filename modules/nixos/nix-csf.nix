@@ -18,13 +18,13 @@ let
 
   defaultBlocklistCatalog = {
     "spamhaus-drop-v4" = {
-      url = "https://www.spamhaus.org/drop/drop_v4.txt";
+      url = "https://www.spamhaus.org/drop/drop.txt";
       family = "ipv4";
       format = "cidr-text";
       description = "Spamhaus DROP IPv4 list.";
     };
     "spamhaus-drop-v6" = {
-      url = "https://www.spamhaus.org/drop/drop_v6.txt";
+      url = "https://www.spamhaus.org/drop/dropv6.txt";
       family = "ipv6";
       format = "cidr-text";
       description = "Spamhaus DROP IPv6 list.";
@@ -97,6 +97,16 @@ let
     text = ''
       exec ${pkgs.python3}/bin/python3 ${../../scripts/nix-csf-control-plane.py} "$@"
     '';
+  };
+
+  controlPlaneCliTool = pkgs.writeShellApplication {
+    name = "nix-csfctl";
+    runtimeInputs = with pkgs; [
+      coreutils
+      curl
+      jq
+    ];
+    text = builtins.readFile ../../scripts/nix-csfctl.sh;
   };
 
   runtimeConfigFile = (pkgs.formats.json { }).generate "nix-csf-runtime-config.json" {
@@ -196,12 +206,17 @@ let
         "--cluster-policy-ttl-seconds" (toString cfg.controlPlane.clusterPolicyTTLSeconds)
         "--dynamic-snapshot-ttl-seconds" (toString cfg.controlPlane.dynamicSnapshotTTLSeconds)
         "--default-ban-ttl-seconds" (toString cfg.controlPlane.defaultBanTTLSeconds)
+        "--escalation-threshold" (toString cfg.controlPlane.escalation.tempBanThreshold)
+        "--escalation-window-seconds" (toString cfg.controlPlane.escalation.windowSeconds)
+        "--escalation-max-audit-entries" (toString cfg.controlPlane.escalation.maxAuditEntries)
       ];
+      modeArgs =
+        (if cfg.controlPlane.escalation.enable then [ "--escalation-enable" ] else [ ]);
       authArgs =
         (if cfg.controlPlane.requireAuth then [ "--require-auth" ] else [ ])
         ++ (if cfg.controlPlane.authTokenFile != null then [ "--auth-token-file" cfg.controlPlane.authTokenFile ] else [ ]);
     in
-    "${controlPlaneTool}/bin/nix-csf-control-plane ${lib.escapeShellArgs (baseArgs ++ authArgs)}";
+    "${controlPlaneTool}/bin/nix-csf-control-plane ${lib.escapeShellArgs (baseArgs ++ modeArgs ++ authArgs)}";
 
   validCountryCode = cc: builtins.match "^[A-Z]{2}$" (toUpper cc) != null;
 
@@ -523,8 +538,11 @@ in
           options = {
             url = mkOption {
               type = types.str;
-              example = "https://www.spamhaus.org/drop/drop_v4.txt";
-              description = "HTTP(S) endpoint that provides CIDR lines.";
+              example = "https://www.spamhaus.org/drop/drop.txt";
+              description = ''
+                HTTP(S) endpoint that provides block entries.
+                Supported line formats include plain CIDR/IP text and ipset-style `add` lines.
+              '';
             };
 
             family = mkOption {
@@ -591,11 +609,12 @@ in
         type = types.listOf types.str;
         default = [ ];
         example = [
-          "https://www.spamhaus.org/drop/drop_v4.txt"
-          "https://www.spamhaus.org/drop/drop_v6.txt"
+          "https://www.spamhaus.org/drop/drop.txt"
+          "https://www.spamhaus.org/drop/dropv6.txt"
         ];
         description = ''
-          Additional direct blocklist URLs containing CIDR entries.
+          Additional direct blocklist URLs containing CIDR/IP entries
+          (plain text or ipset-style `add` lines).
           Prefer blocklists.catalog + blocklists.sources for governed source selection.
         '';
       };
@@ -798,6 +817,7 @@ in
           Enable the local nix-csf control-plane PoC service.
           This service stores mutable runtime cluster state outside nixos-rebuild-managed files
           and publishes cluster policy/dynamic offender snapshots for client nodes.
+          Installs both `nix-csf-control-plane` and `nix-csfctl` tools into system packages.
         '';
       };
 
@@ -868,6 +888,41 @@ in
           Absolute path to bearer token used by control-plane API auth.
           Required when controlPlane.requireAuth = true.
         '';
+      };
+
+      escalation = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Enable automatic escalation from repeated temporary bans to permanent deny.
+            Promotion target is cluster-policy deny list for the corresponding address family.
+          '';
+        };
+
+        tempBanThreshold = mkOption {
+          type = types.ints.positive;
+          default = 5;
+          description = ''
+            Number of temporary-ban events for the same CIDR required to trigger promotion.
+          '';
+        };
+
+        windowSeconds = mkOption {
+          type = types.ints.positive;
+          default = 900;
+          description = ''
+            Rolling window size for escalation event counting.
+          '';
+        };
+
+        maxAuditEntries = mkOption {
+          type = types.ints.positive;
+          default = 5000;
+          description = ''
+            Maximum number of persisted promotion audit records in control-plane state.
+          '';
+        };
       };
     };
 
@@ -978,7 +1033,7 @@ in
       "d ${cfg.controlPlane.dataDir} 0750 root root -"
     ];
 
-    environment.systemPackages = [ controlPlaneTool ];
+    environment.systemPackages = [ controlPlaneTool controlPlaneCliTool ];
 
     systemd.services.nix-csf-control-plane = {
       description = "nix-csf control-plane snapshot publisher (POC)";

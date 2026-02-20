@@ -57,3 +57,23 @@ Owner: PM/BA + Codex
   - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.nix-csf-integration" --print-build-logs` (executed in no-KVM/TCG runner; long-running)
 - Next ticket candidate:
   - `T-026` dynamic escalation policy (`N` temporary bans => permanent deny) with explicit local-only mode support.
+
+## 4) Interrupt Hotfix — T-027
+
+- Severity: `P0`
+- Trigger:
+  - operator-reported risk that country/blocklist source ingestion might not work reliably.
+- Resolution:
+  - updated default Spamhaus URLs to current DROP endpoints,
+  - parser now supports semicolon-annotated lines and ipset-style `add` lines,
+  - smoke suite expanded with deterministic fixtures for both blocklist and country feed parsing.
+- Validation:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
+
+## 5) Current execution lane
+
+- Active ticket: `T-025` (`IN_PROGRESS`) — operator workflow CLI (`nix-csfctl`).
+- Recently completed: `T-026` escalation policy PoC (implemented in control-plane + integration assertions).
+- Pending validation step for current lane:
+  - full VM validation via `./scripts/validate-capture.sh`.

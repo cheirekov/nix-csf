@@ -24,6 +24,8 @@
   - Runtime rule compiler and loader for nftables.
 - `scripts/nix-csf-control-plane.py`
   - Optional mutable-state control-plane service (PoC) for policy/dynamic snapshot publishing.
+- `scripts/nix-csfctl.sh`
+  - Operator CLI for authenticated control-plane mutations and promotion audit queries.
 - `VERSION`
   - Single source of truth for module/project SemVer.
 - `scripts/release.sh`
@@ -80,6 +82,7 @@
 - Dynamic snapshots are bounded by `dynamicOffenders.maxEntries` to avoid oversized runtime merges.
 - Auth token files are validated at runtime for strict permissions/content before remote fetches (`authTokenFile`/`authTokenFiles`).
 - Optional control-plane mutation endpoints can require bearer auth via `controlPlane.requireAuth` + `controlPlane.authTokenFile`.
+- `nix-csfctl` supports the same bearer-token model via `--auth-token-file`.
 - Docker coexistence mode is explicit (`coexistence.profile = "docker-coexist"`) and guarded by `forwardPolicy = "accept"` to reduce forwarding regressions.
 
 ## Centralized dynamic model
@@ -91,6 +94,7 @@ Baseline implementation now includes:
 - strict fail-closed behavior on expired snapshots (`failOpen = false`),
 - auth token rotation fallback (`authTokenFiles`) for cluster and dynamic endpoints,
 - optional local/master control-plane API + snapshot publisher for mutable day-2 workflows (`controlPlane.*`),
+- operator mutation workflow via `nix-csfctl` (policy add/remove, temp ban/unban, promotion audit),
 - observability metrics for dynamic snapshot schema/cache-age/TTL/expiry and auth token slot selection.
 
 See `docs/DYNAMIC_CLUSTER_POC.md` for extended roadmap recommendations:

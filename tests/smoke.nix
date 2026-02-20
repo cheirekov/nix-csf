@@ -29,6 +29,7 @@ pkgs.testers.runNixOSTest {
         enable = true;
         mode = "allow";
         countries = [ "US" ];
+        ipv4URLTemplate = "file:///etc/nix-csf-country-%s.zone";
         # Keep smoke test deterministic even if remote country feed is unavailable.
         extraIPv4 = [ "10.0.0.0/8" ];
         failOpen = true;
@@ -84,7 +85,13 @@ pkgs.testers.runNixOSTest {
     '';
 
     environment.etc."nix-csf-smoke-feed.txt".text = ''
-      203.0.113.0/24
+      ; deterministic local fixture
+      203.0.113.0/24 ; smoke-feed
+      add smoke_feed 203.0.118.10/32 timeout 3600
+    '';
+    environment.etc."nix-csf-country-us.zone".text = ''
+      # deterministic local country fixture
+      203.0.117.0/24 ; smoke-country-us
     '';
     environment.etc."nix-csf-cluster-policy.json".text = ''
       {
@@ -140,7 +147,9 @@ pkgs.testers.runNixOSTest {
     machine.succeed("systemctl start nix-csf-refresh.service")
     machine.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx success")
     machine.succeed("nft list table inet nix_csf | grep -F '203.0.113.0/24'")
-    machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("nft list set inet nix_csf feed_ipv4 | grep -E '203\\.0\\.118\\.10(/32)?'")
+    machine.succeed("nft list set inet nix_csf country_ipv4 | grep -F '203.0.117.0/24'")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 2' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_last_run_success{mode=\"refresh\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("nft list set inet nix_csf deny_ipv4 | grep -F '203.0.114.0/24'")
     machine.fail("nft list set inet nix_csf deny_ipv4 | grep -F '203.0.115.0/24'")

@@ -117,8 +117,22 @@ normalize_cidrs() {
     {
       gsub(/\r/, "", $0);
       sub(/#.*/, "", $0);
+      sub(/;.*/, "", $0);
       gsub(/^[ \t]+|[ \t]+$/, "", $0);
-      if ($0 != "") print $0;
+      if ($0 == "") next;
+
+      token = $0;
+      # Support ipset-like feed lines:
+      #   add <set_name> <cidr_or_ip>
+      #   ipset add <set_name> <cidr_or_ip>
+      if (match($0, /^add[ \t]+[^ \t]+[ \t]+([^ \t]+)/, m)) {
+        token = m[1];
+      } else if (match($0, /^ipset[ \t]+add[ \t]+[^ \t]+[ \t]+([^ \t]+)/, m)) {
+        token = m[1];
+      }
+
+      gsub(/^[ \t]+|[ \t]+$/, "", token);
+      if (token != "") print token;
     }
   ' "${in_file}" > "${TMP_DIR}/_normalized.txt"
 
