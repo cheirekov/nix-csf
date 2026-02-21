@@ -14,6 +14,13 @@ pkgs.testers.runNixOSTest {
       openUDPPorts = [ 53 ];
       allowIPv4 = [ "10.0.0.0/8" "203.0.116.9/32" ];
       denyIPv4 = [ "198.51.100.0/24" ];
+      localFiles = {
+        enable = true;
+        failOnMissing = true;
+        allow = [ "/etc/nix-csf-local-allow.txt" ];
+        deny = [ "/etc/nix-csf-local-deny.txt" ];
+        ignore = [ "/etc/nix-csf-local-ignore.txt" ];
+      };
       logDrops = true;
       rateLimits = {
         synFlood = {
@@ -93,6 +100,16 @@ pkgs.testers.runNixOSTest {
       # deterministic local country fixture
       203.0.117.0/24 ; smoke-country-us
     '';
+    environment.etc."nix-csf-local-allow.txt".text = ''
+      203.0.120.1/32
+    '';
+    environment.etc."nix-csf-local-deny.txt".text = ''
+      203.0.120.0/24
+    '';
+    environment.etc."nix-csf-local-ignore.txt".text = ''
+      203.0.114.0/24
+      203.0.120.0/24
+    '';
     environment.etc."nix-csf-cluster-policy.json".text = ''
       {
         "schemaVersion": 2,
@@ -139,6 +156,9 @@ pkgs.testers.runNixOSTest {
     machine.succeed("grep -F 'nix_csf_build_info{version=\"' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"blocklists\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"dynamic_offenders\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"local_files\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"icmp_rate_limit\"} 0' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_icmp_profile{profile=\"legacy\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"dynamic_ban_ipv4\"} 2' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"dynamic_offender_urls\"} 1' /var/lib/nix-csf/metrics.prom")
@@ -150,12 +170,19 @@ pkgs.testers.runNixOSTest {
     machine.succeed("nft list set inet nix_csf feed_ipv4 | grep -E '203\\.0\\.118\\.10(/32)?'")
     machine.succeed("nft list set inet nix_csf country_ipv4 | grep -F '203.0.117.0/24'")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 2' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_source_count{source=\"local_allow_files\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_source_count{source=\"local_deny_files\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_source_count{source=\"local_ignore_files\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"effective_ignore_ipv4\"} 3' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_last_run_success{mode=\"refresh\"} 1' /var/lib/nix-csf/metrics.prom")
-    machine.succeed("nft list set inet nix_csf deny_ipv4 | grep -F '203.0.114.0/24'")
-    machine.fail("nft list set inet nix_csf deny_ipv4 | grep -F '203.0.115.0/24'")
-    machine.succeed("nft list set inet nix_csf allow_ipv4 | grep -F '203.0.115.0/24'")
+    machine.fail("nft get element inet nix_csf deny_ipv4 '{ 203.0.114.1 }'")
+    machine.succeed("nft get element inet nix_csf allow_ipv4 '{ 203.0.114.1 }'")
+    machine.fail("nft get element inet nix_csf deny_ipv4 '{ 203.0.115.1 }'")
+    machine.succeed("nft get element inet nix_csf allow_ipv4 '{ 203.0.115.1 }'")
+    machine.fail("nft get element inet nix_csf deny_ipv4 '{ 203.0.120.1 }'")
+    machine.succeed("nft get element inet nix_csf allow_ipv4 '{ 203.0.120.1 }'")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"cluster_policy\"} 1' /var/lib/nix-csf/metrics.prom")
-    machine.succeed("grep -F 'nix_csf_set_entries{set=\"cluster_deny_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"cluster_deny_ipv4\"} 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"cluster_ignore_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"cluster_policy_urls\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_cluster_policy_schema_version 2' /var/lib/nix-csf/metrics.prom")

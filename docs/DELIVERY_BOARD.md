@@ -1,6 +1,6 @@
 # DELIVERY BOARD — nix-csf
 
-Last updated: 2026-02-20  
+Last updated: 2026-02-21  
 Owner: PM/BA + Security Architect + Nix Module Engineer
 
 ## North Star
@@ -26,26 +26,23 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Scope freeze |
 |---|---|---|---|
-| T-025 | IN_PROGRESS | `nix-csfctl` operator workflow POC (allow/deny/ignore mutations) | easy write-path from master or any approved node |
+| T-022 | IN_PROGRESS | Hybrid local+remote list reconciliation | local files + remote policy merge contract |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-022 | TODO | Hybrid local+remote list reconciliation | local files + remote policy merge contract |
-| 2 | T-017 | TODO | ICMP policy profiles (type/rate controls) | safer ICMP defaults + explicit tuning |
-| 3 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) | per-port country allow model |
-| 4 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
-| 5 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
+| 1 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) | per-port country allow model |
+| 2 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
+| 3 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-017 | TODO | ICMP policy profiles (type/rate controls) |
-| 2 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) |
-| 3 | T-013 | TODO | Troubleshooting command set and runbook |
-| 4 | T-023 | TODO | Netdata monitoring integration |
+| 1 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) |
+| 2 | T-013 | TODO | Troubleshooting command set and runbook |
+| 3 | T-023 | TODO | Netdata monitoring integration |
 
 ## Completed baseline
 
@@ -67,10 +64,12 @@ Ship a production-usable NixOS firewall module that is:
 | T-014 | DONE | Strict apply semantics + deny precedence hardening |
 | T-015 | DONE | Cluster policy schema v2 (`allow`/`deny`/`ignore` + revision/TTL) |
 | T-016 | DONE | Dynamic offender propagation (rate-limit ban sync) |
+| T-017 | DONE | ICMP policy profiles (legacy/off/safe/diagnostic/open + optional rate limits) |
 | T-019 | DONE | Grafana/Prometheus monitoring pack |
 | T-020 | DONE | Cluster auth/token lifecycle and secret handling |
 | T-021 | DONE | Firewall coexistence profile (Docker and dynamic daemons) |
 | T-024 | DONE | Cluster control-plane and snapshot publisher POC |
+| T-025 | DONE | `nix-csfctl` operator workflow POC (allow/deny/ignore mutations) |
 | T-026 | DONE | Dynamic escalation policy POC (`N` temp bans => permanent deny + audit) |
 | T-027 | DONE | P0 feed reliability hotfix (Spamhaus endpoint update + parser compatibility for semicolon/ipset feeds) |
 

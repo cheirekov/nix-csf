@@ -727,3 +727,96 @@
   - `./scripts/validate-capture.sh` (operator run; succeeded)
 - Open follow-ups:
   - complete and validate `T-025` operator CLI workflow.
+
+## 2026-02-20 — Batch OPERATOR-CLI-025
+
+- Ticket(s): `T-025`
+- Summary:
+  - implemented operator CLI:
+    - `scripts/nix-csfctl.sh`,
+    - commands: `health`, `policy add/remove`, `ban-temp`, `unban`, `promotions`,
+    - auth support via `--auth-token-file` (Bearer token),
+  - wired CLI into module/packaging:
+    - `controlPlane.enable` now installs both `nix-csf-control-plane` and `nix-csfctl`,
+    - added flake package output: `packages.<system>.nix-csfctl`,
+    - expanded shellcheck coverage to include new scripts,
+  - switched control-plane integration workflow to CLI-backed mutation assertions
+    (replacing raw curl mutation calls).
+- BA requirement mapping:
+  - closes "easy write-path from master/approved node" requirement for day-2 operations.
+- PM milestone mapping:
+  - completes operator mutation workflow PoC and unblocks full focus on reconciliation contract (`T-022`).
+- Risk impact:
+  - `low` (new operator tooling; control-plane runtime behavior unchanged).
+- Validation evidence:
+  - `./scripts/validate-fast.sh`
+  - `./scripts/validate-capture.sh` (operator run; succeeded)
+- Open follow-ups:
+  - implement and validate hybrid local+remote reconciliation contract (`T-022`).
+
+## 2026-02-20 — Batch HYBRID-RECON-022
+
+- Ticket(s): `T-022`
+- Summary:
+  - introduced hybrid local-file policy source model:
+    - new module API: `services.nixCsf.localFiles.{enable,allow,deny,ignore,failOnMissing}`,
+    - local file parsing supports plain CIDR/IP and ipset-style `add` lines,
+  - implemented deterministic reconciliation contract in apply pipeline:
+    - merge local allow/deny overlays with declarative base,
+    - merge `localFiles.ignore` with cluster `ignore*`,
+    - promote effective ignore into allow and subtract from deny-style overlays
+      (static deny, country deny, per-port country deny, blocklist feeds, cluster deny),
+  - added observability for hybrid sources:
+    - feature toggle metric `local_files`,
+    - local/effective ignore set cardinality metrics,
+    - local file source counters,
+  - extended tests:
+    - smoke coverage for local allow/deny/ignore reconciliation behavior + metrics,
+    - integration `controlplanepoc` assertions for local ignore overriding remote cluster deny.
+- BA requirement mapping:
+  - addresses CSF-like local list operations while preserving Nix declarative/remote policy boundaries.
+- PM milestone mapping:
+  - advances hybrid reconciliation contract implementation for cluster-aware operations.
+- Risk impact:
+  - `medium` (new reconciliation path in apply pipeline).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
+- Open follow-ups:
+  - run full VM validation (`./scripts/validate-capture.sh`) for final ticket closure.
+
+## 2026-02-21 — Batch ICMP-PROFILES-017
+
+- Ticket(s): `T-017`
+- Summary:
+  - implemented ICMP profile engine in apply pipeline:
+    - `icmp.profile = legacy|off|safe|diagnostic|open`,
+    - `icmp.rateLimit.{enable,rate,burst}` support for profile-generated rules,
+    - profile-specific nft rule generation with strict behavior for `off`, `safe`, and `diagnostic`,
+    - compatibility preservation for `legacy` + `allowICMP`,
+  - added ICMP observability metrics:
+    - `nix_csf_feature_enabled{feature="icmp_rate_limit"}`,
+    - `nix_csf_icmp_profile{profile="..."}`,
+  - expanded validation and tests:
+    - `eval-profiles` now asserts ICMP profile defaults for threat profiles,
+    - integration assertions for legacy profile behavior and edge-safe profile rule output,
+    - smoke assertions for ICMP profile/rate-limit metrics,
+  - updated operator docs and planning artifacts:
+    - `README.md`,
+    - `docs/USE_CASES.md`,
+    - `docs/DYNAMIC_CLUSTER_POC.md`,
+    - `docs/ROADMAP.md`,
+    - `docs/DELIVERY_BOARD.md`.
+- BA requirement mapping:
+  - closes requested ICMP policy gap with explicit, safer, profile-driven behavior while retaining backward compatibility.
+- PM milestone mapping:
+  - closes `T-017` and advances priority to country allow-by-port parity (`T-018`).
+- Risk impact:
+  - `medium` (input-chain ICMP behavior is now profile-driven when not in legacy mode).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
+- Open follow-ups:
+  - `T-018` country allow-by-port parity,
+  - `T-013` troubleshooting runbook,
+  - `T-023` Netdata integration (optional).

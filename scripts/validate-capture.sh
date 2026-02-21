@@ -20,14 +20,19 @@ set -e
 if [[ ${rc} -ne 0 ]]; then
   {
     echo "## failure markers"
-    rg -n "RequestedAssertionFailed|must succeed:|error: builder for|failed with exit code|nix-csf-controlplanepoc|nix-csf-dockercoexist|nix-csf-tokenrotation" "${RUN_LOG}" || true
+    pattern="RequestedAssertionFailed|must succeed:|must fail:|error: builder for|failed with exit code"
+    if command -v rg >/dev/null 2>&1; then
+      rg -n -C 2 "${pattern}" "${RUN_LOG}" || true
+    else
+      grep -nE "${pattern}" "${RUN_LOG}" || true
+    fi
     echo
     echo "## suggested next command"
-    drv="$(grep -oE '/nix/store/[a-z0-9]{32}-vm-test-run-nix-csf-integration\\.drv' "${RUN_LOG}" | tail -n1 || true)"
+    drv="$(grep -oE '/nix/store/[a-z0-9]{32}-vm-test-run-nix-csf-(integration|smoke)\\.drv' "${RUN_LOG}" | tail -n1 || true)"
     if [[ -n "${drv}" ]]; then
       echo "nix log ${drv}"
     else
-      echo "nix log /nix/store/<...>-vm-test-run-nix-csf-integration.drv"
+      echo "nix log /nix/store/<...>-vm-test-run-nix-csf-(integration|smoke).drv"
     fi
   } > "${SUMMARY_LOG}"
 

@@ -201,16 +201,19 @@ services.nixCsf = {
 
 ### 8.4 ICMP status
 
-Current module supports `allowICMP = true|false` (global). Per-type/per-rate ICMP policy is planned in `T-017`.
+Current module supports both:
+
+- legacy global toggle (`allowICMP`) via `icmp.profile = "legacy"`,
+- profile-based ICMP controls (`icmp.profile = "off"|"safe"|"diagnostic"|"open"`) with optional `icmp.rateLimit.*`.
 
 ## 9) POC delivery slice
 
 Current cluster-first priority:
 
-1. `T-025` operator mutation workflow PoC (`nix-csfctl`)
-2. `T-022` hybrid local-files + remote reconciliation contract
-3. `T-023` Netdata monitoring integration (optional story)
+1. `T-022` hybrid local-files + remote reconciliation contract
+2. `T-023` Netdata monitoring integration (optional story)
 
 Completed:
 
+- `T-025` operator mutation workflow PoC (`nix-csfctl`)
 - `T-026` dynamic escalation policy PoC (`N` temp bans => permanent deny)

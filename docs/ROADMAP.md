@@ -27,7 +27,7 @@
 - Stateful rate-limit presets (SYN flood, connection flood). [done 2026-02-19]
 - Preset threat profiles (server, workstation, edge node). [done 2026-02-20]
 - Country allow-by-port controls (`CC_ALLOW_PORTS` parity).
-- ICMP policy profiles (type/rate controls).
+- ICMP policy profiles (type/rate controls). [done 2026-02-21]
 
 ## Phase 3 — Operations maturity
 
@@ -40,7 +40,7 @@
 - Firewall coexistence profile (Docker/other dynamic firewall daemons). [done 2026-02-20]
 - Hybrid local-files + remote-cluster list reconciliation.
 - Cluster control-plane and snapshot publisher POC (`T-024`). [done 2026-02-20]
-- `nix-csfctl` operator write-path POC for cluster allow/deny/ignore (`T-025`).
+- `nix-csfctl` operator write-path POC for cluster allow/deny/ignore (`T-025`). [done 2026-02-20]
 - Dynamic escalation policy POC (`T-026`: N temporary bans => permanent deny promotion). [done 2026-02-20]
 - Cluster auth/token lifecycle and secret-management guidance. [done 2026-02-20]
 - Grafana/Prometheus monitoring pack and alert rules. [done 2026-02-20]

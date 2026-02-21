@@ -41,6 +41,7 @@ let
         cfg.blocklists.sources);
 
   resolvedBlocklistURLs = unique (selectedCatalogBlocklistURLs ++ cfg.blocklists.urls);
+  allLocalPolicyFiles = cfg.localFiles.allow ++ cfg.localFiles.deny ++ cfg.localFiles.ignore;
 
   isHttpsUrl = url: builtins.match "^https://[^[:space:]]+$" url != null;
   catalogBlocklistURLs = map (entry: entry.url) (builtins.attrValues cfg.blocklists.catalog);
@@ -118,10 +119,27 @@ let
     openTCPPorts = cfg.openTCPPorts;
     openUDPPorts = cfg.openUDPPorts;
     allowICMP = cfg.allowICMP;
+    icmp = {
+      profile = cfg.icmp.profile;
+      extraIPv4Types = cfg.icmp.extraIPv4Types;
+      extraIPv6Types = cfg.icmp.extraIPv6Types;
+      rateLimit = {
+        enable = cfg.icmp.rateLimit.enable;
+        rate = cfg.icmp.rateLimit.rate;
+        burst = cfg.icmp.rateLimit.burst;
+      };
+    };
     allowIPv4 = cfg.allowIPv4;
     allowIPv6 = cfg.allowIPv6;
     denyIPv4 = cfg.denyIPv4;
     denyIPv6 = cfg.denyIPv6;
+    localFiles = {
+      enable = cfg.localFiles.enable;
+      allow = cfg.localFiles.allow;
+      deny = cfg.localFiles.deny;
+      ignore = cfg.localFiles.ignore;
+      failOnMissing = cfg.localFiles.failOnMissing;
+    };
     logDrops = cfg.logDrops;
     synRateLimit = cfg.synRateLimit;
     rateLimits = {
@@ -225,6 +243,8 @@ let
     server = {
       services.nixCsf = {
         logDrops = mkDefault true;
+        icmp.profile = mkDefault "safe";
+        icmp.rateLimit.enable = mkDefault true;
         rateLimits.synFlood = {
           enable = mkDefault true;
           preset = mkDefault "balanced";
@@ -241,6 +261,8 @@ let
         openTCPPorts = mkDefault [ ];
         openUDPPorts = mkDefault [ ];
         allowICMP = mkDefault true;
+        icmp.profile = mkDefault "diagnostic";
+        icmp.rateLimit.enable = mkDefault true;
         logDrops = mkDefault true;
       };
     };
@@ -249,6 +271,8 @@ let
         openTCPPorts = mkDefault [ 22 443 ];
         openUDPPorts = mkDefault [ 53 51820 ];
         logDrops = mkDefault true;
+        icmp.profile = mkDefault "safe";
+        icmp.rateLimit.enable = mkDefault true;
         rateLimits.synFlood = {
           enable = mkDefault true;
           preset = mkDefault "strict";
@@ -275,9 +299,9 @@ in
         Preset threat profile that applies `mkDefault` values to related options.
         Explicit option values always override profile defaults.
         - custom: keep module baseline defaults
-        - server: enable balanced flood controls, drop logging, hourly refresh
-        - workstation: no inbound open TCP/UDP ports by default
-        - edge: stricter flood controls and edge-oriented open ports
+        - server: enable balanced flood controls, ICMP safe profile, drop logging, hourly refresh
+        - workstation: no inbound open TCP/UDP ports by default, ICMP diagnostic profile
+        - edge: stricter flood controls, ICMP safe profile, edge-oriented open ports
       '';
     };
 
@@ -327,7 +351,69 @@ in
     allowICMP = mkOption {
       type = types.bool;
       default = true;
-      description = "Allow ICMP/ICMPv6 traffic.";
+      description = ''
+        Legacy compatibility toggle for broad ICMP/ICMPv6 acceptance.
+        Used when `services.nixCsf.icmp.profile = "legacy"`.
+      '';
+    };
+
+    icmp = {
+      profile = mkOption {
+        type = types.enum [ "legacy" "off" "safe" "diagnostic" "open" ];
+        default = "legacy";
+        description = ''
+          ICMP policy profile:
+          - legacy: use `allowICMP` broad allow/deny behavior
+          - off: deny ICMP/ICMPv6 (except conntrack-established traffic)
+          - safe: allow essential control/error and IPv6 neighbor discovery types
+          - diagnostic: safe + echo request/reply types
+          - open: allow all ICMP/ICMPv6 traffic
+        '';
+      };
+
+      extraIPv4Types = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "echo-request" "redirect" ];
+        description = ''
+          Additional nftables ICMPv4 type names allowed in safe/diagnostic profiles.
+          Ignored in `off`, `open`, and `legacy` profiles.
+        '';
+      };
+
+      extraIPv6Types = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "echo-request" "echo-reply" ];
+        description = ''
+          Additional nftables ICMPv6 type names allowed in safe/diagnostic profiles.
+          Ignored in `off`, `open`, and `legacy` profiles.
+        '';
+      };
+
+      rateLimit = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Apply a per-rule ICMP/ICMPv6 accept rate limit for profile-generated rules.
+            Does not affect `legacy` profile behavior.
+          '';
+        };
+
+        rate = mkOption {
+          type = types.str;
+          default = "30/second";
+          example = "120/minute";
+          description = "nftables rate expression used when icmp.rateLimit.enable = true.";
+        };
+
+        burst = mkOption {
+          type = types.ints.positive;
+          default = 120;
+          description = "Packet burst threshold for ICMP rate-limited accept rules.";
+        };
+      };
     };
 
     allowIPv4 = mkOption {
@@ -356,6 +442,56 @@ in
       default = [ ];
       example = [ "2001:db8:bad::/48" ];
       description = "IPv6 addresses or CIDRs that are always denied.";
+    };
+
+    localFiles = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable hybrid runtime reconciliation from local operator-managed files.
+          Files are merged with declarative and remote sources during apply/refresh.
+        '';
+      };
+
+      allow = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "/var/lib/nix-csf/lists/allow.local" ];
+        description = ''
+          Local file paths with CIDR/IP entries merged into allow sets.
+          Supports plain CIDR/IP lines and ipset-style `add` lines.
+        '';
+      };
+
+      deny = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "/var/lib/nix-csf/lists/deny.local" ];
+        description = ''
+          Local file paths with CIDR/IP entries merged into deny sets.
+          Supports plain CIDR/IP lines and ipset-style `add` lines.
+        '';
+      };
+
+      ignore = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "/var/lib/nix-csf/lists/ignore.local" ];
+        description = ''
+          Local file paths with CIDR/IP entries merged into ignore overlays.
+          Ignore entries are promoted into allow and subtracted from deny-style overlays.
+        '';
+      };
+
+      failOnMissing = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          If true, missing/unreadable local files fail the run.
+          If false, missing files are skipped with warning.
+        '';
+      };
     };
 
     logDrops = mkOption {
@@ -1159,6 +1295,19 @@ in
         message = ''
           services.nixCsf.dynamicOffenders.authTokenFile cannot be combined with
           services.nixCsf.dynamicOffenders.authTokenFiles.
+        '';
+      }
+      {
+        assertion = all (path: hasPrefix "/" path) allLocalPolicyFiles;
+        message = ''
+          services.nixCsf.localFiles allow/deny/ignore entries must be absolute paths.
+        '';
+      }
+      {
+        assertion = !cfg.localFiles.enable || allLocalPolicyFiles != [ ];
+        message = ''
+          services.nixCsf.localFiles.enable requires at least one file in
+          services.nixCsf.localFiles.allow/deny/ignore.
         '';
       }
       {

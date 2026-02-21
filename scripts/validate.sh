@@ -19,9 +19,16 @@ nix build \
   "path:${ROOT_DIR}#checks.x86_64-linux.monitoring-pack"
 
 echo "[nix-csf] running x86_64 VM test builds (smoke + integration)"
+echo "[nix-csf] running x86_64 smoke VM test build"
 nix build \
   "path:${ROOT_DIR}#checks.x86_64-linux.nix-csf-smoke" \
+  --print-build-logs \
+  --max-jobs 1
+
+echo "[nix-csf] running x86_64 integration VM test build"
+nix build \
   "path:${ROOT_DIR}#checks.x86_64-linux.nix-csf-integration" \
-  --print-build-logs
+  --print-build-logs \
+  --max-jobs 1
 
 echo "[nix-csf] validation complete"

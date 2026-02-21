@@ -195,6 +195,31 @@ services.nixCsf = {
 };
 ```
 
+Hybrid local + remote reconciliation pattern:
+
+```nix
+services.nixCsf = {
+  enable = true;
+  localFiles = {
+    enable = true;
+    failOnMissing = true;
+    allow = [ "/var/lib/nix-csf/lists/allow.local" ];
+    deny = [ "/var/lib/nix-csf/lists/deny.local" ];
+    ignore = [ "/var/lib/nix-csf/lists/ignore.local" ];
+  };
+  clusterPolicy = {
+    enable = true;
+    url = "https://policy.example.org/nix-csf/prod-edge.json";
+  };
+};
+```
+
+Reconciliation contract:
+
+- `localFiles.ignore` and cluster `ignore*` are merged first.
+- merged ignore entries are added to allow and removed from deny-style overlays.
+- this allows emergency local unblocks without replacing remote cluster policy.
+
 ## 7) Dynamic temporary offender propagation (TTL)
 
 Use this when a centralized detector/control-plane publishes temporary bans that should expire automatically.
@@ -331,15 +356,30 @@ services.nixCsf = {
 };
 ```
 
-## 12) ICMP baseline and roadmap
+## 12) ICMP profiles (legacy/off/safe/diagnostic/open)
 
-Current module supports global ICMP enable/disable:
+Use modern ICMP profile controls:
 
 ```nix
 services.nixCsf = {
   enable = true;
-  allowICMP = false; # set true if ICMP should be accepted
+  icmp = {
+    profile = "safe"; # legacy | off | safe | diagnostic | open
+    rateLimit = {
+      enable = true;
+      rate = "30/second";
+      burst = 120;
+    };
+  };
 };
 ```
 
-Per-type/per-rate ICMP controls are planned in `T-017`.
+Compatibility mode remains available:
+
+```nix
+services.nixCsf = {
+  enable = true;
+  icmp.profile = "legacy";
+  allowICMP = false; # broad legacy toggle
+};
+```

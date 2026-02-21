@@ -14,11 +14,13 @@ Kickoff baseline is implemented:
 - NixOS module: `services.nixCsf`
 - Static allow/deny rules (IPv4 + IPv6)
 - Port policy (`openTCPPorts`, `openUDPPorts`, ICMP toggle)
+- ICMP policy profiles (`icmp.profile = legacy|off|safe|diagnostic|open`) with optional rate limit
 - Stateful rate-limit presets (`rateLimits.synFlood`, `rateLimits.connFlood`)
 - Preset threat profiles (`threatProfile = "server"|"workstation"|"edge"`)
 - Country policy modes (`deny` and `allow`)
 - Per-port country deny policy (`country.portDeny`, CSF `CC_DENY_PORTS` style)
 - Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
+- Hybrid local file overlays (`localFiles.allow|deny|ignore`)
 - Cluster policy propagation overlay (`clusterPolicy.*`)
 - Cluster policy schema v2 support (`ignore*`, `schemaVersion`, `revision`, `ttlSeconds`)
 - Dynamic offender snapshot propagation with timeout sets (`dynamicOffenders.*`)
@@ -98,6 +100,14 @@ services.nixCsf = {
   trustedInterfaces = [ "tailscale0" "wg0" ];
   openTCPPorts = [ 22 80 443 ];
   openUDPPorts = [ 53 51820 ];
+  icmp = {
+    profile = "safe"; # legacy | off | safe | diagnostic | open
+    rateLimit = {
+      enable = true;
+      rate = "30/second";
+      burst = 120;
+    };
+  };
 
   allowIPv4 = [ "10.0.0.0/8" ];
   denyIPv4 = [ "198.51.100.0/24" ];
@@ -147,6 +157,15 @@ services.nixCsf = {
     urls = [
       # "https://example.invalid/custom-feed.txt"
     ];
+  };
+
+  # Optional local operator-managed files merged at runtime.
+  localFiles = {
+    enable = true;
+    failOnMissing = true;
+    allow = [ "/var/lib/nix-csf/lists/allow.local" ];
+    deny = [ "/var/lib/nix-csf/lists/deny.local" ];
+    ignore = [ "/var/lib/nix-csf/lists/ignore.local" ];
   };
 
   clusterPolicy = {
@@ -416,6 +435,8 @@ nix-csfctl --auth-token-file /run/secrets/nix-csf-control-plane-token \
 - Dynamic snapshots are also guarded by `ttlSeconds`.
   In strict mode (`dynamicOffenders.failOpen = false`), expired cached snapshot fails closed.
 - Dynamic bans are evaluated after explicit allow rules, so allow/ignore overlays can override temporary bans.
+- Effective ignore precedence is hybrid-aware: `localFiles.ignore` + cluster `ignore*` are merged,
+  promoted into allow sets, and subtracted from deny-style overlays.
 - `clusterPolicy.authTokenFiles` and `dynamicOffenders.authTokenFiles` allow staged token rotation;
   candidates are tried in order until one succeeds.
 - Auth token files are validated strictly at runtime:

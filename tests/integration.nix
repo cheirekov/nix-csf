@@ -307,6 +307,13 @@ pkgs.testers.runNixOSTest {
     services.nixCsf = {
       enable = true;
       openTCPPorts = [ 22 ];
+      localFiles = {
+        enable = true;
+        failOnMissing = true;
+        allow = [ "/etc/nix-csf-controlplanepoc-allow.local" ];
+        deny = [ "/etc/nix-csf-controlplanepoc-deny.local" ];
+        ignore = [ "/etc/nix-csf-controlplanepoc-ignore.local" ];
+      };
       clusterPolicy = {
         enable = true;
         url = "http://127.0.0.1:18081/snapshots/lab/cluster-policy.json";
@@ -341,6 +348,17 @@ pkgs.testers.runNixOSTest {
       autoRefresh.runOnBoot = false;
     };
 
+    environment.etc."nix-csf-controlplanepoc-allow.local".text = ''
+      203.0.119.50/32
+    '';
+    environment.etc."nix-csf-controlplanepoc-deny.local".text = ''
+      203.0.119.60/32
+    '';
+    environment.etc."nix-csf-controlplanepoc-ignore.local".text = ''
+      203.0.119.9/32
+      203.0.119.60/32
+    '';
+
     environment.systemPackages = [ pkgs.nftables pkgs.curl pkgs.jq ];
     system.stateVersion = "24.11";
   };
@@ -369,9 +387,10 @@ pkgs.testers.runNixOSTest {
   };
 
   testScript = ''
-    start_all()
+    # Start nodes lazily to reduce host-pressure boot timeouts on /dev/hvc0 and eth1.
     blockapplyfailclosed, clusterexpired, controlplanepoc, dockercoexist, dynamicexpired, failclosed, good, profileedge, tokenrotation = machines
 
+    good.start()
     good.wait_for_unit("multi-user.target")
     good.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
     good.succeed("nft list table inet nix_csf")
@@ -379,8 +398,11 @@ pkgs.testers.runNixOSTest {
     good.succeed("grep -F 'tcp flags syn ct state new limit rate over 30/second drop' /var/lib/nix-csf/generated-ruleset.nft")
     good.succeed("grep -F 'iifname \"wg0\" accept' /var/lib/nix-csf/generated-ruleset.nft")
     good.succeed("grep -F 'type filter hook forward priority filter; policy accept;' /var/lib/nix-csf/generated-ruleset.nft")
+    good.succeed("grep -F 'ip protocol icmp accept' /var/lib/nix-csf/generated-ruleset.nft")
+    good.succeed("grep -F 'ip6 nexthdr ipv6-icmp accept' /var/lib/nix-csf/generated-ruleset.nft")
     good.fail("test -e /var/lib/nix-csf/metrics.prom")
 
+    profileedge.start()
     profileedge.wait_for_unit("multi-user.target")
     profileedge.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
     profileedge.succeed("grep -E 'tcp dport .*22' /var/lib/nix-csf/generated-ruleset.nft")
@@ -390,25 +412,34 @@ pkgs.testers.runNixOSTest {
     profileedge.succeed("grep -F 'syn_flood_v4 { ip saddr limit rate over 25/second burst 50 packets } drop' /var/lib/nix-csf/generated-ruleset.nft")
     profileedge.succeed("grep -F 'conn_flood_v4 { ip saddr limit rate over 120/second burst 240 packets } drop' /var/lib/nix-csf/generated-ruleset.nft")
     profileedge.succeed("grep -F 'log prefix \"nix-csf drop: \" level warn' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("awk '/^[[:space:]]*icmp type \\{/{line=$0} END { exit !(line != \"\" && line ~ /destination-unreachable/ && line ~ /time-exceeded/ && line ~ /parameter-problem/ && line ~ /limit rate 30\\/second burst 120 packets accept/) }' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("awk '/^[[:space:]]*icmpv6 type \\{/{line=$0} END { exit !(line != \"\" && line ~ /destination-unreachable/ && line ~ /packet-too-big/ && line ~ /time-exceeded/ && line ~ /parameter-problem/ && line ~ /nd-router-solicit/ && line ~ /nd-router-advert/ && line ~ /nd-neighbor-solicit/ && line ~ /nd-neighbor-advert/ && line ~ /limit rate 30\\/second burst 120 packets accept/) }' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("grep -F 'ip protocol icmp drop' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.succeed("grep -F 'ip6 nexthdr ipv6-icmp drop' /var/lib/nix-csf/generated-ruleset.nft")
+    profileedge.fail("grep -F 'echo-request' /var/lib/nix-csf/generated-ruleset.nft")
 
+    blockapplyfailclosed.start()
     blockapplyfailclosed.wait_for_unit("multi-user.target")
     blockapplyfailclosed.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")
     blockapplyfailclosed.fail("test -e /var/lib/nix-csf/generated-ruleset.nft")
     blockapplyfailclosed.fail("nft list table inet nix_csf")
     blockapplyfailclosed.succeed("journalctl -u nix-csf-apply.service -n 30 | grep -F 'blocklists.failOpen=false and no cached data is available for file:///etc/nix-csf-missing-feed.txt'")
 
+    clusterexpired.start()
     clusterexpired.wait_for_unit("multi-user.target")
     clusterexpired.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")
     clusterexpired.fail("test -e /var/lib/nix-csf/generated-ruleset.nft")
     clusterexpired.fail("nft list table inet nix_csf")
     clusterexpired.succeed("journalctl -u nix-csf-apply.service -n 30 | grep -F 'cached cluster policy expired (ttlSeconds=1'")
 
+    dynamicexpired.start()
     dynamicexpired.wait_for_unit("multi-user.target")
     dynamicexpired.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")
     dynamicexpired.fail("test -e /var/lib/nix-csf/generated-ruleset.nft")
     dynamicexpired.fail("nft list table inet nix_csf")
     dynamicexpired.succeed("journalctl -u nix-csf-apply.service -n 30 | grep -F 'cached dynamic offenders snapshot expired (ttlSeconds=1'")
 
+    dockercoexist.start()
     dockercoexist.wait_for_unit("multi-user.target")
     dockercoexist.wait_for_unit("docker.service")
     dockercoexist.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
@@ -420,6 +451,7 @@ pkgs.testers.runNixOSTest {
     dockercoexist.succeed("docker network inspect nixcsf-itest-net >/dev/null")
     dockercoexist.succeed("docker network rm nixcsf-itest-net >/dev/null")
 
+    tokenrotation.start()
     tokenrotation.wait_for_unit("multi-user.target")
     tokenrotation.wait_for_unit("nix-csf-token-fixture.service")
     tokenrotation.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
@@ -429,15 +461,18 @@ pkgs.testers.runNixOSTest {
     tokenrotation.succeed("journalctl -u nix-csf-refresh.service -n 80 | grep -F 'dynamic offenders auth token slot 1 failed; trying next token'")
     tokenrotation.succeed("grep -F '\"revision\": \"auth-r2\"' /var/lib/nix-csf/cache/cluster-policy.json")
     tokenrotation.succeed("grep -F '\"revision\": \"auth-dyn-r2\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
-    tokenrotation.succeed("nft list set inet nix_csf deny_ipv4 | grep -F '203.0.118.0/24'")
+    tokenrotation.succeed("nft get element inet nix_csf deny_ipv4 '{ 203.0.118.9 }'")
     tokenrotation.succeed("grep -F '203.0.118.7/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
     tokenrotation.succeed("grep -F 'nix_csf_auth_token_candidates{source=\"cluster_policy\"} 2' /var/lib/nix-csf/metrics.prom")
     tokenrotation.succeed("grep -F 'nix_csf_auth_token_candidates{source=\"dynamic_offenders\"} 2' /var/lib/nix-csf/metrics.prom")
     tokenrotation.succeed("grep -F 'nix_csf_auth_token_selected_slot{source=\"cluster_policy\"} 2' /var/lib/nix-csf/metrics.prom")
     tokenrotation.succeed("grep -F 'nix_csf_auth_token_selected_slot{source=\"dynamic_offenders\"} 2' /var/lib/nix-csf/metrics.prom")
 
+    controlplanepoc.start()
     controlplanepoc.wait_for_unit("multi-user.target")
     controlplanepoc.wait_for_unit("nix-csf-control-plane.service")
+    controlplanepoc.wait_until_succeeds("systemctl is-active --quiet nix-csf-control-plane.service")
+    controlplanepoc.wait_until_succeeds("curl -sf http://127.0.0.1:18081/healthz >/dev/null")
     controlplanepoc.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
     controlplanepoc.succeed("command -v nix-csfctl >/dev/null")
     controlplanepoc.succeed("nix-csfctl --output pretty health | jq -e '.status == \"ok\"'")
@@ -452,12 +487,17 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.succeed("grep -F '\"203.0.119.11/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.10/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
     controlplanepoc.fail("grep -F '\"cidr\": \"203.0.119.11/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
-    controlplanepoc.succeed("nft list set inet nix_csf deny_ipv4 | grep -E '203\\.0\\.119\\.9(/32)?'")
-    controlplanepoc.succeed("nft list set inet nix_csf deny_ipv4 | grep -E '203\\.0\\.119\\.11(/32)?'")
+    controlplanepoc.fail("nft get element inet nix_csf deny_ipv4 '{ 203.0.119.9 }'")
+    controlplanepoc.succeed("nft get element inet nix_csf deny_ipv4 '{ 203.0.119.11 }'")
+    controlplanepoc.fail("nft get element inet nix_csf deny_ipv4 '{ 203.0.119.60 }'")
+    controlplanepoc.succeed("nft get element inet nix_csf allow_ipv4 '{ 203.0.119.9 }'")
+    controlplanepoc.succeed("nft get element inet nix_csf allow_ipv4 '{ 203.0.119.50 }'")
+    controlplanepoc.succeed("nft get element inet nix_csf allow_ipv4 '{ 203.0.119.60 }'")
     controlplanepoc.succeed("grep -E '203\\.0\\.119\\.9(/32)?' /var/lib/nix-csf/generated-ruleset.nft")
     controlplanepoc.succeed("grep -E '203\\.0\\.119\\.11(/32)?' /var/lib/nix-csf/generated-ruleset.nft")
     controlplanepoc.succeed("grep -F '203.0.119.10/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
 
+    failclosed.start()
     failclosed.wait_for_unit("multi-user.target")
     failclosed.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx exit-code")
     failclosed.fail("test -e /var/lib/nix-csf/generated-ruleset.nft")

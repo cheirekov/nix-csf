@@ -8,6 +8,7 @@
 - Compatibility with both flake and non-flake module imports.
 - Profile-driven onboarding (`threatProfile`) with explicit override precedence.
 - Governed remote blocklist ingestion through a source catalog schema.
+- Hybrid local-files + remote policy reconciliation for day-2 overrides.
 - Centralized cluster policy propagation for multi-host allow/deny overlays.
 - Cluster policy schema v2 governance (`allow`/`deny`/`ignore` + revision/TTL).
 - Clear separation between declarative policy state and runtime dynamic offender state.
@@ -55,6 +56,7 @@
 2. Module version metadata (`services.nixCsf.moduleVersion`) is injected from `VERSION`.
 3. Boot-time apply service renders nftables rules from:
    - static config values,
+   - local operator-managed files (`localFiles.*`),
    - cached feed data.
 4. Refresh service (manual/timer) downloads latest feed files and optional cluster policy overlay JSON.
 5. Remote auth token files are loaded from secret paths, validated, and used with ordered fallback when multiple candidates are configured.
@@ -78,6 +80,7 @@
 - In strict mode (`failOpen = false`), `apply` requires cache presence for remote sources and fails closed when cache is absent.
 - Blocklist sources can be governed by catalog IDs (`blocklists.sources`) with schema-backed metadata.
 - Cluster ignore overlays can explicitly subtract CIDRs from deny-style sources.
+- Local ignore overlays (`localFiles.ignore`) are merged with cluster ignore before reconciliation.
 - Dynamic offender snapshots enforce schema + optional TTL cache-age guardrails.
 - Dynamic snapshots are bounded by `dynamicOffenders.maxEntries` to avoid oversized runtime merges.
 - Auth token files are validated at runtime for strict permissions/content before remote fetches (`authTokenFile`/`authTokenFiles`).

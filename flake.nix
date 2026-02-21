@@ -97,8 +97,11 @@
             serverConnEnabled = boolText serverProfileEval.config.services.nixCsf.rateLimits.connFlood.enable;
             serverLogDrops = boolText serverProfileEval.config.services.nixCsf.logDrops;
             serverOnCalendar = serverProfileEval.config.services.nixCsf.autoRefresh.onCalendar;
+            serverIcmpProfile = serverProfileEval.config.services.nixCsf.icmp.profile;
+            serverIcmpRateLimit = boolText serverProfileEval.config.services.nixCsf.icmp.rateLimit.enable;
             workstationTCPCount = toString (builtins.length workstationProfileEval.config.services.nixCsf.openTCPPorts);
             workstationUDPCount = toString (builtins.length workstationProfileEval.config.services.nixCsf.openUDPPorts);
+            workstationIcmpProfile = workstationProfileEval.config.services.nixCsf.icmp.profile;
             edgeOverrideTCP = builtins.concatStringsSep "," (map toString edgeOverrideEval.config.services.nixCsf.openTCPPorts);
             edgeOverrideLogDrops = boolText edgeOverrideEval.config.services.nixCsf.logDrops;
             edgeOverrideSynPreset = edgeOverrideEval.config.services.nixCsf.rateLimits.synFlood.preset;
@@ -108,8 +111,11 @@
             test "$serverConnEnabled" = "true"
             test "$serverLogDrops" = "true"
             test "$serverOnCalendar" = "hourly"
+            test "$serverIcmpProfile" = "safe"
+            test "$serverIcmpRateLimit" = "true"
             test "$workstationTCPCount" = "0"
             test "$workstationUDPCount" = "0"
+            test "$workstationIcmpProfile" = "diagnostic"
             test "$edgeOverrideTCP" = "8443"
             test "$edgeOverrideLogDrops" = "false"
             test "$edgeOverrideSynPreset" = "relaxed"

@@ -178,6 +178,25 @@ append_if_exists() {
   fi
 }
 
+append_local_policy_file() {
+  local list_name="$1"
+  local path="$2"
+  local target_raw="$3"
+  local fail_on_missing="$4"
+
+  if [[ -r "${path}" ]]; then
+    cat "${path}" >> "${target_raw}"
+    return 0
+  fi
+
+  if [[ "${fail_on_missing}" == "true" ]]; then
+    fail "localFiles.${list_name} source is missing or unreadable: ${path}"
+  fi
+
+  warn "localFiles.${list_name} source is missing or unreadable; skipping: ${path}"
+  return 0
+}
+
 fetch_to_cache() {
   local url="$1"
   local cache_file="$2"
@@ -565,6 +584,11 @@ emit_set() {
   echo "  set ${name} {"
   echo "    type ${nft_type}"
   echo "    flags ${set_flags}"
+  if [[ "${set_flags}" == *"interval"* && "${set_flags}" != *"timeout"* ]]; then
+    # Allow overlapping CIDRs from multiple sources (for example /24 + /32)
+    # without failing nft ruleset validation.
+    echo "    auto-merge"
+  fi
   if [[ -s "${source_file}" ]]; then
     echo "    elements = {"
     awk '
@@ -599,6 +623,29 @@ bool_to_num() {
   fi
 }
 
+append_unique_value() {
+  local -n ref="$1"
+  local candidate="$2"
+  local existing
+
+  for existing in "${ref[@]}"; do
+    if [[ "${existing}" == "${candidate}" ]]; then
+      return 0
+    fi
+  done
+
+  ref+=("${candidate}")
+}
+
+validate_icmp_type_name() {
+  local family="$1"
+  local value="$2"
+
+  if [[ ! "${value}" =~ ^[a-z0-9_-]+$ ]]; then
+    fail "icmp.${family} contains invalid nft type token: ${value}"
+  fi
+}
+
 write_metrics() {
   if [[ "${metrics_enabled}" != "true" ]]; then
     return 0
@@ -630,6 +677,7 @@ write_metrics() {
     printf 'nix_csf_feature_enabled{feature="country"} %s\n' "$(bool_to_num "${country_enabled}")"
     printf 'nix_csf_feature_enabled{feature="country_port_deny"} %s\n' "$(bool_to_num "${country_port_deny_enabled}")"
     printf 'nix_csf_feature_enabled{feature="blocklists"} %s\n' "$(bool_to_num "${blocklists_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="local_files"} %s\n' "$(bool_to_num "${local_files_enabled}")"
     printf 'nix_csf_feature_enabled{feature="cluster_policy"} %s\n' "$(bool_to_num "${cluster_policy_enabled}")"
     printf 'nix_csf_feature_enabled{feature="dynamic_offenders"} %s\n' "$(bool_to_num "${dynamic_offenders_enabled}")"
     printf 'nix_csf_feature_enabled{feature="coexist_docker"} %s\n' "$(bool_to_num "${coexistence_docker_enabled}")"
@@ -637,6 +685,7 @@ write_metrics() {
     printf 'nix_csf_feature_enabled{feature="legacy_syn_rate_limit"} %s\n' "$(bool_to_num "${legacy_syn_rate_limit_enabled}")"
     printf 'nix_csf_feature_enabled{feature="syn_flood"} %s\n' "$(bool_to_num "${syn_flood_enabled}")"
     printf 'nix_csf_feature_enabled{feature="conn_flood"} %s\n' "$(bool_to_num "${conn_flood_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="icmp_rate_limit"} %s\n' "$(bool_to_num "${icmp_rate_limit_effective}")"
     echo "# HELP nix_csf_coexistence_profile Active coexistence profile (1 active, 0 inactive)."
     echo "# TYPE nix_csf_coexistence_profile gauge"
     if [[ "${coexistence_profile}" == "exclusive-firewall" ]]; then
@@ -645,6 +694,39 @@ write_metrics() {
     else
       echo 'nix_csf_coexistence_profile{profile="exclusive-firewall"} 0'
       echo 'nix_csf_coexistence_profile{profile="docker-coexist"} 1'
+    fi
+    echo "# HELP nix_csf_icmp_profile Active ICMP policy profile (1 active, 0 inactive)."
+    echo "# TYPE nix_csf_icmp_profile gauge"
+    if [[ "${icmp_profile}" == "legacy" ]]; then
+      echo 'nix_csf_icmp_profile{profile="legacy"} 1'
+      echo 'nix_csf_icmp_profile{profile="off"} 0'
+      echo 'nix_csf_icmp_profile{profile="safe"} 0'
+      echo 'nix_csf_icmp_profile{profile="diagnostic"} 0'
+      echo 'nix_csf_icmp_profile{profile="open"} 0'
+    elif [[ "${icmp_profile}" == "off" ]]; then
+      echo 'nix_csf_icmp_profile{profile="legacy"} 0'
+      echo 'nix_csf_icmp_profile{profile="off"} 1'
+      echo 'nix_csf_icmp_profile{profile="safe"} 0'
+      echo 'nix_csf_icmp_profile{profile="diagnostic"} 0'
+      echo 'nix_csf_icmp_profile{profile="open"} 0'
+    elif [[ "${icmp_profile}" == "safe" ]]; then
+      echo 'nix_csf_icmp_profile{profile="legacy"} 0'
+      echo 'nix_csf_icmp_profile{profile="off"} 0'
+      echo 'nix_csf_icmp_profile{profile="safe"} 1'
+      echo 'nix_csf_icmp_profile{profile="diagnostic"} 0'
+      echo 'nix_csf_icmp_profile{profile="open"} 0'
+    elif [[ "${icmp_profile}" == "diagnostic" ]]; then
+      echo 'nix_csf_icmp_profile{profile="legacy"} 0'
+      echo 'nix_csf_icmp_profile{profile="off"} 0'
+      echo 'nix_csf_icmp_profile{profile="safe"} 0'
+      echo 'nix_csf_icmp_profile{profile="diagnostic"} 1'
+      echo 'nix_csf_icmp_profile{profile="open"} 0'
+    else
+      echo 'nix_csf_icmp_profile{profile="legacy"} 0'
+      echo 'nix_csf_icmp_profile{profile="off"} 0'
+      echo 'nix_csf_icmp_profile{profile="safe"} 0'
+      echo 'nix_csf_icmp_profile{profile="diagnostic"} 0'
+      echo 'nix_csf_icmp_profile{profile="open"} 1'
     fi
     echo "# HELP nix_csf_set_entries Number of CIDR elements loaded into nft sets."
     echo "# TYPE nix_csf_set_entries gauge"
@@ -658,6 +740,14 @@ write_metrics() {
     printf 'nix_csf_set_entries{set="country_port_deny_ipv6"} %s\n' "${country_port_deny_v6_count}"
     printf 'nix_csf_set_entries{set="feed_ipv4"} %s\n' "${feed_v4_count}"
     printf 'nix_csf_set_entries{set="feed_ipv6"} %s\n' "${feed_v6_count}"
+    printf 'nix_csf_set_entries{set="local_allow_ipv4"} %s\n' "${local_allow_v4_count}"
+    printf 'nix_csf_set_entries{set="local_allow_ipv6"} %s\n' "${local_allow_v6_count}"
+    printf 'nix_csf_set_entries{set="local_deny_ipv4"} %s\n' "${local_deny_v4_count}"
+    printf 'nix_csf_set_entries{set="local_deny_ipv6"} %s\n' "${local_deny_v6_count}"
+    printf 'nix_csf_set_entries{set="local_ignore_ipv4"} %s\n' "${local_ignore_v4_count}"
+    printf 'nix_csf_set_entries{set="local_ignore_ipv6"} %s\n' "${local_ignore_v6_count}"
+    printf 'nix_csf_set_entries{set="effective_ignore_ipv4"} %s\n' "${effective_ignore_v4_count}"
+    printf 'nix_csf_set_entries{set="effective_ignore_ipv6"} %s\n' "${effective_ignore_v6_count}"
     printf 'nix_csf_set_entries{set="cluster_allow_ipv4"} %s\n' "${cluster_allow_v4_count}"
     printf 'nix_csf_set_entries{set="cluster_allow_ipv6"} %s\n' "${cluster_allow_v6_count}"
     printf 'nix_csf_set_entries{set="cluster_deny_ipv4"} %s\n' "${cluster_deny_v4_count}"
@@ -671,6 +761,9 @@ write_metrics() {
     printf 'nix_csf_source_count{source="country_codes"} %s\n' "${#country_codes[@]}"
     printf 'nix_csf_source_count{source="country_port_deny_codes"} %s\n' "${#country_port_deny_codes[@]}"
     printf 'nix_csf_source_count{source="blocklist_urls"} %s\n' "${#blocklist_urls[@]}"
+    printf 'nix_csf_source_count{source="local_allow_files"} %s\n' "${local_allow_source_count}"
+    printf 'nix_csf_source_count{source="local_deny_files"} %s\n' "${local_deny_source_count}"
+    printf 'nix_csf_source_count{source="local_ignore_files"} %s\n' "${local_ignore_source_count}"
     printf 'nix_csf_source_count{source="cluster_policy_urls"} %s\n' "${cluster_policy_source_count}"
     printf 'nix_csf_source_count{source="dynamic_offender_urls"} %s\n' "${dynamic_offenders_source_count}"
     echo "# HELP nix_csf_auth_token_candidates Number of configured auth token candidates per remote source."
@@ -719,6 +812,12 @@ default_policy="$(jq -r '.defaultPolicy' "${CONFIG_FILE}")"
 forward_policy="$(jq -r '.forwardPolicy' "${CONFIG_FILE}")"
 coexistence_profile="$(jq -r '.coexistence.profile // "exclusive-firewall"' "${CONFIG_FILE}")"
 allow_icmp="$(jq -r '.allowICMP' "${CONFIG_FILE}")"
+icmp_profile="$(jq -r '.icmp.profile // "legacy"' "${CONFIG_FILE}")"
+mapfile -t icmp_extra_ipv4_types < <(jq -r '.icmp.extraIPv4Types[]?' "${CONFIG_FILE}")
+mapfile -t icmp_extra_ipv6_types < <(jq -r '.icmp.extraIPv6Types[]?' "${CONFIG_FILE}")
+icmp_rate_limit_enabled="$(jq -r '.icmp.rateLimit.enable // false' "${CONFIG_FILE}")"
+icmp_rate_limit_rate="$(jq -r '.icmp.rateLimit.rate // "30/second"' "${CONFIG_FILE}")"
+icmp_rate_limit_burst="$(jq -r '.icmp.rateLimit.burst // 120' "${CONFIG_FILE}")"
 log_drops="$(jq -r '.logDrops' "${CONFIG_FILE}")"
 module_version="$(jq -r '.moduleVersion // "0.0.0-dev"' "${CONFIG_FILE}")"
 syn_rate_limit="$(jq -r '.synRateLimit // ""' "${CONFIG_FILE}")"
@@ -741,6 +840,13 @@ dynamic_offenders_enabled="$(jq -r '.dynamicOffenders.enable // false' "${CONFIG
 dynamic_offenders_default_entry_ttl_seconds="$(jq -r '.dynamicOffenders.defaultEntryTTLSeconds // 900' "${CONFIG_FILE}")"
 dynamic_offenders_max_entries="$(jq -r '.dynamicOffenders.maxEntries // 20000' "${CONFIG_FILE}")"
 coexistence_docker_enabled="false"
+icmp_rate_limit_effective="false"
+icmp_rate_limit_clause=""
+icmp_emit_open_accept="false"
+icmp_emit_type_accept="false"
+icmp_emit_drop_all="false"
+declare -a icmp_profile_v4_types=()
+declare -a icmp_profile_v6_types=()
 
 if [[ "${coexistence_profile}" != "exclusive-firewall" && "${coexistence_profile}" != "docker-coexist" ]]; then
   fail "coexistence.profile must be one of: exclusive-firewall, docker-coexist"
@@ -766,10 +872,75 @@ if [[ "${coexistence_profile}" == "docker-coexist" && "${forward_policy}" != "ac
   fail "coexistence.profile=docker-coexist requires forwardPolicy=accept"
 fi
 
+if [[ "${icmp_profile}" != "legacy" \
+  && "${icmp_profile}" != "off" \
+  && "${icmp_profile}" != "safe" \
+  && "${icmp_profile}" != "diagnostic" \
+  && "${icmp_profile}" != "open" ]]; then
+  fail "icmp.profile must be one of: legacy, off, safe, diagnostic, open"
+fi
+
+if [[ "${icmp_rate_limit_enabled}" == "true" ]]; then
+  if [[ -z "${icmp_rate_limit_rate}" ]]; then
+    fail "icmp.rateLimit.rate must be non-empty when icmp.rateLimit.enable=true"
+  fi
+  if [[ ! "${icmp_rate_limit_burst}" =~ ^[1-9][0-9]*$ ]]; then
+    fail "icmp.rateLimit.burst must be a positive integer when icmp.rateLimit.enable=true"
+  fi
+fi
+
+if [[ "${icmp_profile}" == "open" ]]; then
+  icmp_emit_open_accept="true"
+elif [[ "${icmp_profile}" == "off" ]]; then
+  icmp_emit_drop_all="true"
+elif [[ "${icmp_profile}" == "safe" || "${icmp_profile}" == "diagnostic" ]]; then
+  icmp_emit_type_accept="true"
+  icmp_profile_v4_types=(
+    "destination-unreachable"
+    "time-exceeded"
+    "parameter-problem"
+  )
+  icmp_profile_v6_types=(
+    "destination-unreachable"
+    "packet-too-big"
+    "time-exceeded"
+    "parameter-problem"
+    "nd-router-solicit"
+    "nd-router-advert"
+    "nd-neighbor-solicit"
+    "nd-neighbor-advert"
+  )
+  if [[ "${icmp_profile}" == "diagnostic" ]]; then
+    append_unique_value icmp_profile_v4_types "echo-request"
+    append_unique_value icmp_profile_v4_types "echo-reply"
+    append_unique_value icmp_profile_v6_types "echo-request"
+    append_unique_value icmp_profile_v6_types "echo-reply"
+  fi
+
+  for candidate in "${icmp_extra_ipv4_types[@]}"; do
+    normalized="$(printf '%s' "${candidate}" | tr '[:upper:]' '[:lower:]')"
+    validate_icmp_type_name "extraIPv4Types" "${normalized}"
+    append_unique_value icmp_profile_v4_types "${normalized}"
+  done
+
+  for candidate in "${icmp_extra_ipv6_types[@]}"; do
+    normalized="$(printf '%s' "${candidate}" | tr '[:upper:]' '[:lower:]')"
+    validate_icmp_type_name "extraIPv6Types" "${normalized}"
+    append_unique_value icmp_profile_v6_types "${normalized}"
+  done
+fi
+
+if [[ "${icmp_rate_limit_enabled}" == "true" ]] && [[ "${icmp_profile}" != "legacy" && "${icmp_profile}" != "off" ]]; then
+  icmp_rate_limit_effective="true"
+  icmp_rate_limit_clause=" limit rate ${icmp_rate_limit_rate} burst ${icmp_rate_limit_burst} packets"
+fi
+
 log_event "stdout" "info" "run_start" \
   "version=${module_version}" \
   "metrics_enabled=${metrics_enabled}" \
-  "coexistence_profile=${coexistence_profile}"
+  "coexistence_profile=${coexistence_profile}" \
+  "icmp_profile=${icmp_profile}" \
+  "icmp_rate_limit=${icmp_rate_limit_effective}"
 
 if [[ "${syn_flood_enabled}" == "true" ]]; then
   if [[ -z "${syn_flood_rate}" || ! "${syn_flood_burst}" =~ ^[1-9][0-9]*$ ]]; then
@@ -788,6 +959,39 @@ jq -r '.allowIPv6[]?' "${CONFIG_FILE}" > "${TMP_DIR}/allow-v6.raw"
 jq -r '.denyIPv4[]?' "${CONFIG_FILE}" > "${TMP_DIR}/deny-v4.raw"
 jq -r '.denyIPv6[]?' "${CONFIG_FILE}" > "${TMP_DIR}/deny-v6.raw"
 
+local_files_enabled="$(jq -r '.localFiles.enable // false' "${CONFIG_FILE}")"
+local_files_fail_on_missing="$(jq -r '.localFiles.failOnMissing // false' "${CONFIG_FILE}")"
+mapfile -t local_allow_files < <(jq -r '.localFiles.allow[]?' "${CONFIG_FILE}")
+mapfile -t local_deny_files < <(jq -r '.localFiles.deny[]?' "${CONFIG_FILE}")
+mapfile -t local_ignore_files < <(jq -r '.localFiles.ignore[]?' "${CONFIG_FILE}")
+local_allow_source_count="0"
+local_deny_source_count="0"
+local_ignore_source_count="0"
+
+if [[ "${local_files_enabled}" == "true" ]]; then
+  local_allow_source_count="${#local_allow_files[@]}"
+  local_deny_source_count="${#local_deny_files[@]}"
+  local_ignore_source_count="${#local_ignore_files[@]}"
+fi
+
+: > "${TMP_DIR}/local-allow.raw"
+: > "${TMP_DIR}/local-deny.raw"
+: > "${TMP_DIR}/local-ignore.raw"
+
+if [[ "${local_files_enabled}" == "true" ]]; then
+  for path in "${local_allow_files[@]}"; do
+    append_local_policy_file "allow" "${path}" "${TMP_DIR}/local-allow.raw" "${local_files_fail_on_missing}"
+  done
+
+  for path in "${local_deny_files[@]}"; do
+    append_local_policy_file "deny" "${path}" "${TMP_DIR}/local-deny.raw" "${local_files_fail_on_missing}"
+  done
+
+  for path in "${local_ignore_files[@]}"; do
+    append_local_policy_file "ignore" "${path}" "${TMP_DIR}/local-ignore.raw" "${local_files_fail_on_missing}"
+  done
+fi
+
 normalize_cidrs "${TMP_DIR}/allow-v4.raw" "${TMP_DIR}/allow-v4.norm" "${TMP_DIR}/allow-v4.ignore"
 normalize_cidrs "${TMP_DIR}/allow-v6.raw" "${TMP_DIR}/allow-v6.ignore" "${TMP_DIR}/allow-v6.norm"
 normalize_cidrs "${TMP_DIR}/deny-v4.raw" "${TMP_DIR}/deny-v4.norm" "${TMP_DIR}/deny-v4.ignore"
@@ -797,6 +1001,22 @@ sort_unique "${TMP_DIR}/allow-v4.norm" "${TMP_DIR}/allow-v4.txt"
 sort_unique "${TMP_DIR}/allow-v6.norm" "${TMP_DIR}/allow-v6.txt"
 sort_unique "${TMP_DIR}/deny-v4.norm" "${TMP_DIR}/deny-v4.txt"
 sort_unique "${TMP_DIR}/deny-v6.norm" "${TMP_DIR}/deny-v6.txt"
+
+normalize_cidrs "${TMP_DIR}/local-allow.raw" "${TMP_DIR}/local-allow-v4.norm" "${TMP_DIR}/local-allow-v6.norm"
+normalize_cidrs "${TMP_DIR}/local-deny.raw" "${TMP_DIR}/local-deny-v4.norm" "${TMP_DIR}/local-deny-v6.norm"
+normalize_cidrs "${TMP_DIR}/local-ignore.raw" "${TMP_DIR}/local-ignore-v4.norm" "${TMP_DIR}/local-ignore-v6.norm"
+
+sort_unique "${TMP_DIR}/local-allow-v4.norm" "${TMP_DIR}/local-allow-v4.txt"
+sort_unique "${TMP_DIR}/local-allow-v6.norm" "${TMP_DIR}/local-allow-v6.txt"
+sort_unique "${TMP_DIR}/local-deny-v4.norm" "${TMP_DIR}/local-deny-v4.txt"
+sort_unique "${TMP_DIR}/local-deny-v6.norm" "${TMP_DIR}/local-deny-v6.txt"
+sort_unique "${TMP_DIR}/local-ignore-v4.norm" "${TMP_DIR}/local-ignore-v4.txt"
+sort_unique "${TMP_DIR}/local-ignore-v6.norm" "${TMP_DIR}/local-ignore-v6.txt"
+
+merge_sorted_overlay "${TMP_DIR}/allow-v4.txt" "${TMP_DIR}/local-allow-v4.txt"
+merge_sorted_overlay "${TMP_DIR}/allow-v6.txt" "${TMP_DIR}/local-allow-v6.txt"
+merge_sorted_overlay "${TMP_DIR}/deny-v4.txt" "${TMP_DIR}/local-deny-v4.txt"
+merge_sorted_overlay "${TMP_DIR}/deny-v6.txt" "${TMP_DIR}/local-deny-v6.txt"
 
 country_enabled="$(jq -r '.country.enable' "${CONFIG_FILE}")"
 country_mode="$(jq -r '.country.mode // "deny"' "${CONFIG_FILE}")"
@@ -1056,22 +1276,29 @@ merge_sorted_overlay "${TMP_DIR}/allow-v6.txt" "${TMP_DIR}/cluster-allow-v6.txt"
 merge_sorted_overlay "${TMP_DIR}/deny-v4.txt" "${TMP_DIR}/cluster-deny-v4.txt"
 merge_sorted_overlay "${TMP_DIR}/deny-v6.txt" "${TMP_DIR}/cluster-deny-v6.txt"
 
-if [[ -s "${TMP_DIR}/cluster-ignore-v4.txt" ]]; then
-  merge_sorted_overlay "${TMP_DIR}/allow-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
-  subtract_sorted_overlay "${TMP_DIR}/deny-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
-  subtract_sorted_overlay "${TMP_DIR}/country-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
-  subtract_sorted_overlay "${TMP_DIR}/country-port-deny-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
-  subtract_sorted_overlay "${TMP_DIR}/feeds-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
-  subtract_sorted_overlay "${TMP_DIR}/cluster-deny-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
+: > "${TMP_DIR}/effective-ignore-v4.txt"
+: > "${TMP_DIR}/effective-ignore-v6.txt"
+merge_sorted_overlay "${TMP_DIR}/effective-ignore-v4.txt" "${TMP_DIR}/cluster-ignore-v4.txt"
+merge_sorted_overlay "${TMP_DIR}/effective-ignore-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
+merge_sorted_overlay "${TMP_DIR}/effective-ignore-v4.txt" "${TMP_DIR}/local-ignore-v4.txt"
+merge_sorted_overlay "${TMP_DIR}/effective-ignore-v6.txt" "${TMP_DIR}/local-ignore-v6.txt"
+
+if [[ -s "${TMP_DIR}/effective-ignore-v4.txt" ]]; then
+  merge_sorted_overlay "${TMP_DIR}/allow-v4.txt" "${TMP_DIR}/effective-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/deny-v4.txt" "${TMP_DIR}/effective-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/country-v4.txt" "${TMP_DIR}/effective-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/country-port-deny-v4.txt" "${TMP_DIR}/effective-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/feeds-v4.txt" "${TMP_DIR}/effective-ignore-v4.txt"
+  subtract_sorted_overlay "${TMP_DIR}/cluster-deny-v4.txt" "${TMP_DIR}/effective-ignore-v4.txt"
 fi
 
-if [[ -s "${TMP_DIR}/cluster-ignore-v6.txt" ]]; then
-  merge_sorted_overlay "${TMP_DIR}/allow-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
-  subtract_sorted_overlay "${TMP_DIR}/deny-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
-  subtract_sorted_overlay "${TMP_DIR}/country-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
-  subtract_sorted_overlay "${TMP_DIR}/country-port-deny-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
-  subtract_sorted_overlay "${TMP_DIR}/feeds-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
-  subtract_sorted_overlay "${TMP_DIR}/cluster-deny-v6.txt" "${TMP_DIR}/cluster-ignore-v6.txt"
+if [[ -s "${TMP_DIR}/effective-ignore-v6.txt" ]]; then
+  merge_sorted_overlay "${TMP_DIR}/allow-v6.txt" "${TMP_DIR}/effective-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/deny-v6.txt" "${TMP_DIR}/effective-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/country-v6.txt" "${TMP_DIR}/effective-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/country-port-deny-v6.txt" "${TMP_DIR}/effective-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/feeds-v6.txt" "${TMP_DIR}/effective-ignore-v6.txt"
+  subtract_sorted_overlay "${TMP_DIR}/cluster-deny-v6.txt" "${TMP_DIR}/effective-ignore-v6.txt"
 fi
 
 dynamic_offenders_url="$(jq -r '.dynamicOffenders.url // ""' "${CONFIG_FILE}")"
@@ -1231,6 +1458,14 @@ country_port_deny_v4_count="$(count_file_lines "${TMP_DIR}/country-port-deny-v4.
 country_port_deny_v6_count="$(count_file_lines "${TMP_DIR}/country-port-deny-v6.txt")"
 feed_v4_count="$(count_file_lines "${TMP_DIR}/feeds-v4.txt")"
 feed_v6_count="$(count_file_lines "${TMP_DIR}/feeds-v6.txt")"
+local_allow_v4_count="$(count_file_lines "${TMP_DIR}/local-allow-v4.txt")"
+local_allow_v6_count="$(count_file_lines "${TMP_DIR}/local-allow-v6.txt")"
+local_deny_v4_count="$(count_file_lines "${TMP_DIR}/local-deny-v4.txt")"
+local_deny_v6_count="$(count_file_lines "${TMP_DIR}/local-deny-v6.txt")"
+local_ignore_v4_count="$(count_file_lines "${TMP_DIR}/local-ignore-v4.txt")"
+local_ignore_v6_count="$(count_file_lines "${TMP_DIR}/local-ignore-v6.txt")"
+effective_ignore_v4_count="$(count_file_lines "${TMP_DIR}/effective-ignore-v4.txt")"
+effective_ignore_v6_count="$(count_file_lines "${TMP_DIR}/effective-ignore-v6.txt")"
 cluster_allow_v4_count="$(count_file_lines "${TMP_DIR}/cluster-allow-v4.txt")"
 cluster_allow_v6_count="$(count_file_lines "${TMP_DIR}/cluster-allow-v6.txt")"
 cluster_deny_v4_count="$(count_file_lines "${TMP_DIR}/cluster-deny-v4.txt")"
@@ -1251,6 +1486,14 @@ log_event "stdout" "info" "set_counts" \
   "country_port_deny_v6=${country_port_deny_v6_count}" \
   "feed_v4=${feed_v4_count}" \
   "feed_v6=${feed_v6_count}" \
+  "local_allow_v4=${local_allow_v4_count}" \
+  "local_allow_v6=${local_allow_v6_count}" \
+  "local_deny_v4=${local_deny_v4_count}" \
+  "local_deny_v6=${local_deny_v6_count}" \
+  "local_ignore_v4=${local_ignore_v4_count}" \
+  "local_ignore_v6=${local_ignore_v6_count}" \
+  "effective_ignore_v4=${effective_ignore_v4_count}" \
+  "effective_ignore_v6=${effective_ignore_v6_count}" \
   "cluster_allow_v4=${cluster_allow_v4_count}" \
   "cluster_allow_v6=${cluster_allow_v6_count}" \
   "cluster_deny_v4=${cluster_deny_v4_count}" \
@@ -1285,9 +1528,17 @@ if [[ "${dynamic_offenders_enabled}" == "true" ]]; then
 fi
 
 render_port_set() {
-  local -n ref="$1"
+  # shellcheck disable=SC2178
+  local -n ports_ref="$1"
   local IFS=", "
-  printf '%s' "${ref[*]}"
+  printf '%s' "${ports_ref[*]}"
+}
+
+render_token_set() {
+  # shellcheck disable=SC2178
+  local -n tokens_ref="$1"
+  local IFS=", "
+  printf '%s' "${tokens_ref[*]}"
 }
 
 tmp_rules="${TMP_DIR}/ruleset.nft"
@@ -1391,9 +1642,27 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
     printf '    udp dport { %s } accept\n' "$(render_port_set open_udp_ports)"
   fi
 
-  if [[ "${allow_icmp}" == "true" ]]; then
-    echo "    ip protocol icmp accept"
-    echo "    ip6 nexthdr ipv6-icmp accept"
+  if [[ "${icmp_profile}" == "legacy" ]]; then
+    if [[ "${allow_icmp}" == "true" ]]; then
+      echo "    ip protocol icmp accept"
+      echo "    ip6 nexthdr ipv6-icmp accept"
+    fi
+  elif [[ "${icmp_emit_open_accept}" == "true" ]]; then
+    printf '    ip protocol icmp%s accept\n' "${icmp_rate_limit_clause}"
+    printf '    ip6 nexthdr ipv6-icmp%s accept\n' "${icmp_rate_limit_clause}"
+  elif [[ "${icmp_emit_type_accept}" == "true" ]]; then
+    if [[ "${#icmp_profile_v4_types[@]}" -gt 0 ]]; then
+      printf '    icmp type { %s }%s accept\n' "$(render_token_set icmp_profile_v4_types)" "${icmp_rate_limit_clause}"
+    fi
+    if [[ "${#icmp_profile_v6_types[@]}" -gt 0 ]]; then
+      printf '    icmpv6 type { %s }%s accept\n' "$(render_token_set icmp_profile_v6_types)" "${icmp_rate_limit_clause}"
+    fi
+    # Enforce safe/diagnostic profile semantics even when policy is accept.
+    echo "    ip protocol icmp drop"
+    echo "    ip6 nexthdr ipv6-icmp drop"
+  elif [[ "${icmp_emit_drop_all}" == "true" ]]; then
+    echo "    ip protocol icmp drop"
+    echo "    ip6 nexthdr ipv6-icmp drop"
   fi
 
   if [[ "${default_policy}" == "drop" ]]; then

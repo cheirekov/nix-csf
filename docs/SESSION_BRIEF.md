@@ -1,6 +1,6 @@
 # Session Brief
 
-Last updated: 2026-02-20  
+Last updated: 2026-02-21  
 Owner: PM/BA + Codex
 
 ## 1) Batch contract
@@ -73,7 +73,20 @@ Owner: PM/BA + Codex
 
 ## 5) Current execution lane
 
-- Active ticket: `T-025` (`IN_PROGRESS`) — operator workflow CLI (`nix-csfctl`).
-- Recently completed: `T-026` escalation policy PoC (implemented in control-plane + integration assertions).
-- Pending validation step for current lane:
-  - full VM validation via `./scripts/validate-capture.sh`.
+- Active ticket: `T-022` (`IN_PROGRESS`) — hybrid local-files + remote reconciliation contract.
+- Recently completed:
+  - `T-017` ICMP policy profiles (legacy/off/safe/diagnostic/open + optional rate limits).
+- Validation model:
+  - agent runs fast/lint/eval locally,
+  - operator runs full VM suite (`./scripts/validate.sh`) and shares failures only.
+
+## 6) Batch ICMP-PROFILES-017
+
+- Scope delivered:
+  - implemented `services.nixCsf.icmp.profile` runtime semantics in apply pipeline,
+  - added optional rate limiting for profile-generated ICMP rules,
+  - preserved legacy `allowICMP` behavior under `icmp.profile = "legacy"`,
+  - added ICMP profile/rate-limit metrics and test coverage.
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
