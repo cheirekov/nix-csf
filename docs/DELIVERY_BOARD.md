@@ -1,6 +1,6 @@
 # DELIVERY BOARD — nix-csf
 
-Last updated: 2026-02-21  
+Last updated: 2026-02-22  
 Owner: PM/BA + Security Architect + Nix Module Engineer
 
 ## North Star
@@ -32,17 +32,15 @@ Ship a production-usable NixOS firewall module that is:
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) | per-port country allow model |
-| 2 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
-| 3 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
+| 1 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
+| 2 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-018 | TODO | Country allow-by-port (`CC_ALLOW_PORTS` parity) |
-| 2 | T-013 | TODO | Troubleshooting command set and runbook |
-| 3 | T-023 | TODO | Netdata monitoring integration |
+| 1 | T-013 | TODO | Troubleshooting command set and runbook |
+| 2 | T-023 | TODO | Netdata monitoring integration |
 
 ## Completed baseline
 
@@ -65,6 +63,7 @@ Ship a production-usable NixOS firewall module that is:
 | T-015 | DONE | Cluster policy schema v2 (`allow`/`deny`/`ignore` + revision/TTL) |
 | T-016 | DONE | Dynamic offender propagation (rate-limit ban sync) |
 | T-017 | DONE | ICMP policy profiles (legacy/off/safe/diagnostic/open + optional rate limits) |
+| T-018 | DONE | Country allow-by-port (`CC_ALLOW_PORTS` parity) |
 | T-019 | DONE | Grafana/Prometheus monitoring pack |
 | T-020 | DONE | Cluster auth/token lifecycle and secret handling |
 | T-021 | DONE | Firewall coexistence profile (Docker and dynamic daemons) |

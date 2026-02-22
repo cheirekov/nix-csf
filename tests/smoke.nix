@@ -47,6 +47,14 @@ pkgs.testers.runNixOSTest {
           # Keep portDeny deterministic even if remote country feed is unavailable.
           extraIPv4 = [ "10.0.0.0/8" ];
         };
+        portAllow = {
+          enable = true;
+          countries = [ "US" ];
+          tcpPorts = [ 22 ];
+          udpPorts = [ 53 ];
+          # Keep portAllow deterministic even if remote country feed is unavailable.
+          extraIPv4 = [ "10.0.0.0/8" ];
+        };
       };
       blocklists = {
         enable = true;
@@ -143,6 +151,8 @@ pkgs.testers.runNixOSTest {
     machine.succeed("nft list table inet nix_csf")
     machine.succeed("nft list table inet nix_csf | grep -F 'ip saddr != @country_ipv4 drop'")
     machine.succeed("nft list table inet nix_csf | grep -E 'ip saddr @country_port_deny_ipv4.*tcp dport'")
+    machine.succeed("nft list table inet nix_csf | grep -E 'ip saddr != @country_port_allow_ipv4.*tcp dport'")
+    machine.succeed("nft list table inet nix_csf | grep -E 'ip saddr != @country_port_allow_ipv4.*udp dport'")
     machine.succeed("nft list table inet nix_csf | grep -F 'syn_flood_v4'")
     machine.succeed("nft list table inet nix_csf | grep -F 'conn_flood_v4'")
     machine.succeed("nft list table inet nix_csf | grep -F 'ip saddr @feed_ipv4 drop'")
@@ -157,6 +167,7 @@ pkgs.testers.runNixOSTest {
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"blocklists\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"dynamic_offenders\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"local_files\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"country_port_allow\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"icmp_rate_limit\"} 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_icmp_profile{profile=\"legacy\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 0' /var/lib/nix-csf/metrics.prom")
@@ -169,7 +180,9 @@ pkgs.testers.runNixOSTest {
     machine.succeed("nft list table inet nix_csf | grep -F '203.0.113.0/24'")
     machine.succeed("nft list set inet nix_csf feed_ipv4 | grep -E '203\\.0\\.118\\.10(/32)?'")
     machine.succeed("nft list set inet nix_csf country_ipv4 | grep -F '203.0.117.0/24'")
+    machine.succeed("nft list set inet nix_csf country_port_allow_ipv4 | grep -F '203.0.117.0/24'")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 2' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"country_port_allow_ipv4\"} 2' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"local_allow_files\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"local_deny_files\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"local_ignore_files\"} 1' /var/lib/nix-csf/metrics.prom")

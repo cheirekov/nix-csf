@@ -107,7 +107,29 @@ services.nixCsf = {
 };
 ```
 
-## 4) Governed blocklist ingestion (catalog-only)
+## 4) Port-scoped country allow (`CC_ALLOW_PORTS` style)
+
+Use this when only selected countries should reach selected ports while other ports remain governed by your normal policy.
+
+```nix
+services.nixCsf = {
+  enable = true;
+  openTCPPorts = [ 22 80 443 ];
+  openUDPPorts = [ 53 ];
+  country = {
+    enable = true;
+    countries = [ "US" "CA" ];
+    portAllow = {
+      enable = true;
+      countries = [ "US" "CA" ];
+      tcpPorts = [ 22 443 ];
+      udpPorts = [ 53 ];
+    };
+  };
+};
+```
+
+## 5) Governed blocklist ingestion (catalog-only)
 
 Use this when feed governance and auditability matter more than convenience.
 
@@ -124,7 +146,7 @@ services.nixCsf = {
 };
 ```
 
-## 5) Cluster-wide policy propagation with per-node identity
+## 6) Cluster-wide policy propagation with per-node identity
 
 Use this to centralize allow/deny overlays across many hosts.
 
@@ -167,7 +189,7 @@ If `ttlSeconds` is present and cache age exceeds TTL:
 - strict mode (`clusterPolicy.failOpen = false`) fails closed,
 - fail-open mode keeps service running but skips cluster merge.
 
-## 6) Offline/lab environment with local files
+## 7) Offline/lab environment with local files
 
 Use this when internet egress is restricted and feeds are staged locally.
 
@@ -220,7 +242,7 @@ Reconciliation contract:
 - merged ignore entries are added to allow and removed from deny-style overlays.
 - this allows emergency local unblocks without replacing remote cluster policy.
 
-## 7) Dynamic temporary offender propagation (TTL)
+## 8) Dynamic temporary offender propagation (TTL)
 
 Use this when a centralized detector/control-plane publishes temporary bans that should expire automatically.
 
@@ -268,7 +290,7 @@ nix-csfctl promotions --limit 20
 sudo systemctl start nix-csf-refresh.service
 ```
 
-## 8) Docker coexistence host profile
+## 9) Docker coexistence host profile
 
 Use this when Docker (or another dynamic firewall daemon) manages forwarding/NAT and you still want nix-csf deny overlays.
 
@@ -297,7 +319,7 @@ sudo docker network create nixcsf-check
 sudo docker network rm nixcsf-check
 ```
 
-## 9) Prometheus + structured logs for operations
+## 10) Prometheus + structured logs for operations
 
 Use this when you need host-level firewall health and source counts in monitoring.
 
@@ -327,7 +349,7 @@ Pack assets shipped in-repo:
 - Grafana dashboard: `docs/monitoring/grafana-dashboard.json`
 - Runbook: `docs/MONITORING.md`
 
-## 10) Global opened ports baseline
+## 11) Global opened ports baseline
 
 Use this when you want globally exposed ports independent of geo filters.
 
@@ -339,24 +361,27 @@ services.nixCsf = {
 };
 ```
 
-## 11) Ports opened only to selected countries
+## 12) Ports opened only to selected countries
 
-Use country allow-mode with strict behavior.
+Use `country.portAllow` to constrain selected exposed ports by country while leaving other exposed ports global.
 
 ```nix
 services.nixCsf = {
   enable = true;
-  openTCPPorts = [ 22 443 ];
+  openTCPPorts = [ 22 80 443 ];
   country = {
     enable = true;
-    mode = "allow";
     countries = [ "US" "CA" ];
-    failOpen = false;
+    portAllow = {
+      enable = true;
+      countries = [ "US" "CA" ];
+      tcpPorts = [ 22 443 ];
+    };
   };
 };
 ```
 
-## 12) ICMP profiles (legacy/off/safe/diagnostic/open)
+## 13) ICMP profiles (legacy/off/safe/diagnostic/open)
 
 Use modern ICMP profile controls:
 

@@ -173,6 +173,14 @@ let
         extraIPv4 = cfg.country.portDeny.extraIPv4;
         extraIPv6 = cfg.country.portDeny.extraIPv6;
       };
+      portAllow = {
+        enable = cfg.country.portAllow.enable;
+        countries = map toUpper cfg.country.portAllow.countries;
+        tcpPorts = cfg.country.portAllow.tcpPorts;
+        udpPorts = cfg.country.portAllow.udpPorts;
+        extraIPv4 = cfg.country.portAllow.extraIPv4;
+        extraIPv6 = cfg.country.portAllow.extraIPv6;
+      };
     };
     blocklists = {
       enable = cfg.blocklists.enable;
@@ -664,6 +672,52 @@ in
           default = [ ];
           example = [ "2001:db8:abcd::/48" ];
           description = "Additional static IPv6 CIDRs added to the port-scoped country deny set.";
+        };
+      };
+
+      portAllow = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Enable port-scoped country allow policy (CSF CC_ALLOW_PORTS style).
+            This only allows selected ports for selected countries.
+          '';
+        };
+
+        countries = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "US" "CA" ];
+          description = "ISO-3166 alpha-2 country codes that should be allowed on selected ports.";
+        };
+
+        tcpPorts = mkOption {
+          type = types.listOf types.port;
+          default = [ ];
+          example = [ 22 443 ];
+          description = "TCP destination ports allowed for sources in country.portAllow.countries.";
+        };
+
+        udpPorts = mkOption {
+          type = types.listOf types.port;
+          default = [ ];
+          example = [ 53 ];
+          description = "UDP destination ports allowed for sources in country.portAllow.countries.";
+        };
+
+        extraIPv4 = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "198.51.100.0/24" ];
+          description = "Additional static IPv4 CIDRs added to the port-scoped country allow set.";
+        };
+
+        extraIPv6 = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "2001:db8:beef::/48" ];
+          description = "Additional static IPv6 CIDRs added to the port-scoped country allow set.";
         };
       };
     };
@@ -1212,6 +1266,20 @@ in
         message = "services.nixCsf.country.portDeny.enable requires at least one TCP or UDP port.";
       }
       {
+        assertion = !cfg.country.portAllow.enable || cfg.country.portAllow.countries != [ ];
+        message = "services.nixCsf.country.portAllow.enable requires at least one country code.";
+      }
+      {
+        assertion = all validCountryCode cfg.country.portAllow.countries;
+        message = "services.nixCsf.country.portAllow.countries entries must be ISO alpha-2 codes (e.g. US, DE).";
+      }
+      {
+        assertion = !cfg.country.portAllow.enable
+          || cfg.country.portAllow.tcpPorts != [ ]
+          || cfg.country.portAllow.udpPorts != [ ];
+        message = "services.nixCsf.country.portAllow.enable requires at least one TCP or UDP port.";
+      }
+      {
         assertion = !(cfg.synRateLimit != null && cfg.rateLimits.synFlood.enable);
         message = ''
           services.nixCsf.synRateLimit cannot be combined with rateLimits.synFlood.enable.
@@ -1341,6 +1409,17 @@ in
         message = ''
           services.nixCsf.country.portDeny.enable requires at least one country data source
           (URL template or portDeny extra CIDRs).
+        '';
+      }
+      {
+        assertion = !cfg.country.portAllow.enable
+          || cfg.country.ipv4URLTemplate != ""
+          || cfg.country.ipv6URLTemplate != null
+          || cfg.country.portAllow.extraIPv4 != [ ]
+          || cfg.country.portAllow.extraIPv6 != [ ];
+        message = ''
+          services.nixCsf.country.portAllow.enable requires at least one country data source
+          (URL template or portAllow extra CIDRs).
         '';
       }
     ];

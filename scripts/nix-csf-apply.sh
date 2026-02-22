@@ -676,6 +676,7 @@ write_metrics() {
     echo "# TYPE nix_csf_feature_enabled gauge"
     printf 'nix_csf_feature_enabled{feature="country"} %s\n' "$(bool_to_num "${country_enabled}")"
     printf 'nix_csf_feature_enabled{feature="country_port_deny"} %s\n' "$(bool_to_num "${country_port_deny_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="country_port_allow"} %s\n' "$(bool_to_num "${country_port_allow_enabled}")"
     printf 'nix_csf_feature_enabled{feature="blocklists"} %s\n' "$(bool_to_num "${blocklists_enabled}")"
     printf 'nix_csf_feature_enabled{feature="local_files"} %s\n' "$(bool_to_num "${local_files_enabled}")"
     printf 'nix_csf_feature_enabled{feature="cluster_policy"} %s\n' "$(bool_to_num "${cluster_policy_enabled}")"
@@ -738,6 +739,8 @@ write_metrics() {
     printf 'nix_csf_set_entries{set="country_ipv6"} %s\n' "${country_v6_count}"
     printf 'nix_csf_set_entries{set="country_port_deny_ipv4"} %s\n' "${country_port_deny_v4_count}"
     printf 'nix_csf_set_entries{set="country_port_deny_ipv6"} %s\n' "${country_port_deny_v6_count}"
+    printf 'nix_csf_set_entries{set="country_port_allow_ipv4"} %s\n' "${country_port_allow_v4_count}"
+    printf 'nix_csf_set_entries{set="country_port_allow_ipv6"} %s\n' "${country_port_allow_v6_count}"
     printf 'nix_csf_set_entries{set="feed_ipv4"} %s\n' "${feed_v4_count}"
     printf 'nix_csf_set_entries{set="feed_ipv6"} %s\n' "${feed_v6_count}"
     printf 'nix_csf_set_entries{set="local_allow_ipv4"} %s\n' "${local_allow_v4_count}"
@@ -760,6 +763,7 @@ write_metrics() {
     echo "# TYPE nix_csf_source_count gauge"
     printf 'nix_csf_source_count{source="country_codes"} %s\n' "${#country_codes[@]}"
     printf 'nix_csf_source_count{source="country_port_deny_codes"} %s\n' "${#country_port_deny_codes[@]}"
+    printf 'nix_csf_source_count{source="country_port_allow_codes"} %s\n' "${#country_port_allow_codes[@]}"
     printf 'nix_csf_source_count{source="blocklist_urls"} %s\n' "${#blocklist_urls[@]}"
     printf 'nix_csf_source_count{source="local_allow_files"} %s\n' "${local_allow_source_count}"
     printf 'nix_csf_source_count{source="local_deny_files"} %s\n' "${local_deny_source_count}"
@@ -1028,6 +1032,10 @@ country_port_deny_enabled="$(jq -r '.country.portDeny.enable // false' "${CONFIG
 mapfile -t country_port_deny_codes < <(jq -r '.country.portDeny.countries[]?' "${CONFIG_FILE}")
 mapfile -t country_port_deny_tcp_ports < <(jq -r '.country.portDeny.tcpPorts[]?' "${CONFIG_FILE}")
 mapfile -t country_port_deny_udp_ports < <(jq -r '.country.portDeny.udpPorts[]?' "${CONFIG_FILE}")
+country_port_allow_enabled="$(jq -r '.country.portAllow.enable // false' "${CONFIG_FILE}")"
+mapfile -t country_port_allow_codes < <(jq -r '.country.portAllow.countries[]?' "${CONFIG_FILE}")
+mapfile -t country_port_allow_tcp_ports < <(jq -r '.country.portAllow.tcpPorts[]?' "${CONFIG_FILE}")
+mapfile -t country_port_allow_udp_ports < <(jq -r '.country.portAllow.udpPorts[]?' "${CONFIG_FILE}")
 
 if [[ "${country_mode}" != "deny" && "${country_mode}" != "allow" ]]; then
   fail "country.mode must be one of: deny, allow"
@@ -1037,6 +1045,8 @@ fi
 : > "${TMP_DIR}/country-v6.raw"
 : > "${TMP_DIR}/country-port-deny-v4.raw"
 : > "${TMP_DIR}/country-port-deny-v6.raw"
+: > "${TMP_DIR}/country-port-allow-v4.raw"
+: > "${TMP_DIR}/country-port-allow-v6.raw"
 
 if [[ "${country_enabled}" == "true" ]]; then
   jq -r '.country.extraIPv4[]?' "${CONFIG_FILE}" >> "${TMP_DIR}/country-v4.raw"
@@ -1058,6 +1068,16 @@ if [[ "${country_port_deny_enabled}" == "true" ]]; then
   done
 fi
 
+if [[ "${country_port_allow_enabled}" == "true" ]]; then
+  jq -r '.country.portAllow.extraIPv4[]?' "${CONFIG_FILE}" >> "${TMP_DIR}/country-port-allow-v4.raw"
+  jq -r '.country.portAllow.extraIPv6[]?' "${CONFIG_FILE}" >> "${TMP_DIR}/country-port-allow-v6.raw"
+
+  for cc in "${country_port_allow_codes[@]}"; do
+    cc_lc="$(printf '%s' "${cc}" | tr '[:upper:]' '[:lower:]')"
+    fetch_country_data_for_code "${cc_lc}" "${TMP_DIR}/country-port-allow-v4.raw" "${TMP_DIR}/country-port-allow-v6.raw"
+  done
+fi
+
 normalize_cidrs "${TMP_DIR}/country-v4.raw" "${TMP_DIR}/country-v4.norm" "${TMP_DIR}/country-v4.ignore"
 normalize_cidrs "${TMP_DIR}/country-v6.raw" "${TMP_DIR}/country-v6.ignore" "${TMP_DIR}/country-v6.norm"
 sort_unique "${TMP_DIR}/country-v4.norm" "${TMP_DIR}/country-v4.txt"
@@ -1066,6 +1086,10 @@ normalize_cidrs "${TMP_DIR}/country-port-deny-v4.raw" "${TMP_DIR}/country-port-d
 normalize_cidrs "${TMP_DIR}/country-port-deny-v6.raw" "${TMP_DIR}/country-port-deny-v6.ignore" "${TMP_DIR}/country-port-deny-v6.norm"
 sort_unique "${TMP_DIR}/country-port-deny-v4.norm" "${TMP_DIR}/country-port-deny-v4.txt"
 sort_unique "${TMP_DIR}/country-port-deny-v6.norm" "${TMP_DIR}/country-port-deny-v6.txt"
+normalize_cidrs "${TMP_DIR}/country-port-allow-v4.raw" "${TMP_DIR}/country-port-allow-v4.norm" "${TMP_DIR}/country-port-allow-v4.ignore"
+normalize_cidrs "${TMP_DIR}/country-port-allow-v6.raw" "${TMP_DIR}/country-port-allow-v6.ignore" "${TMP_DIR}/country-port-allow-v6.norm"
+sort_unique "${TMP_DIR}/country-port-allow-v4.norm" "${TMP_DIR}/country-port-allow-v4.txt"
+sort_unique "${TMP_DIR}/country-port-allow-v6.norm" "${TMP_DIR}/country-port-allow-v6.txt"
 
 country_allow_v4_enforced="false"
 country_allow_v6_enforced="false"
@@ -1115,6 +1139,32 @@ if [[ "${country_port_deny_enabled}" == "true" ]]; then
       warn "country.portDeny is enabled, but no country data is available; skipping port deny enforcement due to failOpen"
     else
       fail "country.portDeny is enabled, but no country data is available"
+    fi
+  fi
+fi
+
+country_port_allow_v4_enforced="false"
+country_port_allow_v6_enforced="false"
+
+if [[ "${country_port_allow_enabled}" == "true" ]]; then
+  has_port_allow_v4="false"
+  has_port_allow_v6="false"
+
+  if [[ -s "${TMP_DIR}/country-port-allow-v4.txt" ]]; then
+    has_port_allow_v4="true"
+    country_port_allow_v4_enforced="true"
+  fi
+
+  if [[ -s "${TMP_DIR}/country-port-allow-v6.txt" ]]; then
+    has_port_allow_v6="true"
+    country_port_allow_v6_enforced="true"
+  fi
+
+  if [[ "${has_port_allow_v4}" == "false" && "${has_port_allow_v6}" == "false" ]]; then
+    if [[ "${country_fail_open}" == "true" ]]; then
+      warn "country.portAllow is enabled, but no country data is available; skipping port allow enforcement due to failOpen"
+    else
+      fail "country.portAllow is enabled, but no country data is available"
     fi
   fi
 fi
@@ -1456,6 +1506,8 @@ country_v4_count="$(count_file_lines "${TMP_DIR}/country-v4.txt")"
 country_v6_count="$(count_file_lines "${TMP_DIR}/country-v6.txt")"
 country_port_deny_v4_count="$(count_file_lines "${TMP_DIR}/country-port-deny-v4.txt")"
 country_port_deny_v6_count="$(count_file_lines "${TMP_DIR}/country-port-deny-v6.txt")"
+country_port_allow_v4_count="$(count_file_lines "${TMP_DIR}/country-port-allow-v4.txt")"
+country_port_allow_v6_count="$(count_file_lines "${TMP_DIR}/country-port-allow-v6.txt")"
 feed_v4_count="$(count_file_lines "${TMP_DIR}/feeds-v4.txt")"
 feed_v6_count="$(count_file_lines "${TMP_DIR}/feeds-v6.txt")"
 local_allow_v4_count="$(count_file_lines "${TMP_DIR}/local-allow-v4.txt")"
@@ -1484,6 +1536,8 @@ log_event "stdout" "info" "set_counts" \
   "country_v6=${country_v6_count}" \
   "country_port_deny_v4=${country_port_deny_v4_count}" \
   "country_port_deny_v6=${country_port_deny_v6_count}" \
+  "country_port_allow_v4=${country_port_allow_v4_count}" \
+  "country_port_allow_v6=${country_port_allow_v6_count}" \
   "feed_v4=${feed_v4_count}" \
   "feed_v6=${feed_v6_count}" \
   "local_allow_v4=${local_allow_v4_count}" \
@@ -1553,6 +1607,8 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
   emit_set "country_ipv6" "ipv6_addr" "${TMP_DIR}/country-v6.txt"
   emit_set "country_port_deny_ipv4" "ipv4_addr" "${TMP_DIR}/country-port-deny-v4.txt"
   emit_set "country_port_deny_ipv6" "ipv6_addr" "${TMP_DIR}/country-port-deny-v6.txt"
+  emit_set "country_port_allow_ipv4" "ipv4_addr" "${TMP_DIR}/country-port-allow-v4.txt"
+  emit_set "country_port_allow_ipv6" "ipv6_addr" "${TMP_DIR}/country-port-allow-v6.txt"
   emit_set "feed_ipv4" "ipv4_addr" "${TMP_DIR}/feeds-v4.txt"
   emit_set "feed_ipv6" "ipv6_addr" "${TMP_DIR}/feeds-v6.txt"
   emit_set "dynamic_ban_ipv4" "ipv4_addr" "${TMP_DIR}/dynamic-ban-v4.txt" "interval,timeout"
@@ -1620,6 +1676,26 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
       fi
       if [[ "${country_port_deny_v6_enforced}" == "true" ]]; then
         printf '    ip6 saddr @country_port_deny_ipv6 udp dport { %s } drop\n' "$(render_port_set country_port_deny_udp_ports)"
+      fi
+    fi
+  fi
+
+  if [[ "${country_port_allow_enabled}" == "true" ]]; then
+    if [[ "${#country_port_allow_tcp_ports[@]}" -gt 0 ]]; then
+      if [[ "${country_port_allow_v4_enforced}" == "true" ]]; then
+        printf '    ip saddr != @country_port_allow_ipv4 tcp dport { %s } drop\n' "$(render_port_set country_port_allow_tcp_ports)"
+      fi
+      if [[ "${country_port_allow_v6_enforced}" == "true" ]]; then
+        printf '    ip6 saddr != @country_port_allow_ipv6 tcp dport { %s } drop\n' "$(render_port_set country_port_allow_tcp_ports)"
+      fi
+    fi
+
+    if [[ "${#country_port_allow_udp_ports[@]}" -gt 0 ]]; then
+      if [[ "${country_port_allow_v4_enforced}" == "true" ]]; then
+        printf '    ip saddr != @country_port_allow_ipv4 udp dport { %s } drop\n' "$(render_port_set country_port_allow_udp_ports)"
+      fi
+      if [[ "${country_port_allow_v6_enforced}" == "true" ]]; then
+        printf '    ip6 saddr != @country_port_allow_ipv6 udp dport { %s } drop\n' "$(render_port_set country_port_allow_udp_ports)"
       fi
     fi
   fi
@@ -1704,6 +1780,26 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
         fi
         if [[ "${country_port_deny_v6_enforced}" == "true" ]]; then
           printf '    ip6 saddr @country_port_deny_ipv6 udp dport { %s } drop\n' "$(render_port_set country_port_deny_udp_ports)"
+        fi
+      fi
+    fi
+
+    if [[ "${country_port_allow_enabled}" == "true" ]]; then
+      if [[ "${#country_port_allow_tcp_ports[@]}" -gt 0 ]]; then
+        if [[ "${country_port_allow_v4_enforced}" == "true" ]]; then
+          printf '    ip saddr != @country_port_allow_ipv4 tcp dport { %s } drop\n' "$(render_port_set country_port_allow_tcp_ports)"
+        fi
+        if [[ "${country_port_allow_v6_enforced}" == "true" ]]; then
+          printf '    ip6 saddr != @country_port_allow_ipv6 tcp dport { %s } drop\n' "$(render_port_set country_port_allow_tcp_ports)"
+        fi
+      fi
+
+      if [[ "${#country_port_allow_udp_ports[@]}" -gt 0 ]]; then
+        if [[ "${country_port_allow_v4_enforced}" == "true" ]]; then
+          printf '    ip saddr != @country_port_allow_ipv4 udp dport { %s } drop\n' "$(render_port_set country_port_allow_udp_ports)"
+        fi
+        if [[ "${country_port_allow_v6_enforced}" == "true" ]]; then
+          printf '    ip6 saddr != @country_port_allow_ipv6 udp dport { %s } drop\n' "$(render_port_set country_port_allow_udp_ports)"
         fi
       fi
     fi

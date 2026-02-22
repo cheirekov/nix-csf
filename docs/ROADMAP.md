@@ -26,7 +26,7 @@
 - Per-port country controls (deny mode / `CC_DENY_PORTS` style). [done 2026-02-19]
 - Stateful rate-limit presets (SYN flood, connection flood). [done 2026-02-19]
 - Preset threat profiles (server, workstation, edge node). [done 2026-02-20]
-- Country allow-by-port controls (`CC_ALLOW_PORTS` parity).
+- Country allow-by-port controls (`CC_ALLOW_PORTS` parity). [done 2026-02-22]
 - ICMP policy profiles (type/rate controls). [done 2026-02-21]
 
 ## Phase 3 — Operations maturity

@@ -19,6 +19,7 @@ Kickoff baseline is implemented:
 - Preset threat profiles (`threatProfile = "server"|"workstation"|"edge"`)
 - Country policy modes (`deny` and `allow`)
 - Per-port country deny policy (`country.portDeny`, CSF `CC_DENY_PORTS` style)
+- Per-port country allow policy (`country.portAllow`, CSF `CC_ALLOW_PORTS` style)
 - Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
 - Hybrid local file overlays (`localFiles.allow|deny|ignore`)
 - Cluster policy propagation overlay (`clusterPolicy.*`)
@@ -141,6 +142,15 @@ services.nixCsf = {
       countries = [ "RU" "CN" ];
       tcpPorts = [ 21 443 ];
       udpPorts = [ ];
+    };
+
+    # Optional: allow selected ports only for selected countries.
+    # Ports should remain present in openTCPPorts/openUDPPorts.
+    portAllow = {
+      enable = true;
+      countries = [ "US" "CA" ];
+      tcpPorts = [ 22 443 ];
+      udpPorts = [ 53 ];
     };
   };
 
@@ -283,7 +293,27 @@ services.nixCsf = {
 };
 ```
 
-### 4) Enable Prometheus textfile metrics
+### 4) Port-scoped country allow (CSF `CC_ALLOW_PORTS` style)
+
+```nix
+services.nixCsf = {
+  enable = true;
+  openTCPPorts = [ 22 443 ];
+  openUDPPorts = [ 53 ];
+  country = {
+    enable = true;
+    countries = [ "US" "CA" ];
+    portAllow = {
+      enable = true;
+      countries = [ "US" "CA" ];
+      tcpPorts = [ 22 443 ];
+      udpPorts = [ 53 ];
+    };
+  };
+};
+```
+
+### 5) Enable Prometheus textfile metrics
 
 ```nix
 services.nixCsf = {
@@ -295,7 +325,7 @@ services.nixCsf = {
 };
 ```
 
-### 5) Centralized cluster allow/deny propagation
+### 6) Centralized cluster allow/deny propagation
 
 ```nix
 services.nixCsf = {
@@ -329,7 +359,7 @@ Expected remote JSON structure:
 }
 ```
 
-### 6) Dynamic temporary offender propagation (TTL)
+### 7) Dynamic temporary offender propagation (TTL)
 
 ```nix
 services.nixCsf = {
@@ -365,7 +395,7 @@ Expected dynamic snapshot JSON structure:
 }
 ```
 
-### 7) Docker host coexistence profile
+### 8) Docker host coexistence profile
 
 ```nix
 services.nixCsf = {
@@ -376,7 +406,7 @@ services.nixCsf = {
 };
 ```
 
-### 8) Local mutable deny/temp-ban workflow (no external cluster required)
+### 9) Local mutable deny/temp-ban workflow (no external cluster required)
 
 ```nix
 services.nixCsf = {

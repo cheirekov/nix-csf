@@ -820,3 +820,42 @@
   - `T-018` country allow-by-port parity,
   - `T-013` troubleshooting runbook,
   - `T-023` Netdata integration (optional).
+
+## 2026-02-22 — Batch COUNTRY-PORT-ALLOW-018
+
+- Ticket(s): `T-018`
+- Summary:
+  - implemented CSF `CC_ALLOW_PORTS` parity as `services.nixCsf.country.portAllow`:
+    - module API added: `enable`, `countries`, `tcpPorts`, `udpPorts`, `extraIPv4`, `extraIPv6`,
+    - runtime assertions added for country-code validity, port presence, and source availability,
+  - extended apply pipeline with `portAllow` support:
+    - country feed ingestion + cache reuse for port-allow sets,
+    - fail-open/fail-closed semantics aligned with existing country policy model,
+    - nft set generation: `country_port_allow_ipv4` / `country_port_allow_ipv6`,
+    - input/forward chain enforcement for selected TCP/UDP ports using country-scoped deny-on-mismatch rules,
+  - expanded observability:
+    - feature metric: `country_port_allow`,
+    - set cardinality metrics for `country_port_allow_ipv4/ipv6`,
+    - configured-country source counter metric `country_port_allow_codes`,
+  - expanded deterministic smoke coverage:
+    - `country.portAllow` fixture configuration,
+    - rule emission assertions,
+    - metrics assertions and post-refresh set-content validation,
+  - updated operator docs and planning artifacts:
+    - `README.md`,
+    - `docs/USE_CASES.md`,
+    - `docs/REFERENCES_ANALYSIS.md`,
+    - `docs/ROADMAP.md`,
+    - `docs/DELIVERY_BOARD.md`.
+- BA requirement mapping:
+  - closes requested "ports opened only to selected countries" parity in a declarative Nix API without introducing imperative state drift.
+- PM milestone mapping:
+  - closes `T-018` and leaves `T-013` (runbook) + `T-023` (Netdata story) as next queued items.
+- Risk impact:
+  - `medium` (new input/forward chain enforcement path for port-scoped country allow restrictions).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
+- Open follow-ups:
+  - `T-013` troubleshooting command/runbook completion,
+  - `T-023` Netdata monitoring integration story.

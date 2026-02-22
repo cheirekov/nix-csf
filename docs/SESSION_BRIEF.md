@@ -1,6 +1,6 @@
 # Session Brief
 
-Last updated: 2026-02-21  
+Last updated: 2026-02-22  
 Owner: PM/BA + Codex
 
 ## 1) Batch contract
@@ -75,6 +75,7 @@ Owner: PM/BA + Codex
 
 - Active ticket: `T-022` (`IN_PROGRESS`) — hybrid local-files + remote reconciliation contract.
 - Recently completed:
+  - `T-018` country allow-by-port parity (`CC_ALLOW_PORTS`),
   - `T-017` ICMP policy profiles (legacy/off/safe/diagnostic/open + optional rate limits).
 - Validation model:
   - agent runs fast/lint/eval locally,
@@ -87,6 +88,17 @@ Owner: PM/BA + Codex
   - added optional rate limiting for profile-generated ICMP rules,
   - preserved legacy `allowICMP` behavior under `icmp.profile = "legacy"`,
   - added ICMP profile/rate-limit metrics and test coverage.
+- Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
+
+## 7) Batch COUNTRY-PORT-ALLOW-018
+
+- Scope delivered:
+  - added `services.nixCsf.country.portAllow` option family (`CC_ALLOW_PORTS` parity),
+  - implemented apply/runtime support for country-scoped port-allow enforcement in input and docker-coexist forward chains,
+  - added port-allow metrics (`feature`, `set_entries`, `source_count`) and smoke coverage,
+  - updated docs/examples/board artifacts for operator usage and ticket closure.
 - Validation evidence:
   - `bash -n scripts/nix-csf-apply.sh`
   - `./scripts/validate-fast.sh`

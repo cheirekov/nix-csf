@@ -13,12 +13,12 @@ Reference used:
 | `csf.allow`, `csf.deny` | `allowIPv4/allowIPv6`, `denyIPv4/denyIPv6` |
 | `CC_DENY` | `country.enable + country.countries` |
 | `CC_DENY_PORTS` | `country.portDeny` (`countries` + `tcpPorts`/`udpPorts`) |
+| `CC_ALLOW_PORTS` | `country.portAllow` (`countries` + `tcpPorts`/`udpPorts`) |
 | External blocklists | `blocklists.catalog + blocklists.sources` (or legacy `blocklists.urls`) |
 | Auto updates (`CC_INTERVAL`) | `autoRefresh.onCalendar` |
 
 ## Deferred from CSF parity
 
-- Per-port country allow controls (`CC_ALLOW_PORTS`)
 - Login failure daemon behavior (`lfd`)
 - IDS/alert integrations
 - Application-specific protections
