@@ -75,12 +75,17 @@ Owner: PM/BA + Codex
 
 - Active ticket: `T-022` (`IN_PROGRESS`) — hybrid local-files + remote reconciliation contract.
 - Recently completed:
+  - `T-029` LFD-like detector POC (Nix-native),
+  - `T-028` legacy CSF list import bridge,
   - `T-013` troubleshooting command set + runbook,
   - `T-018` country allow-by-port parity (`CC_ALLOW_PORTS`),
   - `T-017` ICMP policy profiles (legacy/off/safe/diagnostic/open + optional rate limits).
 - Validation model:
   - agent runs fast/lint/eval locally,
   - operator runs full VM suite (`./scripts/validate.sh`) and shares failures only.
+- Newly triaged next-ticket set (CSF/LFD parity):
+  - `T-028` legacy CSF list import bridge,
+  - `T-030` fail2ban adapter/coexistence profile.
 
 ## 6) Batch ICMP-PROFILES-017
 
@@ -114,4 +119,49 @@ Owner: PM/BA + Codex
 - Validation evidence:
   - `bash -n scripts/nix-csf-triage.sh`
   - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
+
+## 9) Backlog Triage LFD-NIX-WAY
+
+- Scope delivered:
+  - converted CSF/LFD parity questions into tracked engineering tickets:
+    - `T-028` (`csf.allow/csf.deny/csf.ignore` migration bridge),
+    - `T-029` (Nix-native LFD-like detector pipeline),
+    - `T-030` (fail2ban adapter with single-writer firewall contract),
+  - added `docs/LFD_NIX_WAY_POC.md` for implementation guardrails and acceptance boundaries,
+  - updated board/roadmap/changelog priority ordering for release planning.
+- Validation evidence:
+  - documentation-only triage update.
+
+## 10) Batch CSF-IMPORT-BRIDGE-028
+
+- Scope delivered:
+  - added migration tool `nix-csf-import-csf` for legacy `csf.allow/csf.deny/csf.ignore`,
+  - added unsupported-line report output (line-number + reason) for non-CIDR CSF syntax,
+  - added generated Nix snippet output for `services.nixCsf.localFiles` wiring,
+  - integrated flake checks/package outputs and updated migration docs/examples.
+- Validation evidence:
+  - `bash -n scripts/nix-csf-import-csf.sh`
+  - `./scripts/validate-fast.sh`
+
+## 11) Batch LFD-DETECTOR-029
+
+- Scope delivered:
+  - added LFD-like detector tool `nix-csf-lfd-detector` (`scripts/nix-csf-lfd-detector.sh`),
+  - added module API `services.nixCsf.lfdDetector.*` with explicit on/off toggle, thresholds, scheduling, endpoint/auth, and metrics options,
+  - wired `nix-csf-lfd-detector.service` + `nix-csf-lfd-detector.timer`,
+  - integrated detector path with control-plane write API (`nix-csfctl ban-temp`) and optional post-write refresh trigger,
+  - added eval/lint coverage updates:
+    - `checks.<system>.eval-lfd-detector`,
+    - shellcheck coverage for detector script,
+  - extended integration scenario with detector-driven temp-ban verification and metrics checks,
+  - updated docs/examples:
+    - `docs/LFD_DETECTOR.md`,
+    - `README.md`,
+    - `docs/USE_CASES.md`,
+    - board/roadmap/changelog artifacts.
+- Validation evidence:
+  - `bash -n scripts/nix-csf-lfd-detector.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
   - `./scripts/validate-fast.sh`

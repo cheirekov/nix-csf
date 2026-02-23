@@ -341,6 +341,16 @@ pkgs.testers.runNixOSTest {
           maxAuditEntries = 100;
         };
       };
+      lfdDetector = {
+        enable = true;
+        journalIdentifier = "sshd";
+        threshold = 2;
+        windowSeconds = 600;
+        banTTLSeconds = 600;
+        reason = "lfd:sshd_failed_login";
+        refreshAfterBan = true;
+        schedule.onCalendar = "hourly";
+      };
       observability.metrics = {
         enable = true;
         outputFile = "/var/lib/nix-csf/metrics.prom";
@@ -359,7 +369,7 @@ pkgs.testers.runNixOSTest {
       203.0.119.60/32
     '';
 
-    environment.systemPackages = [ pkgs.nftables pkgs.curl pkgs.jq ];
+    environment.systemPackages = [ pkgs.nftables pkgs.curl pkgs.jq pkgs.util-linux ];
     system.stateVersion = "24.11";
   };
 
@@ -481,11 +491,18 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.enabled == true and .escalation.escalated == false'")
     controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == true and .escalation.promotionChanged == true'")
     controlplanepoc.succeed("nix-csfctl --output pretty promotions --limit 20 | jq -e '.promotions | map(.cidr) | index(\"203.0.119.11/32\") != null'")
+    controlplanepoc.succeed("logger -t sshd 'Failed password for invalid user root from 203.0.119.120 port 50001 ssh2'")
+    controlplanepoc.succeed("logger -t sshd 'Failed password for invalid user root from 203.0.119.120 port 50002 ssh2'")
+    controlplanepoc.succeed("systemctl start nix-csf-lfd-detector.service")
+    controlplanepoc.succeed("systemctl show -P Result nix-csf-lfd-detector.service | grep -qx success")
+    controlplanepoc.succeed("journalctl -u nix-csf-lfd-detector.service -n 80 | grep -F 'ip=203.0.119.120'")
+    controlplanepoc.succeed("grep -F 'nix_csf_lfd_detector_candidate_ips 1' /var/lib/nix-csf/lfd-detector.prom")
     controlplanepoc.succeed("systemctl start nix-csf-refresh.service")
     controlplanepoc.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx success")
     controlplanepoc.succeed("grep -F '\"203.0.119.9/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.succeed("grep -F '\"203.0.119.11/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.10/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.120/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
     controlplanepoc.fail("grep -F '\"cidr\": \"203.0.119.11/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
     controlplanepoc.fail("nft get element inet nix_csf deny_ipv4 '{ 203.0.119.9 }'")
     controlplanepoc.succeed("nft get element inet nix_csf deny_ipv4 '{ 203.0.119.11 }'")
@@ -496,6 +513,7 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.succeed("grep -E '203\\.0\\.119\\.9(/32)?' /var/lib/nix-csf/generated-ruleset.nft")
     controlplanepoc.succeed("grep -E '203\\.0\\.119\\.11(/32)?' /var/lib/nix-csf/generated-ruleset.nft")
     controlplanepoc.succeed("grep -F '203.0.119.10/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
+    controlplanepoc.succeed("grep -F '203.0.119.120/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
 
     failclosed.start()
     failclosed.wait_for_unit("multi-user.target")

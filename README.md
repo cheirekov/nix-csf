@@ -22,12 +22,14 @@ Kickoff baseline is implemented:
 - Per-port country allow policy (`country.portAllow`, CSF `CC_ALLOW_PORTS` style)
 - Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
 - Hybrid local file overlays (`localFiles.allow|deny|ignore`)
+- Legacy CSF list import bridge (`nix-csf-import-csf`)
 - Cluster policy propagation overlay (`clusterPolicy.*`)
 - Cluster policy schema v2 support (`ignore*`, `schemaVersion`, `revision`, `ttlSeconds`)
 - Dynamic offender snapshot propagation with timeout sets (`dynamicOffenders.*`)
 - Optional local control-plane snapshot publisher and mutation API (`controlPlane.*`)
 - Operator mutation CLI (`nix-csfctl`) for control-plane workflows
 - Dynamic escalation (`N` temporary bans => permanent deny via control-plane)
+- LFD-like SSH detector pipeline (`lfdDetector.*` -> `ban-temp` write path)
 - Auth token lifecycle with ordered rotation fallback (`*.authTokenFiles`)
 - Firewall coexistence profiles (`coexistence.profile`, including Docker coexist mode)
 - Monitoring pack assets (`docs/MONITORING.md`, Grafana dashboard, Prometheus alert rules)
@@ -217,6 +219,17 @@ services.nixCsf = {
   #   requireAuth = false; # set true in production and provide authTokenFile
   # };
 
+  # Optional: LFD-like SSH detector (journal signal -> control-plane temp ban).
+  # lfdDetector = {
+  #   enable = true;
+  #   journalIdentifier = "sshd";
+  #   # sshdUnit = "sshd.service";
+  #   windowSeconds = 300;
+  #   threshold = 5;
+  #   banTTLSeconds = 900;
+  #   refreshAfterBan = true;
+  # };
+
   coexistence.profile = "exclusive-firewall"; # or "docker-coexist" for container hosts
 
   observability = {
@@ -232,6 +245,17 @@ services.nixCsf = {
     onCalendar = "hourly";
   };
 };
+```
+
+Import helper for legacy CSF lists (`csf.allow/csf.deny/csf.ignore`):
+
+```bash
+nix-csf-import-csf \
+  --allow-file /etc/csf/csf.allow \
+  --deny-file /etc/csf/csf.deny \
+  --ignore-file /etc/csf/csf.ignore \
+  --output-dir /var/lib/nix-csf/imported \
+  --prefix legacy-csf
 ```
 
 ## Use Cases
@@ -453,6 +477,44 @@ nix-csfctl --auth-token-file /run/secrets/nix-csf-control-plane-token \
   policy add deny 203.0.120.4/32
 ```
 
+### 10) LFD-like SSH detector (Nix-native)
+
+```nix
+services.nixCsf = {
+  enable = true;
+  controlPlane = {
+    enable = true;
+    port = 18081;
+    environment = "lab";
+    requireAuth = false;
+  };
+  dynamicOffenders = {
+    enable = true;
+    url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
+    requireHTTPS = false;
+    failOpen = true;
+  };
+  lfdDetector = {
+    enable = true;
+    journalIdentifier = "sshd";
+    threshold = 5;
+    windowSeconds = 300;
+    banTTLSeconds = 900;
+    refreshAfterBan = true;
+  };
+};
+```
+
+Operator checks:
+
+```bash
+sudo systemctl start nix-csf-lfd-detector.service
+sudo journalctl -u nix-csf-lfd-detector.service -n 80 --no-pager
+sudo cat /var/lib/nix-csf/lfd-detector.prom
+```
+
+Detailed runbook: `docs/LFD_DETECTOR.md`.
+
 ## Operational notes
 
 - This module expects `networking.firewall.enable = false` (asserted by the module).
@@ -480,6 +542,8 @@ nix-csfctl --auth-token-file /run/secrets/nix-csf-control-plane-token \
   and is not overwritten by `nixos-rebuild`.
 - Enabling `services.nixCsf.controlPlane.enable = true` installs both:
   `nix-csf-control-plane` and `nix-csfctl`.
+- Enabling `services.nixCsf.lfdDetector.enable = true` installs `nix-csf-lfd-detector`
+  and creates `nix-csf-lfd-detector.timer`.
 
 ## Validation
 
@@ -507,12 +571,14 @@ The validation script runs:
 - `checks.x86_64-linux.eval-basic` (module evaluation wiring)
 - `checks.x86_64-linux.eval-profiles` (profile defaults + override precedence)
 - `checks.x86_64-linux.eval-control-plane` (control-plane service wiring evaluation)
+- `checks.x86_64-linux.eval-lfd-detector` (LFD-like detector service/timer wiring evaluation)
 - `checks.x86_64-linux.eval-monitoring` (Prometheus/Grafana wiring evaluation)
+- `checks.x86_64-linux.csf-import-check` (legacy CSF import bridge behavior)
 - `checks.x86_64-linux.shellcheck` (script lint)
 - `checks.x86_64-linux.control-plane-lint` (control-plane script syntax)
 - `checks.x86_64-linux.monitoring-pack` (Grafana JSON + Prometheus alert rule lint)
 - `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
-- `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, and auth-token rotation fallback)
+- `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, auth-token rotation fallback, and LFD-like detector flow)
 
 If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
 
@@ -558,9 +624,11 @@ Consumers can pin by tag:
 ## Project docs
 
 - Architecture: `docs/ARCHITECTURE.md`
+- LFD Nix-way POC plan: `docs/LFD_NIX_WAY_POC.md`
 - Dynamic cluster POC recommendation: `docs/DYNAMIC_CLUSTER_POC.md`
 - Cluster control-plane retro/POC: `docs/CLUSTER_CONTROL_PLANE_POC.md`
 - Operator use-case catalog: `docs/USE_CASES.md`
+- CSF list migration guide: `docs/CSF_IMPORT.md`
 - Monitoring pack and runbook: `docs/MONITORING.md`
 - Troubleshooting command set/runbook: `docs/TROUBLESHOOTING.md`
 - Release/compatibility policy: `docs/RELEASE.md`

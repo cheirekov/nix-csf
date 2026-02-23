@@ -13,7 +13,9 @@ nix build \
   "path:${ROOT_DIR}#checks.x86_64-linux.eval-basic" \
   "path:${ROOT_DIR}#checks.x86_64-linux.eval-profiles" \
   "path:${ROOT_DIR}#checks.x86_64-linux.eval-control-plane" \
+  "path:${ROOT_DIR}#checks.x86_64-linux.eval-lfd-detector" \
   "path:${ROOT_DIR}#checks.x86_64-linux.eval-monitoring" \
+  "path:${ROOT_DIR}#checks.x86_64-linux.csf-import-check" \
   "path:${ROOT_DIR}#checks.x86_64-linux.shellcheck" \
   "path:${ROOT_DIR}#checks.x86_64-linux.control-plane-lint" \
   "path:${ROOT_DIR}#checks.x86_64-linux.monitoring-pack"

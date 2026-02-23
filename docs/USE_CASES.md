@@ -408,3 +408,82 @@ services.nixCsf = {
   allowICMP = false; # broad legacy toggle
 };
 ```
+
+## 14) Import legacy CSF lists (`csf.allow/csf.deny/csf.ignore`)
+
+Use this when migrating from existing CSF deployments and you want to preserve plain CIDR/IP entries.
+
+```bash
+nix-csf-import-csf \
+  --allow-file /etc/csf/csf.allow \
+  --deny-file /etc/csf/csf.deny \
+  --ignore-file /etc/csf/csf.ignore \
+  --output-dir /var/lib/nix-csf/imported \
+  --prefix legacy-csf
+```
+
+Then wire generated lists:
+
+```nix
+services.nixCsf.localFiles = {
+  enable = true;
+  failOnMissing = true;
+  allow = [ "/var/lib/nix-csf/imported/legacy-csf-allow.local" ];
+  deny = [ "/var/lib/nix-csf/imported/legacy-csf-deny.local" ];
+  ignore = [ "/var/lib/nix-csf/imported/legacy-csf-ignore.local" ];
+};
+```
+
+Note:
+
+- advanced CSF rule lines (for example `tcp|in|...`) are reported in `*-unsupported.log`,
+- use `--strict` to fail the import if unsupported entries exist.
+
+## 15) LFD-like SSH detector (`lfdDetector.*`)
+
+Use this when you want CSF/LFD-style SSH failure detection while keeping `nix-csf` as the single firewall writer.
+
+```nix
+services.nixCsf = {
+  enable = true;
+
+  controlPlane = {
+    enable = true;
+    bindAddress = "127.0.0.1";
+    port = 18081;
+    environment = "lab";
+    requireAuth = false;
+  };
+
+  dynamicOffenders = {
+    enable = true;
+    url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
+    requireHTTPS = false;
+    failOpen = true;
+  };
+
+  lfdDetector = {
+    enable = true;
+    journalIdentifier = "sshd"; # or sshdUnit = "sshd.service";
+    threshold = 5;
+    windowSeconds = 300;
+    banTTLSeconds = 900;
+    reason = "lfd:sshd_failed_login";
+    refreshAfterBan = true;
+    schedule.onCalendar = "minutely";
+  };
+};
+```
+
+Operational checks:
+
+```bash
+sudo systemctl status nix-csf-lfd-detector.timer --no-pager
+sudo systemctl start nix-csf-lfd-detector.service
+sudo systemctl status nix-csf-lfd-detector.service --no-pager
+sudo journalctl -u nix-csf-lfd-detector.service -n 80 --no-pager
+sudo cat /var/lib/nix-csf/lfd-detector.prom
+sudo nft list set inet nix_csf dynamic_ban_ipv4
+```
+
+For deeper details and guardrails, see `docs/LFD_DETECTOR.md`.

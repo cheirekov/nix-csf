@@ -110,6 +110,18 @@ let
     text = builtins.readFile ../../scripts/nix-csfctl.sh;
   };
 
+  lfdDetectorTool = pkgs.writeShellApplication {
+    name = "nix-csf-lfd-detector";
+    runtimeInputs = with pkgs; [
+      coreutils
+      jq
+      systemd
+      util-linux
+      controlPlaneCliTool
+    ];
+    text = builtins.readFile ../../scripts/nix-csf-lfd-detector.sh;
+  };
+
   triageTool = pkgs.writeShellApplication {
     name = "nix-csf-triage";
     runtimeInputs = with pkgs; [
@@ -119,6 +131,16 @@ let
       systemd
     ];
     text = builtins.readFile ../../scripts/nix-csf-triage.sh;
+  };
+
+  csfImportTool = pkgs.writeShellApplication {
+    name = "nix-csf-import-csf";
+    runtimeInputs = with pkgs; [
+      coreutils
+      gawk
+      gnugrep
+    ];
+    text = builtins.readFile ../../scripts/nix-csf-import-csf.sh;
   };
 
   runtimeConfigFile = (pkgs.formats.json { }).generate "nix-csf-runtime-config.json" {
@@ -254,6 +276,43 @@ let
         ++ (if cfg.controlPlane.authTokenFile != null then [ "--auth-token-file" cfg.controlPlane.authTokenFile ] else [ ]);
     in
     "${controlPlaneTool}/bin/nix-csf-control-plane ${lib.escapeShellArgs (baseArgs ++ modeArgs ++ authArgs)}";
+
+  lfdDetectorEndpoint =
+    if cfg.lfdDetector.endpoint != null then cfg.lfdDetector.endpoint
+    else if cfg.controlPlane.enable then "http://127.0.0.1:${toString cfg.controlPlane.port}"
+    else "http://127.0.0.1:18081";
+
+  lfdDetectorAuthTokenFile =
+    if cfg.lfdDetector.authTokenFile != null then cfg.lfdDetector.authTokenFile
+    else if cfg.controlPlane.enable && cfg.controlPlane.requireAuth && cfg.controlPlane.authTokenFile != null then cfg.controlPlane.authTokenFile
+    else null;
+
+  lfdDetectorExecStart =
+    let
+      sourceArgs =
+        (if cfg.lfdDetector.sshdUnit != null then [ "--sshd-unit" cfg.lfdDetector.sshdUnit ] else [ ])
+        ++ (if cfg.lfdDetector.journalIdentifier != null then [ "--journal-identifier" cfg.lfdDetector.journalIdentifier ] else [ ]);
+      baseArgs = sourceArgs ++ [
+        "--window-seconds" (toString cfg.lfdDetector.windowSeconds)
+        "--threshold" (toString cfg.lfdDetector.threshold)
+        "--ban-ttl-seconds" (toString cfg.lfdDetector.banTTLSeconds)
+        "--reason" cfg.lfdDetector.reason
+        "--endpoint" lfdDetectorEndpoint
+      ];
+      authArgs =
+        if lfdDetectorAuthTokenFile != null
+        then [ "--auth-token-file" lfdDetectorAuthTokenFile ]
+        else [ ];
+      refreshArgs =
+        if cfg.lfdDetector.refreshAfterBan
+        then [ "--refresh-after-ban" ]
+        else [ ];
+      metricsArgs =
+        if cfg.lfdDetector.metrics.enable
+        then [ "--metrics-file" cfg.lfdDetector.metrics.outputFile ]
+        else [ ];
+    in
+    "${lfdDetectorTool}/bin/nix-csf-lfd-detector ${lib.escapeShellArgs (baseArgs ++ authArgs ++ refreshArgs ++ metricsArgs)}";
 
   validCountryCode = cc: builtins.match "^[A-Z]{2}$" (toUpper cc) != null;
 
@@ -1127,6 +1186,126 @@ in
       };
     };
 
+    lfdDetector = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable LFD-like SSH login failure detection.
+          The detector reads sshd journal events and emits temporary bans through `nix-csfctl ban-temp`
+          so `nix-csf` remains the single nftables writer.
+        '';
+      };
+
+      sshdUnit = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "sshd.service";
+        description = ''
+          Optional systemd unit name inspected for SSH authentication failures.
+          Set to null to disable unit-based journal matching.
+        '';
+      };
+
+      journalIdentifier = mkOption {
+        type = types.nullOr types.str;
+        default = "sshd";
+        description = ''
+          Optional syslog identifier inspected for SSH authentication failures.
+          Set to null to disable identifier-based journal matching.
+        '';
+      };
+
+      endpoint = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "http://127.0.0.1:18081";
+        description = ''
+          Optional control-plane API base URL.
+          When null, defaults to `http://127.0.0.1:<controlPlane.port>` when control-plane is enabled.
+        '';
+      };
+
+      authTokenFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "/run/secrets/nix-csf-control-plane-token";
+        description = ''
+          Optional bearer token file used by detector API calls.
+          When null and control-plane auth is enabled, this falls back to
+          `services.nixCsf.controlPlane.authTokenFile`.
+        '';
+      };
+
+      windowSeconds = mkOption {
+        type = types.ints.positive;
+        default = 300;
+        description = "Rolling SSH failure observation window in seconds.";
+      };
+
+      threshold = mkOption {
+        type = types.ints.positive;
+        default = 5;
+        description = "Failure events per source IP required before emitting a temporary ban.";
+      };
+
+      banTTLSeconds = mkOption {
+        type = types.ints.positive;
+        default = 900;
+        description = "TTL used for detector-generated temporary bans.";
+      };
+
+      reason = mkOption {
+        type = types.str;
+        default = "lfd:sshd_failed_login";
+        description = "Reason string attached to detector-generated temporary bans.";
+      };
+
+      refreshAfterBan = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Start `nix-csf-refresh.service` when detector writes changed ban entries,
+          reducing delay between mutation and nftables enforcement.
+        '';
+      };
+
+      schedule = {
+        onCalendar = mkOption {
+          type = types.str;
+          default = "minutely";
+          description = "systemd timer schedule for detector runs.";
+        };
+
+        randomDelaySec = mkOption {
+          type = types.str;
+          default = "15s";
+          description = "Randomized delay for detector timer runs.";
+        };
+
+        persistent = mkOption {
+          type = types.bool;
+          default = true;
+          description = "Run missed detector timer activations after boot.";
+        };
+      };
+
+      metrics = {
+        enable = mkOption {
+          type = types.bool;
+          default = true;
+          description = "Write detector run metrics in Prometheus textfile format.";
+        };
+
+        outputFile = mkOption {
+          type = types.str;
+          default = "/var/lib/nix-csf/lfd-detector.prom";
+          example = "/var/lib/node_exporter/textfile_collector/nix-csf-lfd.prom";
+          description = "Destination file for detector metrics output.";
+        };
+      };
+    };
+
     coexistence = {
       profile = mkOption {
         type = types.enum [ "exclusive-firewall" "docker-coexist" ];
@@ -1377,6 +1556,40 @@ in
         '';
       }
       {
+        assertion = cfg.lfdDetector.endpoint == null || builtins.match "^https?://[^[:space:]]+$" cfg.lfdDetector.endpoint != null;
+        message = "services.nixCsf.lfdDetector.endpoint must be an http:// or https:// URL when set.";
+      }
+      {
+        assertion = cfg.lfdDetector.authTokenFile == null || hasPrefix "/" cfg.lfdDetector.authTokenFile;
+        message = "services.nixCsf.lfdDetector.authTokenFile must be an absolute path when set.";
+      }
+      {
+        assertion = !cfg.lfdDetector.metrics.enable || hasPrefix "/" cfg.lfdDetector.metrics.outputFile;
+        message = "services.nixCsf.lfdDetector.metrics.outputFile must be an absolute path.";
+      }
+      {
+        assertion = !cfg.lfdDetector.enable || cfg.dynamicOffenders.enable;
+        message = ''
+          services.nixCsf.lfdDetector.enable requires services.nixCsf.dynamicOffenders.enable
+          so detector-generated temporary bans are rendered into nftables state.
+        '';
+      }
+      {
+        assertion = !cfg.lfdDetector.enable || cfg.lfdDetector.sshdUnit != null || cfg.lfdDetector.journalIdentifier != null;
+        message = ''
+          services.nixCsf.lfdDetector.enable requires at least one journal source:
+          services.nixCsf.lfdDetector.sshdUnit or services.nixCsf.lfdDetector.journalIdentifier.
+        '';
+      }
+      {
+        assertion = !cfg.lfdDetector.enable || cfg.lfdDetector.endpoint != null || cfg.controlPlane.enable;
+        message = ''
+          services.nixCsf.lfdDetector.enable requires either:
+          - services.nixCsf.controlPlane.enable = true (for default local endpoint), or
+          - services.nixCsf.lfdDetector.endpoint set explicitly.
+        '';
+      }
+      {
         assertion = all (path: hasPrefix "/" path) allLocalPolicyFiles;
         message = ''
           services.nixCsf.localFiles allow/deny/ignore entries must be absolute paths.
@@ -1438,7 +1651,9 @@ in
     networking.firewall.enable = mkDefault false;
     boot.kernelModules = [ "nf_tables" ];
 
-    environment.systemPackages = [ applyTool triageTool ];
+    environment.systemPackages =
+      [ applyTool triageTool csfImportTool ]
+      ++ lib.optionals cfg.lfdDetector.enable [ lfdDetectorTool ];
 
     systemd.tmpfiles.rules = [
       "d /var/lib/nix-csf 0750 root root -"
@@ -1474,6 +1689,30 @@ in
         OnCalendar = cfg.autoRefresh.onCalendar;
         RandomizedDelaySec = cfg.autoRefresh.randomDelaySec;
         Persistent = cfg.autoRefresh.persistent;
+      };
+    };
+
+    systemd.services.nix-csf-lfd-detector = mkIf cfg.lfdDetector.enable {
+      description = "nix-csf LFD-like SSH detector";
+      after =
+        [ "network-online.target" ]
+        ++ lib.optionals (cfg.controlPlane.enable && cfg.lfdDetector.endpoint == null) [ "nix-csf-control-plane.service" ];
+      wants =
+        [ "network-online.target" ]
+        ++ lib.optionals (cfg.controlPlane.enable && cfg.lfdDetector.endpoint == null) [ "nix-csf-control-plane.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = lfdDetectorExecStart;
+      };
+    };
+
+    systemd.timers.nix-csf-lfd-detector = mkIf cfg.lfdDetector.enable {
+      description = "Periodic run timer for nix-csf LFD-like detector";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = cfg.lfdDetector.schedule.onCalendar;
+        RandomizedDelaySec = cfg.lfdDetector.schedule.randomDelaySec;
+        Persistent = cfg.lfdDetector.schedule.persistent;
       };
     };
     })

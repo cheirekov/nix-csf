@@ -888,3 +888,105 @@
   - `./scripts/validate-fast.sh`
 - Open follow-ups:
   - `T-023` Netdata monitoring integration.
+
+## 2026-02-23 — Backlog Triage LFD-NIX-WAY
+
+- Ticket(s): `T-028`, `T-029`, `T-030`
+- Trigger:
+  - release-readiness review against real CSF operational workflows (`csf.allow`, `csf.deny`, `csf.ignore`, LFD behavior, fail2ban coexistence).
+- Summary:
+  - created migration/security ticket set for CSF-to-nix-csf operational parity:
+    - `T-028` Legacy CSF list import bridge:
+      - ingest `csf.allow/csf.deny/csf.ignore` style files into nix-csf local overlays,
+      - emit explicit unsupported-line reports for CSF advanced port syntax,
+      - preserve declarative safety boundaries (no hidden mutable rewrite of Nix config),
+    - `T-029` LFD-like detector POC (Nix-native):
+      - detector reads host auth/service failure signals,
+      - emits temp bans through control-plane/dynamic offender pipeline (`nix-csfctl ban-temp`),
+      - supports strict on/off module toggle and escalation policy integration,
+    - `T-030` fail2ban adapter/coexistence:
+      - fail2ban remains detector only,
+      - nix-csf remains single firewall writer,
+      - provide adapter action template and coexistence test coverage.
+  - added architecture note `docs/LFD_NIX_WAY_POC.md` to lock in detector/write-path boundaries before implementation.
+- BA requirement mapping:
+  - addresses CSF `lfd`/list migration concerns in a NixOS-safe architecture without mixing multiple independent nft writers.
+- PM milestone mapping:
+  - shifts near-term priority from optional monitoring enhancement to migration + detector parity for first stable release confidence.
+- Risk impact:
+  - `low` (planning/ticketing update only).
+- Validation evidence:
+  - documentation-only triage update.
+
+## 2026-02-23 — Batch CSF-IMPORT-BRIDGE-028
+
+- Ticket(s): `T-028`
+- Summary:
+  - delivered legacy CSF list migration bridge:
+    - new tool `nix-csf-import-csf` (`scripts/nix-csf-import-csf.sh`),
+    - imports CIDR/IP-compatible entries from `csf.allow/csf.deny/csf.ignore`,
+    - writes explicit unsupported-line report with source + line number + reason
+      (for example CSF advanced `tcp|...` rules and `Include` directives),
+    - emits generated `localFiles` Nix snippet for operator wiring,
+  - added deterministic validation coverage:
+    - new `checks.<system>.csf-import-check` fixture test in flake checks,
+    - shellcheck coverage for new import script,
+  - integrated packaging/operator surface:
+    - flake package output `csf-import`,
+    - module host package install includes `nix-csf-import-csf`,
+    - validation scripts now include `csf-import-check`,
+  - expanded operator docs/examples:
+    - new migration guide `docs/CSF_IMPORT.md`,
+    - README and use-case catalog examples updated.
+- BA requirement mapping:
+  - addresses real-world migration from existing CSF deployments while preserving Nix-native runtime ownership and explicit conversion visibility.
+- PM milestone mapping:
+  - closes `T-028`; advances next priority to `T-029` (LFD-like detector POC) and `T-030` (fail2ban adapter).
+- Risk impact:
+  - `low` (new import tool/checks/docs; firewall runtime behavior unchanged).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-import-csf.sh`
+  - `./scripts/validate-fast.sh`
+- Open follow-ups:
+  - `T-029` LFD-like detector POC (Nix-native),
+  - `T-030` fail2ban adapter/coexistence profile,
+  - `T-023` Netdata integration.
+
+## 2026-02-23 — Batch LFD-DETECTOR-029
+
+- Ticket(s): `T-029`
+- Summary:
+  - delivered Nix-native LFD-like detector path:
+    - new tool `nix-csf-lfd-detector` (`scripts/nix-csf-lfd-detector.sh`),
+    - detector scans SSH failure signals from journald (`sshdUnit` and/or `journalIdentifier` sources),
+    - thresholded offenders are written through control-plane API via `nix-csfctl ban-temp`
+      (no direct nft writes),
+    - optional immediate refresh (`refreshAfterBan`) triggers `nix-csf-refresh.service` after changed bans,
+    - detector emits Prometheus textfile metrics (`/var/lib/nix-csf/lfd-detector.prom` by default),
+  - expanded module API and wiring:
+    - new `services.nixCsf.lfdDetector.*` options (toggle, thresholds, schedule, endpoint/auth, metrics),
+    - new service/timer units:
+      - `nix-csf-lfd-detector.service`,
+      - `nix-csf-lfd-detector.timer`,
+    - safety assertions added for dynamic-offender dependency, endpoint/auth path shape, and journal source requirements,
+  - expanded validation and integration coverage:
+    - new eval check `checks.<system>.eval-lfd-detector`,
+    - shellcheck now includes detector script,
+    - integration scenario extends control-plane POC with SSH-failure-style events -> detector run -> dynamic/nft verification,
+  - expanded docs/examples:
+    - new runbook `docs/LFD_DETECTOR.md`,
+    - README + use-case catalog updated with LFD detector examples.
+- BA requirement mapping:
+  - implements requested CSF/LFD-style dynamic block behavior in Nix way while preserving single-writer firewall authority.
+- PM milestone mapping:
+  - closes `T-029`; next priority remains `T-030` (fail2ban adapter) with `T-023` as optional monitoring story.
+- Risk impact:
+  - `medium` (new runtime detector/write path and timer behavior).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-lfd-detector.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
+  - `./scripts/validate-fast.sh`
+- Open follow-ups:
+  - `T-030` fail2ban adapter/coexistence profile,
+  - `T-023` Netdata integration.

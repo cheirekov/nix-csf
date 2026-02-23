@@ -32,13 +32,15 @@ Ship a production-usable NixOS firewall module that is:
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
+| 1 | T-030 | TODO | fail2ban adapter/coexistence profile | fail2ban as signal source with nix-csf as single firewall writer |
+| 2 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-023 | TODO | Netdata monitoring integration |
+| 1 | T-030 | TODO | fail2ban adapter/coexistence profile |
+| 2 | T-023 | TODO | Netdata monitoring integration |
 
 ## Completed baseline
 
@@ -70,6 +72,8 @@ Ship a production-usable NixOS firewall module that is:
 | T-025 | DONE | `nix-csfctl` operator workflow POC (allow/deny/ignore mutations) |
 | T-026 | DONE | Dynamic escalation policy POC (`N` temp bans => permanent deny + audit) |
 | T-027 | DONE | P0 feed reliability hotfix (Spamhaus endpoint update + parser compatibility for semicolon/ipset feeds) |
+| T-028 | DONE | Legacy CSF list import bridge (`csf.allow/deny/ignore`) |
+| T-029 | DONE | LFD-like detector POC (Nix-native) |
 
 ## Triage protocol
 

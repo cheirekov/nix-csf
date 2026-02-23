@@ -19,8 +19,16 @@ Reference used:
 
 ## Deferred from CSF parity
 
-- Login failure daemon behavior (`lfd`)
+- Login failure daemon behavior (`lfd`) -> baseline implemented via `T-029` (`services.nixCsf.lfdDetector.*`)
 - IDS/alert integrations
 - Application-specific protections
+
+## Migration Notes From Real CSF Lists (2026-02-23)
+
+- `csf.deny` and `csf.ignore` are mostly direct CIDR/IP data sources and map well to `localFiles.deny` / `localFiles.ignore`.
+- `csf.allow` includes mixed content:
+  - direct CIDR/IP entries (compatible),
+  - CSF advanced per-port expressions (for example `tcp|in|d=12000|s=...`) that need explicit conversion rules.
+- Dedicated migration bridge (`T-028`) implemented as `nix-csf-import-csf` (`docs/CSF_IMPORT.md`).
 
 These are planned as follow-up tickets in `docs/DELIVERY_BOARD.md`.

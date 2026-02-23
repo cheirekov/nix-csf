@@ -39,6 +39,9 @@
 - Dynamic offender propagation across cluster nodes. [baseline done 2026-02-20]
 - Firewall coexistence profile (Docker/other dynamic firewall daemons). [done 2026-02-20]
 - Hybrid local-files + remote-cluster list reconciliation.
+- Legacy CSF list migration bridge (`csf.allow`, `csf.deny`, `csf.ignore`) with unsupported-entry reporting. [done 2026-02-23]
+- LFD-like detector service (Nix-native) feeding dynamic offenders/control-plane APIs. [done 2026-02-23]
+- fail2ban coexistence adapter (fail2ban detection -> `nix-csfctl` write path).
 - Cluster control-plane and snapshot publisher POC (`T-024`). [done 2026-02-20]
 - `nix-csfctl` operator write-path POC for cluster allow/deny/ignore (`T-025`). [done 2026-02-20]
 - Dynamic escalation policy POC (`T-026`: N temporary bans => permanent deny promotion). [done 2026-02-20]

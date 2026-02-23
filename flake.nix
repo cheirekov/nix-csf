@@ -75,6 +75,27 @@
               environment = "lab";
             };
           });
+          lfdDetectorEval = mkEvalSystem ({ ... }: {
+            services.nixCsf = {
+              controlPlane = {
+                enable = true;
+                requireAuth = false;
+                environment = "lab";
+              };
+              dynamicOffenders = {
+                enable = true;
+                url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
+                requireHTTPS = false;
+                failOpen = true;
+              };
+              lfdDetector = {
+                enable = true;
+                threshold = 3;
+                windowSeconds = 120;
+                schedule.onCalendar = "minutely";
+              };
+            };
+          });
         in
         {
           version-semver = pkgs.runCommand "nix-csf-version-semver" {
@@ -140,11 +161,23 @@
             test -n "$controlPlaneExec"
             printf '%s\n' "$controlPlaneExec" > "$out"
           '';
+          eval-lfd-detector = pkgs.runCommand "nix-csf-eval-lfd-detector" {
+            lfdDetectorEnabled = boolText lfdDetectorEval.config.services.nixCsf.lfdDetector.enable;
+            lfdDetectorExec = lfdDetectorEval.config.systemd.services.nix-csf-lfd-detector.serviceConfig.ExecStart;
+            lfdTimerOnCalendar = lfdDetectorEval.config.systemd.timers.nix-csf-lfd-detector.timerConfig.OnCalendar;
+          } ''
+            test "$lfdDetectorEnabled" = "true"
+            test -n "$lfdDetectorExec"
+            test "$lfdTimerOnCalendar" = "minutely"
+            touch "$out"
+          '';
           shellcheck = pkgs.runCommand "nix-csf-shellcheck" {
             nativeBuildInputs = [ pkgs.shellcheck ];
           } ''
             shellcheck \
               ${./scripts/nix-csf-apply.sh} \
+              ${./scripts/nix-csf-import-csf.sh} \
+              ${./scripts/nix-csf-lfd-detector.sh} \
               ${./scripts/nix-csf-triage.sh} \
               ${./scripts/nix-csfctl.sh} \
               ${./scripts/validate.sh} \
@@ -157,6 +190,63 @@
             nativeBuildInputs = [ pkgs.python3 ];
           } ''
             python3 -m py_compile ${./scripts/nix-csf-control-plane.py}
+            touch "$out"
+          '';
+          csf-import-check = pkgs.runCommand "nix-csf-csf-import-check" {
+            nativeBuildInputs = [ pkgs.bash pkgs.coreutils pkgs.gawk pkgs.gnugrep ];
+          } ''
+            workdir="$(mktemp -d)"
+            trap 'rm -rf "$workdir"' EXIT
+
+            cat > "$workdir/csf.allow" <<'EOF'
+# mixed allow entries
+203.0.113.1
+add allow_set 203.0.113.2/32
+tcp|in|d=22|s=198.51.100.10
+Include /root/custom.allow
+EOF
+
+            cat > "$workdir/csf.deny" <<'EOF'
+198.51.100.20
+ipset add deny_set 198.51.100.21/32
+EOF
+
+            cat > "$workdir/csf.ignore" <<'EOF'
+2001:db8::1
+EOF
+
+            outdir="$workdir/out"
+
+            ${pkgs.bash}/bin/bash ${./scripts/nix-csf-import-csf.sh} \
+              --allow-file "$workdir/csf.allow" \
+              --deny-file "$workdir/csf.deny" \
+              --ignore-file "$workdir/csf.ignore" \
+              --output-dir "$outdir" \
+              --prefix "fixture"
+
+            test -s "$outdir/fixture-allow.local"
+            test -s "$outdir/fixture-deny.local"
+            test -s "$outdir/fixture-ignore.local"
+            test -s "$outdir/fixture-summary.log"
+            test -s "$outdir/fixture-nixos-localFiles-snippet.nix"
+            grep -qx '203.0.113.1' "$outdir/fixture-allow.local"
+            grep -qx '203.0.113.2/32' "$outdir/fixture-allow.local"
+            grep -qx '198.51.100.20' "$outdir/fixture-deny.local"
+            grep -qx '198.51.100.21/32' "$outdir/fixture-deny.local"
+            grep -qx '2001:db8::1' "$outdir/fixture-ignore.local"
+            grep -Fq 'advanced_port_rule' "$outdir/fixture-unsupported.log"
+            grep -Fq 'include_directive' "$outdir/fixture-unsupported.log"
+
+            set +e
+            ${pkgs.bash}/bin/bash ${./scripts/nix-csf-import-csf.sh} \
+              --allow-file "$workdir/csf.allow" \
+              --output-dir "$outdir" \
+              --prefix "strict-fixture" \
+              --strict >/dev/null 2>&1
+            strict_rc=$?
+            set -e
+            test "$strict_rc" -eq 2
+
             touch "$out"
           '';
           monitoring-pack = pkgs.runCommand "nix-csf-monitoring-pack" {
@@ -201,18 +291,29 @@
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-        in
-        {
-          version = pkgs.writeText "nix-csf-version" "${version}\n";
-          nix-csfctl = pkgs.writeShellApplication {
+          nixCsfctlPkg = pkgs.writeShellApplication {
             name = "nix-csfctl";
             runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.jq ];
             text = builtins.readFile ./scripts/nix-csfctl.sh;
           };
+        in
+        {
+          version = pkgs.writeText "nix-csf-version" "${version}\n";
+          nix-csfctl = nixCsfctlPkg;
           triage = pkgs.writeShellApplication {
             name = "nix-csf-triage";
             runtimeInputs = [ pkgs.coreutils pkgs.gnugrep pkgs.nftables pkgs.systemd ];
             text = builtins.readFile ./scripts/nix-csf-triage.sh;
+          };
+          csf-import = pkgs.writeShellApplication {
+            name = "nix-csf-import-csf";
+            runtimeInputs = [ pkgs.coreutils pkgs.gawk pkgs.gnugrep ];
+            text = builtins.readFile ./scripts/nix-csf-import-csf.sh;
+          };
+          lfd-detector = pkgs.writeShellApplication {
+            name = "nix-csf-lfd-detector";
+            runtimeInputs = [ pkgs.coreutils pkgs.jq pkgs.systemd pkgs.util-linux nixCsfctlPkg ];
+            text = builtins.readFile ./scripts/nix-csf-lfd-detector.sh;
           };
           validate = pkgs.writeShellApplication {
             name = "nix-csf-validate";
