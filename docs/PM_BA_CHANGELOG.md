@@ -990,3 +990,80 @@
 - Open follow-ups:
   - `T-030` fail2ban adapter/coexistence profile,
   - `T-023` Netdata integration.
+
+## 2026-02-23 — Batch FAIL2BAN-ADAPTER-030
+
+- Ticket(s): `T-030`
+- Summary:
+  - delivered fail2ban adapter path that preserves single-writer firewall contract:
+    - new adapter tool `nix-csf-fail2ban-action` (`scripts/nix-csf-fail2ban-action.sh`),
+    - supports `ban`/`unban` plus fail2ban-compatible `start`/`stop`/`check` no-op actions,
+    - translates fail2ban offender signals into control-plane mutations via `nix-csfctl`
+      (`ban-temp`/`unban`) instead of direct nft writes,
+    - optional immediate refresh triggers after ban/unban updates,
+  - expanded module API and wiring:
+    - new `services.nixCsf.fail2banAdapter.*` option family,
+    - generated action template:
+      - `/etc/fail2ban/action.d/<actionName>.local`,
+    - safety assertions for endpoint/auth path validity and control-plane/dynamic dependencies,
+  - expanded validation and integration coverage:
+    - new eval check `checks.<system>.eval-fail2ban-adapter`,
+    - shellcheck includes adapter script,
+    - integration scenario verifies adapter-driven ban/unban mutation flow through
+      control-plane cache and rendered nft timeout rules,
+  - expanded docs/examples:
+    - new runbook `docs/FAIL2BAN_ADAPTER.md`,
+    - README + use-case catalog updates,
+    - board/roadmap/reference artifacts updated for ticket closure.
+- BA requirement mapping:
+  - implements requested fail2ban coexistence in Nix style by keeping fail2ban detector-only
+    and `nix-csf` as firewall state authority.
+- PM milestone mapping:
+  - closes `T-030`; next queued story is `T-023` (Netdata integration).
+- Risk impact:
+  - `medium` (new detector adapter write path and generated fail2ban action template).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-fail2ban-action.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-fail2ban-adapter" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
+  - `./scripts/validate-fast.sh`
+- Open follow-ups:
+  - `T-023` Netdata integration.
+
+## 2026-02-23 — Batch NETDATA-INTEGRATION-023
+
+- Ticket(s): `T-023`
+- Summary:
+  - delivered Netdata integration for existing `nix_csf_*` metric surface:
+    - new Netdata charts collector plugin:
+      - `scripts/nix-csf-netdata.chart.sh`,
+    - new module API:
+      - `services.nixCsf.netdata.*`,
+    - generated Netdata config outputs when enabled:
+      - `/etc/netdata/conf.d/charts.d/nix_csf.conf`,
+      - `/etc/netdata/conf.d/health.d/nix_csf.conf` (optional),
+  - added guardrails:
+    - `services.netdata.enable = true` required for `services.nixCsf.netdata.enable`,
+    - `services.nixCsf.observability.metrics.enable = true` required,
+    - metrics file path validated as absolute,
+  - added validation coverage:
+    - new eval check: `checks.<system>.eval-netdata`,
+    - shellcheck coverage for Netdata collector script,
+    - validate scripts include `eval-netdata`,
+  - updated docs:
+    - new runbook: `docs/NETDATA.md`,
+    - monitoring doc update: `docs/MONITORING.md`,
+    - README + use-case + board/roadmap/session updates.
+- BA requirement mapping:
+  - closes optional Netdata monitoring story with Nix-native, declarative wiring and no duplicate firewall writer.
+- PM milestone mapping:
+  - closes `T-023`; next queue moves to release-candidate hardening (ticket `TBD`).
+- Risk impact:
+  - `low` (monitoring path only; no firewall enforcement semantics changed).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-netdata.chart.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
+  - `./scripts/validate-fast.sh`
+- Open follow-ups:
+  - release-candidate hardening (ticket `TBD`).

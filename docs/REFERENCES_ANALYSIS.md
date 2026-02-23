@@ -20,6 +20,7 @@ Reference used:
 ## Deferred from CSF parity
 
 - Login failure daemon behavior (`lfd`) -> baseline implemented via `T-029` (`services.nixCsf.lfdDetector.*`)
+- fail2ban detector integration -> baseline implemented via `T-030` (`services.nixCsf.fail2banAdapter.*`)
 - IDS/alert integrations
 - Application-specific protections
 

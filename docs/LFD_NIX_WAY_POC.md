@@ -77,6 +77,11 @@ Acceptance:
 - conflicts with Docker/coexistence profiles are avoided by single-writer contract,
 - adapter can be enabled/disabled independently.
 
+Status:
+
+- done (2026-02-23) via `services.nixCsf.fail2banAdapter.*`,
+  `scripts/nix-csf-fail2ban-action.sh`, integration coverage, and `docs/FAIL2BAN_ADAPTER.md`.
+
 ## Cluster Propagation Path
 
 Preferred dynamic path:

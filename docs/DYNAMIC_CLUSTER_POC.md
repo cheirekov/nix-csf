@@ -150,7 +150,7 @@ POC monitoring pack should include:
   - repeated apply failures,
   - sudden dynamic-ban spikes.
 
-Optional extension path:
+Completed extension path:
 
 - Netdata mapping of the same `nix_csf_*` metric surface (`T-023`) to avoid dual semantics.
 
@@ -210,10 +210,11 @@ Current module supports both:
 
 Current cluster-first priority:
 
-1. `T-022` hybrid local-files + remote reconciliation contract
-2. `T-023` Netdata monitoring integration (optional story)
+1. release-candidate hardening (ticket `TBD`)
 
 Completed:
 
+- `T-022` hybrid local-files + remote reconciliation contract
+- `T-023` Netdata monitoring integration
 - `T-025` operator mutation workflow PoC (`nix-csfctl`)
 - `T-026` dynamic escalation policy PoC (`N` temp bans => permanent deny)

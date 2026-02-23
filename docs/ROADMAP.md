@@ -38,16 +38,16 @@
 - Operator use-case catalog and deployment examples. [baseline done 2026-02-19]
 - Dynamic offender propagation across cluster nodes. [baseline done 2026-02-20]
 - Firewall coexistence profile (Docker/other dynamic firewall daemons). [done 2026-02-20]
-- Hybrid local-files + remote-cluster list reconciliation.
+- Hybrid local-files + remote-cluster list reconciliation. [done 2026-02-23]
 - Legacy CSF list migration bridge (`csf.allow`, `csf.deny`, `csf.ignore`) with unsupported-entry reporting. [done 2026-02-23]
 - LFD-like detector service (Nix-native) feeding dynamic offenders/control-plane APIs. [done 2026-02-23]
-- fail2ban coexistence adapter (fail2ban detection -> `nix-csfctl` write path).
+- fail2ban coexistence adapter (fail2ban detection -> `nix-csfctl` write path). [done 2026-02-23]
 - Cluster control-plane and snapshot publisher POC (`T-024`). [done 2026-02-20]
 - `nix-csfctl` operator write-path POC for cluster allow/deny/ignore (`T-025`). [done 2026-02-20]
 - Dynamic escalation policy POC (`T-026`: N temporary bans => permanent deny promotion). [done 2026-02-20]
 - Cluster auth/token lifecycle and secret-management guidance. [done 2026-02-20]
 - Grafana/Prometheus monitoring pack and alert rules. [done 2026-02-20]
-- Netdata monitoring integration (optional story on top of Prometheus/textfile metrics).
+- Netdata monitoring integration (optional story on top of Prometheus/textfile metrics). [done 2026-02-23]
 - Troubleshooting command set and runbook. [done 2026-02-23]
 
 ## Phase 4 — Release quality

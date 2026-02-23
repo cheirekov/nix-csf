@@ -30,9 +30,11 @@ Kickoff baseline is implemented:
 - Operator mutation CLI (`nix-csfctl`) for control-plane workflows
 - Dynamic escalation (`N` temporary bans => permanent deny via control-plane)
 - LFD-like SSH detector pipeline (`lfdDetector.*` -> `ban-temp` write path)
+- fail2ban adapter flow (`fail2banAdapter.*` -> `ban-temp`/`unban` write path)
 - Auth token lifecycle with ordered rotation fallback (`*.authTokenFiles`)
 - Firewall coexistence profiles (`coexistence.profile`, including Docker coexist mode)
 - Monitoring pack assets (`docs/MONITORING.md`, Grafana dashboard, Prometheus alert rules)
+- Optional Netdata integration (`netdata.*` + generated charts/alarms)
 - Troubleshooting command bundle (`nix-csf-triage` + `docs/TROUBLESHOOTING.md`)
 - Structured run logs + optional Prometheus textfile metrics (`observability.*`)
 - Early boot apply + scheduled refresh via systemd
@@ -230,6 +232,16 @@ services.nixCsf = {
   #   refreshAfterBan = true;
   # };
 
+  # Optional: fail2ban adapter (fail2ban detector -> control-plane mutations).
+  # fail2banAdapter = {
+  #   enable = true;
+  #   actionName = "nix-csf"; # installs /etc/fail2ban/action.d/nix-csf.local
+  #   banTTLSeconds = 900;
+  #   reasonPrefix = "fail2ban";
+  #   refreshAfterBan = true;
+  #   refreshAfterUnban = true;
+  # };
+
   coexistence.profile = "exclusive-firewall"; # or "docker-coexist" for container hosts
 
   observability = {
@@ -239,6 +251,14 @@ services.nixCsf = {
       outputFile = "/var/lib/node_exporter/textfile_collector/nix-csf.prom";
     };
   };
+
+  # Optional: Netdata mapping for nix-csf metrics.
+  # Requires services.netdata.enable = true and observability.metrics.enable = true.
+  # netdata = {
+  #   enable = true;
+  #   updateEvery = 15;
+  #   installHealthAlarms = true;
+  # };
 
   autoRefresh = {
     enable = true;
@@ -515,6 +535,42 @@ sudo cat /var/lib/nix-csf/lfd-detector.prom
 
 Detailed runbook: `docs/LFD_DETECTOR.md`.
 
+### 11) fail2ban adapter (single-writer model)
+
+```nix
+services.nixCsf = {
+  enable = true;
+  controlPlane = {
+    enable = true;
+    port = 18081;
+    environment = "lab";
+    requireAuth = false;
+  };
+  dynamicOffenders = {
+    enable = true;
+    url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
+    requireHTTPS = false;
+    failOpen = true;
+  };
+  fail2banAdapter = {
+    enable = true;
+    actionName = "nix-csf";
+    banTTLSeconds = 900;
+    reasonPrefix = "fail2ban";
+  };
+};
+```
+
+Operator checks:
+
+```bash
+sudo test -s /etc/fail2ban/action.d/nix-csf.local
+sudo nix-csf-fail2ban-action ban --ip 203.0.113.77 --jail sshd
+sudo nix-csf-fail2ban-action unban --ip 203.0.113.77 --jail sshd
+```
+
+Detailed runbook: `docs/FAIL2BAN_ADAPTER.md`.
+
 ## Operational notes
 
 - This module expects `networking.firewall.enable = false` (asserted by the module).
@@ -544,6 +600,10 @@ Detailed runbook: `docs/LFD_DETECTOR.md`.
   `nix-csf-control-plane` and `nix-csfctl`.
 - Enabling `services.nixCsf.lfdDetector.enable = true` installs `nix-csf-lfd-detector`
   and creates `nix-csf-lfd-detector.timer`.
+- Enabling `services.nixCsf.fail2banAdapter.enable = true` installs `nix-csf-fail2ban-action`
+  and (by default) writes `/etc/fail2ban/action.d/<actionName>.local`.
+- Enabling `services.nixCsf.netdata.enable = true` installs generated Netdata integration files:
+  `/etc/netdata/conf.d/charts.d/nix_csf.conf` and (optionally) `/etc/netdata/conf.d/health.d/nix_csf.conf`.
 
 ## Validation
 
@@ -570,15 +630,17 @@ The validation script runs:
 - `checks.x86_64-linux.version-semver` (VERSION SemVer gate)
 - `checks.x86_64-linux.eval-basic` (module evaluation wiring)
 - `checks.x86_64-linux.eval-profiles` (profile defaults + override precedence)
+- `checks.x86_64-linux.eval-netdata` (Netdata charts/alarm wiring evaluation)
 - `checks.x86_64-linux.eval-control-plane` (control-plane service wiring evaluation)
 - `checks.x86_64-linux.eval-lfd-detector` (LFD-like detector service/timer wiring evaluation)
+- `checks.x86_64-linux.eval-fail2ban-adapter` (fail2ban adapter action-file wiring evaluation)
 - `checks.x86_64-linux.eval-monitoring` (Prometheus/Grafana wiring evaluation)
 - `checks.x86_64-linux.csf-import-check` (legacy CSF import bridge behavior)
 - `checks.x86_64-linux.shellcheck` (script lint)
 - `checks.x86_64-linux.control-plane-lint` (control-plane script syntax)
 - `checks.x86_64-linux.monitoring-pack` (Grafana JSON + Prometheus alert rule lint)
 - `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
-- `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, auth-token rotation fallback, and LFD-like detector flow)
+- `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, auth-token rotation fallback, LFD-like detector flow, and fail2ban adapter flow)
 
 If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
 
@@ -630,6 +692,7 @@ Consumers can pin by tag:
 - Operator use-case catalog: `docs/USE_CASES.md`
 - CSF list migration guide: `docs/CSF_IMPORT.md`
 - Monitoring pack and runbook: `docs/MONITORING.md`
+- Netdata integration: `docs/NETDATA.md`
 - Troubleshooting command set/runbook: `docs/TROUBLESHOOTING.md`
 - Release/compatibility policy: `docs/RELEASE.md`
 - Delivery board: `docs/DELIVERY_BOARD.md`

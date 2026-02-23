@@ -68,6 +68,19 @@
             };
             services.grafana.enable = true;
           });
+          netdataEval = mkEvalSystem ({ ... }: {
+            services.netdata.enable = true;
+            services.nixCsf = {
+              observability.metrics = {
+                enable = true;
+                outputFile = "/var/lib/nix-csf/metrics.prom";
+              };
+              netdata = {
+                enable = true;
+                installHealthAlarms = true;
+              };
+            };
+          });
           controlPlaneEval = mkEvalSystem ({ ... }: {
             services.nixCsf.controlPlane = {
               enable = true;
@@ -93,6 +106,26 @@
                 threshold = 3;
                 windowSeconds = 120;
                 schedule.onCalendar = "minutely";
+              };
+            };
+          });
+          fail2banAdapterEval = mkEvalSystem ({ ... }: {
+            services.nixCsf = {
+              controlPlane = {
+                enable = true;
+                requireAuth = false;
+                environment = "lab";
+              };
+              dynamicOffenders = {
+                enable = true;
+                url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
+                requireHTTPS = false;
+                failOpen = true;
+              };
+              fail2banAdapter = {
+                enable = true;
+                actionName = "nix-csf";
+                installActionFile = true;
               };
             };
           });
@@ -153,6 +186,22 @@
             test "$ruleFileCount" = "1"
             touch "$out"
           '';
+          eval-netdata = pkgs.runCommand "nix-csf-eval-netdata" {
+            netdataEnabled = boolText netdataEval.config.services.netdata.enable;
+            pluginPathCount = toString (builtins.length netdataEval.config.services.netdata.extraPluginPaths);
+            chartsConfig = netdataEval.config.services.netdata.configDir."charts.d/nix_csf.conf";
+            healthConfig = netdataEval.config.services.netdata.configDir."health.d/nix_csf.conf";
+          } ''
+            test "$netdataEnabled" = "true"
+            test "$pluginPathCount" -ge 1
+            test -e "$chartsConfig"
+            test -e "$healthConfig"
+            grep -Fq 'nix_csf_enabled=yes' "$chartsConfig"
+            grep -Fq 'nix_csf_metrics_file=/var/lib/nix-csf/metrics.prom' "$chartsConfig"
+            grep -Fq 'alarm: nix_csf_cluster_policy_cache_expired' "$healthConfig"
+            grep -Fq 'alarm: nix_csf_dynamic_snapshot_expired' "$healthConfig"
+            touch "$out"
+          '';
           eval-control-plane = pkgs.runCommand "nix-csf-eval-control-plane" {
             controlPlaneEnabled = boolText controlPlaneEval.config.services.nixCsf.controlPlane.enable;
             controlPlaneExec = controlPlaneEval.config.systemd.services.nix-csf-control-plane.serviceConfig.ExecStart;
@@ -171,13 +220,26 @@
             test "$lfdTimerOnCalendar" = "minutely"
             touch "$out"
           '';
+          eval-fail2ban-adapter = pkgs.runCommand "nix-csf-eval-fail2ban-adapter" {
+            adapterEnabled = boolText fail2banAdapterEval.config.services.nixCsf.fail2banAdapter.enable;
+            actionFile = fail2banAdapterEval.config.environment.etc."fail2ban/action.d/nix-csf.local".source;
+          } ''
+            test "$adapterEnabled" = "true"
+            test -e "$actionFile"
+            grep -Fq 'actionban =' "$actionFile"
+            grep -Fq 'nix-csf-fail2ban-action ban' "$actionFile"
+            grep -Fq 'actionunban =' "$actionFile"
+            touch "$out"
+          '';
           shellcheck = pkgs.runCommand "nix-csf-shellcheck" {
             nativeBuildInputs = [ pkgs.shellcheck ];
           } ''
             shellcheck \
               ${./scripts/nix-csf-apply.sh} \
+              ${./scripts/nix-csf-fail2ban-action.sh} \
               ${./scripts/nix-csf-import-csf.sh} \
               ${./scripts/nix-csf-lfd-detector.sh} \
+              ${./scripts/nix-csf-netdata.chart.sh} \
               ${./scripts/nix-csf-triage.sh} \
               ${./scripts/nix-csfctl.sh} \
               ${./scripts/validate.sh} \
@@ -263,7 +325,7 @@ EOF
             yq -e '.groups[].rules[] | select(.alert == "NixCsfClusterPolicyCacheExpired") | .alert' ${./docs/monitoring/prometheus-alert-rules.yml} >/dev/null
             yq -e '.groups[].rules[] | select(.alert == "NixCsfDynamicSnapshotExpired") | .alert' ${./docs/monitoring/prometheus-alert-rules.yml} >/dev/null
 
-            grep -q 'Optional Netdata Story (`T-023`)' ${./docs/MONITORING.md}
+            grep -q 'Netdata Integration (`T-023`)' ${./docs/MONITORING.md}
 
             touch "$out"
           '';
@@ -296,6 +358,11 @@ EOF
             runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.jq ];
             text = builtins.readFile ./scripts/nix-csfctl.sh;
           };
+          fail2banActionPkg = pkgs.writeShellApplication {
+            name = "nix-csf-fail2ban-action";
+            runtimeInputs = [ pkgs.coreutils pkgs.jq pkgs.systemd nixCsfctlPkg ];
+            text = builtins.readFile ./scripts/nix-csf-fail2ban-action.sh;
+          };
         in
         {
           version = pkgs.writeText "nix-csf-version" "${version}\n";
@@ -315,6 +382,7 @@ EOF
             runtimeInputs = [ pkgs.coreutils pkgs.jq pkgs.systemd pkgs.util-linux nixCsfctlPkg ];
             text = builtins.readFile ./scripts/nix-csf-lfd-detector.sh;
           };
+          fail2ban-action = fail2banActionPkg;
           validate = pkgs.writeShellApplication {
             name = "nix-csf-validate";
             runtimeInputs = [ pkgs.nix ];

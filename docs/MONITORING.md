@@ -113,12 +113,14 @@ For strict mode incidents (`failOpen = false`):
 sudo systemctl start nix-csf-refresh.service
 ```
 
-## Optional Netdata Story (`T-023`)
+## Netdata Integration (`T-023`)
 
-Netdata integration is tracked separately in `T-023`.
+Netdata integration is now available as an optional module feature.
 
-Design direction:
+Design contract:
 
-- use existing Prometheus/textfile metric surface as source of truth,
-- map `nix_csf_*` metrics to Netdata charts/alarms,
-- keep alert semantics aligned with this Prometheus pack to avoid drift.
+- keep existing Prometheus/textfile metrics as source of truth,
+- map `nix_csf_*` metrics into Netdata charts/alarms via generated `charts.d` + `health.d` files,
+- keep alarm semantics aligned with this Prometheus pack to avoid drift.
+
+See `docs/NETDATA.md` for full configuration and operator checks.

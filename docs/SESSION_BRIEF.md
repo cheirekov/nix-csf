@@ -73,8 +73,10 @@ Owner: PM/BA + Codex
 
 ## 5) Current execution lane
 
-- Active ticket: `T-022` (`IN_PROGRESS`) — hybrid local-files + remote reconciliation contract.
+- Active ticket: none (`WIP` slot open).
 - Recently completed:
+  - `T-023` Netdata monitoring integration,
+  - `T-030` fail2ban adapter/coexistence profile,
   - `T-029` LFD-like detector POC (Nix-native),
   - `T-028` legacy CSF list import bridge,
   - `T-013` troubleshooting command set + runbook,
@@ -84,8 +86,7 @@ Owner: PM/BA + Codex
   - agent runs fast/lint/eval locally,
   - operator runs full VM suite (`./scripts/validate.sh`) and shares failures only.
 - Newly triaged next-ticket set (CSF/LFD parity):
-  - `T-028` legacy CSF list import bridge,
-  - `T-030` fail2ban adapter/coexistence profile.
+  - release-candidate hardening (ticket `TBD`; VM burn-in stability + docs freeze).
 
 ## 6) Batch ICMP-PROFILES-017
 
@@ -163,5 +164,58 @@ Owner: PM/BA + Codex
 - Validation evidence:
   - `bash -n scripts/nix-csf-lfd-detector.sh`
   - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
+  - `./scripts/validate-fast.sh`
+
+## 12) Batch FAIL2BAN-ADAPTER-030
+
+- Scope delivered:
+  - added fail2ban adapter command `nix-csf-fail2ban-action` (`scripts/nix-csf-fail2ban-action.sh`),
+  - added module API `services.nixCsf.fail2banAdapter.*`,
+  - generated fail2ban action file wiring:
+    - `/etc/fail2ban/action.d/<actionName>.local`,
+  - added flake/package/check integration:
+    - `checks.<system>.eval-fail2ban-adapter`,
+    - package output `fail2ban-action`,
+    - shellcheck coverage for adapter script,
+  - extended integration test flow with adapter-driven ban/unban assertions through
+    control-plane dynamic snapshots and rendered timeout rules,
+  - added documentation:
+    - `docs/FAIL2BAN_ADAPTER.md`,
+    - README + use-case updates.
+- Validation evidence:
+  - `bash -n scripts/nix-csf-fail2ban-action.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-fail2ban-adapter" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
+  - `./scripts/validate-fast.sh`
+
+## 13) Batch NETDATA-INTEGRATION-023
+
+- Scope delivered:
+  - added Netdata collector plugin:
+    - `scripts/nix-csf-netdata.chart.sh`,
+  - added module API `services.nixCsf.netdata.*`:
+    - enable, metricsFile override, update interval, chart priority, health alarm install toggle, alert recipient,
+  - wired Netdata integration declaratively when enabled:
+    - `services.netdata.extraPluginPaths` includes generated plugin package,
+    - generated collector config: `/etc/netdata/conf.d/charts.d/nix_csf.conf`,
+    - generated alarms: `/etc/netdata/conf.d/health.d/nix_csf.conf`,
+  - added module assertions:
+    - requires `services.netdata.enable = true`,
+    - requires `services.nixCsf.observability.metrics.enable = true`,
+    - validates absolute metrics file path,
+  - added evaluation/lint coverage:
+    - `checks.<system>.eval-netdata`,
+    - shellcheck coverage for `nix-csf-netdata.chart.sh`,
+    - validate scripts include `eval-netdata`,
+  - updated docs:
+    - `docs/NETDATA.md`,
+    - `docs/MONITORING.md`,
+    - `README.md`,
+    - `docs/USE_CASES.md`,
+    - board/roadmap/changelog artifacts.
+- Validation evidence:
+  - `bash -n scripts/nix-csf-netdata.chart.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
   - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
   - `./scripts/validate-fast.sh`

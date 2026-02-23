@@ -24,23 +24,19 @@ Ship a production-usable NixOS firewall module that is:
 
 ### NOW
 
-| ID | Status | Title | Scope freeze |
-|---|---|---|---|
-| T-022 | IN_PROGRESS | Hybrid local+remote list reconciliation | local files + remote policy merge contract |
+No active `IN_PROGRESS` ticket (WIP slot available).
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-030 | TODO | fail2ban adapter/coexistence profile | fail2ban as signal source with nix-csf as single firewall writer |
-| 2 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
+| 1 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-030 | TODO | fail2ban adapter/coexistence profile |
-| 2 | T-023 | TODO | Netdata monitoring integration |
+| 1 | TBD | TODO | Release-candidate hardening |
 
 ## Completed baseline
 
@@ -68,12 +64,15 @@ Ship a production-usable NixOS firewall module that is:
 | T-019 | DONE | Grafana/Prometheus monitoring pack |
 | T-020 | DONE | Cluster auth/token lifecycle and secret handling |
 | T-021 | DONE | Firewall coexistence profile (Docker and dynamic daemons) |
+| T-022 | DONE | Hybrid local+remote list reconciliation |
 | T-024 | DONE | Cluster control-plane and snapshot publisher POC |
 | T-025 | DONE | `nix-csfctl` operator workflow POC (allow/deny/ignore mutations) |
 | T-026 | DONE | Dynamic escalation policy POC (`N` temp bans => permanent deny + audit) |
 | T-027 | DONE | P0 feed reliability hotfix (Spamhaus endpoint update + parser compatibility for semicolon/ipset feeds) |
 | T-028 | DONE | Legacy CSF list import bridge (`csf.allow/deny/ignore`) |
 | T-029 | DONE | LFD-like detector POC (Nix-native) |
+| T-030 | DONE | fail2ban adapter/coexistence profile |
+| T-023 | DONE | Netdata monitoring integration |
 
 ## Triage protocol
 

@@ -107,4 +107,5 @@ When enabled:
 
 - This is detector-only logic; nft rules are still rendered/applied by `nix-csf`.
 - Escalation (`N` temp bans => permanent deny) remains controlled by `services.nixCsf.controlPlane.escalation.*`.
-- fail2ban adapter/coexistence remains a separate ticket (`T-030`).
+- fail2ban adapter/coexistence is available via `services.nixCsf.fail2banAdapter.*`
+  (`docs/FAIL2BAN_ADAPTER.md`).

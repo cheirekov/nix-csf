@@ -487,3 +487,100 @@ sudo nft list set inet nix_csf dynamic_ban_ipv4
 ```
 
 For deeper details and guardrails, see `docs/LFD_DETECTOR.md`.
+
+## 16) fail2ban adapter (`fail2banAdapter.*`)
+
+Use this when fail2ban should remain detector-only and `nix-csf` should remain the firewall authority.
+
+```nix
+services.nixCsf = {
+  enable = true;
+
+  controlPlane = {
+    enable = true;
+    bindAddress = "127.0.0.1";
+    port = 18081;
+    environment = "lab";
+    requireAuth = false;
+  };
+
+  dynamicOffenders = {
+    enable = true;
+    url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
+    requireHTTPS = false;
+    failOpen = true;
+  };
+
+  fail2banAdapter = {
+    enable = true;
+    actionName = "nix-csf";
+    banTTLSeconds = 900;
+    reasonPrefix = "fail2ban";
+    refreshAfterBan = true;
+    refreshAfterUnban = true;
+  };
+};
+```
+
+Generated action file:
+
+- `/etc/fail2ban/action.d/nix-csf.local`
+
+Example jail usage:
+
+```ini
+[sshd]
+enabled = true
+banaction = nix-csf
+```
+
+Manual adapter checks:
+
+```bash
+sudo test -s /etc/fail2ban/action.d/nix-csf.local
+sudo nix-csf-fail2ban-action ban --ip 203.0.113.77 --jail sshd
+sudo nix-csf-fail2ban-action unban --ip 203.0.113.77 --jail sshd
+```
+
+For deeper details and guardrails, see `docs/FAIL2BAN_ADAPTER.md`.
+
+## 17) Netdata integration (`netdata.*`)
+
+Use this when your host is already running Netdata and you want direct charts/alarms from
+the `nix_csf_*` metric surface.
+
+```nix
+{
+  services.netdata.enable = true;
+
+  services.nixCsf = {
+    enable = true;
+    observability.metrics = {
+      enable = true;
+      outputFile = "/var/lib/nix-csf/metrics.prom";
+    };
+    netdata = {
+      enable = true;
+      updateEvery = 15;
+      installHealthAlarms = true;
+      alertRecipient = "sysadmin";
+    };
+  };
+}
+```
+
+Generated Netdata files:
+
+- `/etc/netdata/conf.d/charts.d/nix_csf.conf`
+- `/etc/netdata/conf.d/health.d/nix_csf.conf` (when `installHealthAlarms = true`)
+
+Operational checks:
+
+```bash
+sudo systemctl status netdata --no-pager
+sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.conf
+sudo netdatacli ping
+sudo journalctl -u netdata -n 120 --no-pager
+```
+
+For detailed chart/alarm mapping, see `docs/NETDATA.md`.

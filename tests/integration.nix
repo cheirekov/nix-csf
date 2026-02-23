@@ -351,6 +351,14 @@ pkgs.testers.runNixOSTest {
         refreshAfterBan = true;
         schedule.onCalendar = "hourly";
       };
+      fail2banAdapter = {
+        enable = true;
+        banTTLSeconds = 600;
+        reasonPrefix = "fail2ban";
+        refreshAfterBan = true;
+        refreshAfterUnban = true;
+        actionName = "nix-csf";
+      };
       observability.metrics = {
         enable = true;
         outputFile = "/var/lib/nix-csf/metrics.prom";
@@ -497,6 +505,13 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.succeed("systemctl show -P Result nix-csf-lfd-detector.service | grep -qx success")
     controlplanepoc.succeed("journalctl -u nix-csf-lfd-detector.service -n 80 | grep -F 'ip=203.0.119.120'")
     controlplanepoc.succeed("grep -F 'nix_csf_lfd_detector_candidate_ips 1' /var/lib/nix-csf/lfd-detector.prom")
+    controlplanepoc.succeed("test -s /etc/fail2ban/action.d/nix-csf.local")
+    controlplanepoc.succeed("nix-csf-fail2ban-action ban --ip 203.0.119.130 --jail sshd --endpoint http://127.0.0.1:18081 --ban-ttl-seconds 600 --reason-prefix fail2ban --refresh-after-ban")
+    controlplanepoc.wait_until_succeeds("grep -F '\"cidr\": \"203.0.119.130/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.wait_until_succeeds("grep -F '203.0.119.130/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
+    controlplanepoc.succeed("nix-csf-fail2ban-action unban --ip 203.0.119.130 --jail sshd --endpoint http://127.0.0.1:18081 --ban-ttl-seconds 600 --reason-prefix fail2ban --refresh-after-unban")
+    controlplanepoc.wait_until_succeeds("! grep -F '\"cidr\": \"203.0.119.130/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.wait_until_succeeds("! grep -F '203.0.119.130/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
     controlplanepoc.succeed("systemctl start nix-csf-refresh.service")
     controlplanepoc.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx success")
     controlplanepoc.succeed("grep -F '\"203.0.119.9/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
