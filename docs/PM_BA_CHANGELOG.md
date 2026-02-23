@@ -859,3 +859,32 @@
 - Open follow-ups:
   - `T-013` troubleshooting command/runbook completion,
   - `T-023` Netdata monitoring integration story.
+
+## 2026-02-23 — Batch TROUBLESHOOTING-RUNBOOK-013
+
+- Ticket(s): `T-013`
+- Summary:
+  - delivered operator troubleshooting command bundle:
+    - new tool: `scripts/nix-csf-triage.sh`,
+    - installed command: `nix-csf-triage` via module/package wiring,
+    - one-command snapshot support (`--output`, journal depth, metrics path, optional artifacts path),
+  - delivered dedicated troubleshooting runbook:
+    - new `docs/TROUBLESHOOTING.md`,
+    - symptom-driven flows for apply/refresh/control-plane/coexistence/membership checks,
+    - standard "handoff packet" guidance for validation and incident triage,
+  - integrated docs and packaging:
+    - README usage and docs index updates,
+    - monitoring runbook cross-link,
+    - flake shellcheck and package outputs include triage script/tool.
+- BA requirement mapping:
+  - closes the request for a consistent troubleshooting command set and operational runbook.
+- PM milestone mapping:
+  - closes `T-013`; leaves `T-023` Netdata integration as the next planned story.
+- Risk impact:
+  - `low` (operator tooling/documentation only; no firewall rule semantics changed).
+- Validation evidence:
+  - `bash -n scripts/nix-csf-triage.sh`
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
+- Open follow-ups:
+  - `T-023` Netdata monitoring integration.

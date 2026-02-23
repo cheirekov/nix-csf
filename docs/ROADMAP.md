@@ -45,7 +45,7 @@
 - Cluster auth/token lifecycle and secret-management guidance. [done 2026-02-20]
 - Grafana/Prometheus monitoring pack and alert rules. [done 2026-02-20]
 - Netdata monitoring integration (optional story on top of Prometheus/textfile metrics).
-- Troubleshooting command set and runbook.
+- Troubleshooting command set and runbook. [done 2026-02-23]
 
 ## Phase 4 — Release quality
 

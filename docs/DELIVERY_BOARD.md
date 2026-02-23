@@ -1,6 +1,6 @@
 # DELIVERY BOARD — nix-csf
 
-Last updated: 2026-02-22  
+Last updated: 2026-02-23  
 Owner: PM/BA + Security Architect + Nix Module Engineer
 
 ## North Star
@@ -32,15 +32,13 @@ Ship a production-usable NixOS firewall module that is:
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-013 | TODO | Troubleshooting command set and runbook | operator troubleshooting speed |
-| 2 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
+| 1 | T-023 | TODO | Netdata monitoring integration | Netdata charts/alerts mapped from nix-csf metrics |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | T-013 | TODO | Troubleshooting command set and runbook |
-| 2 | T-023 | TODO | Netdata monitoring integration |
+| 1 | T-023 | TODO | Netdata monitoring integration |
 
 ## Completed baseline
 
@@ -59,6 +57,7 @@ Ship a production-usable NixOS firewall module that is:
 | T-010 | DONE | Cluster policy propagation model |
 | T-011 | DONE | Documentation use-case catalog expansion |
 | T-012 | DONE | Preset threat profiles (server/workstation/edge) |
+| T-013 | DONE | Troubleshooting command set and runbook |
 | T-014 | DONE | Strict apply semantics + deny precedence hardening |
 | T-015 | DONE | Cluster policy schema v2 (`allow`/`deny`/`ignore` + revision/TTL) |
 | T-016 | DONE | Dynamic offender propagation (rate-limit ban sync) |

@@ -88,6 +88,11 @@ Recommended datasource: Prometheus.
 
 ## Runbook
 
+For full service/firewall/cache diagnostics beyond monitoring alerts, use:
+
+- `docs/TROUBLESHOOTING.md`
+- `nix-csf-triage` command bundle
+
 When alerts fire, run:
 
 ```bash

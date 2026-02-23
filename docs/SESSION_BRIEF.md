@@ -1,6 +1,6 @@
 # Session Brief
 
-Last updated: 2026-02-22  
+Last updated: 2026-02-23  
 Owner: PM/BA + Codex
 
 ## 1) Batch contract
@@ -75,6 +75,7 @@ Owner: PM/BA + Codex
 
 - Active ticket: `T-022` (`IN_PROGRESS`) — hybrid local-files + remote reconciliation contract.
 - Recently completed:
+  - `T-013` troubleshooting command set + runbook,
   - `T-018` country allow-by-port parity (`CC_ALLOW_PORTS`),
   - `T-017` ICMP policy profiles (legacy/off/safe/diagnostic/open + optional rate limits).
 - Validation model:
@@ -100,5 +101,17 @@ Owner: PM/BA + Codex
   - added port-allow metrics (`feature`, `set_entries`, `source_count`) and smoke coverage,
   - updated docs/examples/board artifacts for operator usage and ticket closure.
 - Validation evidence:
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `./scripts/validate-fast.sh`
+
+## 8) Batch TROUBLESHOOTING-RUNBOOK-013
+
+- Scope delivered:
+  - added operator snapshot command `nix-csf-triage` (`scripts/nix-csf-triage.sh`),
+  - packaged/installed triage tool through module + flake package outputs,
+  - added `docs/TROUBLESHOOTING.md` with symptom-driven command flows and handoff guidance,
+  - linked troubleshooting workflow from README/monitoring docs and closed board roadmap item.
+- Validation evidence:
+  - `bash -n scripts/nix-csf-triage.sh`
   - `bash -n scripts/nix-csf-apply.sh`
   - `./scripts/validate-fast.sh`

@@ -31,6 +31,7 @@ Kickoff baseline is implemented:
 - Auth token lifecycle with ordered rotation fallback (`*.authTokenFiles`)
 - Firewall coexistence profiles (`coexistence.profile`, including Docker coexist mode)
 - Monitoring pack assets (`docs/MONITORING.md`, Grafana dashboard, Prometheus alert rules)
+- Troubleshooting command bundle (`nix-csf-triage` + `docs/TROUBLESHOOTING.md`)
 - Structured run logs + optional Prometheus textfile metrics (`observability.*`)
 - Early boot apply + scheduled refresh via systemd
 - Module/release version source via `VERSION` (SemVer)
@@ -521,6 +522,12 @@ Suggested collaboration loop:
 2. Operator runs `./scripts/validate-capture.sh` for VM/full checks.
 3. If failing, share `*.summary.log` from `.artifacts/validate` for focused triage.
 
+Quick host troubleshooting bundle:
+
+```bash
+sudo nix-csf-triage --output /tmp/nix-csf-triage-$(date -u +%Y%m%dT%H%M%SZ).log
+```
+
 ## Versioning and releases
 
 - `VERSION` is the source of truth for module/project version.
@@ -555,6 +562,7 @@ Consumers can pin by tag:
 - Cluster control-plane retro/POC: `docs/CLUSTER_CONTROL_PLANE_POC.md`
 - Operator use-case catalog: `docs/USE_CASES.md`
 - Monitoring pack and runbook: `docs/MONITORING.md`
+- Troubleshooting command set/runbook: `docs/TROUBLESHOOTING.md`
 - Release/compatibility policy: `docs/RELEASE.md`
 - Delivery board: `docs/DELIVERY_BOARD.md`
 - Team rules: `docs/TEAM_OPERATING_RULES.md`

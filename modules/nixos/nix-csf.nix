@@ -110,6 +110,17 @@ let
     text = builtins.readFile ../../scripts/nix-csfctl.sh;
   };
 
+  triageTool = pkgs.writeShellApplication {
+    name = "nix-csf-triage";
+    runtimeInputs = with pkgs; [
+      coreutils
+      gnugrep
+      nftables
+      systemd
+    ];
+    text = builtins.readFile ../../scripts/nix-csf-triage.sh;
+  };
+
   runtimeConfigFile = (pkgs.formats.json { }).generate "nix-csf-runtime-config.json" {
     moduleVersion = cfg.moduleVersion;
     threatProfile = cfg.threatProfile;
@@ -1427,7 +1438,7 @@ in
     networking.firewall.enable = mkDefault false;
     boot.kernelModules = [ "nf_tables" ];
 
-    environment.systemPackages = [ applyTool ];
+    environment.systemPackages = [ applyTool triageTool ];
 
     systemd.tmpfiles.rules = [
       "d /var/lib/nix-csf 0750 root root -"

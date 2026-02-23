@@ -145,6 +145,7 @@
           } ''
             shellcheck \
               ${./scripts/nix-csf-apply.sh} \
+              ${./scripts/nix-csf-triage.sh} \
               ${./scripts/nix-csfctl.sh} \
               ${./scripts/validate.sh} \
               ${./scripts/validate-fast.sh} \
@@ -207,6 +208,11 @@
             name = "nix-csfctl";
             runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.jq ];
             text = builtins.readFile ./scripts/nix-csfctl.sh;
+          };
+          triage = pkgs.writeShellApplication {
+            name = "nix-csf-triage";
+            runtimeInputs = [ pkgs.coreutils pkgs.gnugrep pkgs.nftables pkgs.systemd ];
+            text = builtins.readFile ./scripts/nix-csf-triage.sh;
           };
           validate = pkgs.writeShellApplication {
             name = "nix-csf-validate";
