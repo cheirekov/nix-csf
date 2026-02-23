@@ -88,6 +88,14 @@ Kickoff baseline is implemented:
 }
 ```
 
+For a concrete migration-oriented server profile (global `80/443`, SSH `112` restricted to `BG`,
+Netdata integration, and imported legacy CSF local files), see:
+`examples/non-flake/test-server-bg-netdata-import.nix`.
+
+For the flake equivalent (same policy plus Nix-native LFD temporary bans with escalation to
+permanent deny), see:
+`examples/flake/test-server-bg-netdata-lfd/flake.nix`.
+
 For remote tarball usage:
 
 ```nix

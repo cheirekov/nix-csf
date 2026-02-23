@@ -584,3 +584,118 @@ sudo journalctl -u netdata -n 120 --no-pager
 ```
 
 For detailed chart/alarm mapping, see `docs/NETDATA.md`.
+
+## 18) Test server profile: global 80/443 + SSH 112 only from Bulgaria + Netdata + legacy CSF list import
+
+Use this when migrating from a legacy CSF host and you want:
+
+- public web ports (80/443) globally reachable,
+- SSH moved to TCP/112 and limited to Bulgaria (`BG`),
+- Netdata charts/alarms from `nix-csf` metrics,
+- existing `csf.allow/csf.deny/csf.ignore` merged as local overlays.
+
+### A) One-time import of legacy CSF files
+
+If your repository is checked out under `/srv/nix-csf` and contains:
+
+- `/srv/nix-csf/references/csf.allow`
+- `/srv/nix-csf/references/csf.deny`
+- `/srv/nix-csf/references/csf.ignore`
+
+run:
+
+```bash
+sudo mkdir -p /var/lib/nix-csf/imported
+sudo nix run "github:<org>/nix-csf#csf-import" -- \
+  --allow-file /srv/nix-csf/references/csf.allow \
+  --deny-file /srv/nix-csf/references/csf.deny \
+  --ignore-file /srv/nix-csf/references/csf.ignore \
+  --output-dir /var/lib/nix-csf/imported \
+  --prefix legacy-csf
+```
+
+Review conversion report:
+
+```bash
+sudo sed -n '1,120p' /var/lib/nix-csf/imported/legacy-csf-summary.log
+sudo sed -n '1,120p' /var/lib/nix-csf/imported/legacy-csf-unsupported.log
+```
+
+### B) NixOS configuration
+
+```nix
+{
+  services.openssh = {
+    enable = true;
+    ports = [ 112 ];
+  };
+
+  services.netdata.enable = true;
+
+  services.nixCsf = {
+    enable = true;
+    threatProfile = "custom";
+
+    # Public services.
+    openTCPPorts = [ 80 443 112 ];
+
+    # Restrict only SSH port 112 to Bulgaria.
+    country.portAllow = {
+      enable = true;
+      countries = [ "BG" ];
+      tcpPorts = [ 112 ];
+    };
+
+    # Imported legacy CSF overlays.
+    localFiles = {
+      enable = true;
+      failOnMissing = true;
+      allow = [ "/var/lib/nix-csf/imported/legacy-csf-allow.local" ];
+      deny = [ "/var/lib/nix-csf/imported/legacy-csf-deny.local" ];
+      ignore = [ "/var/lib/nix-csf/imported/legacy-csf-ignore.local" ];
+    };
+
+    # Required for Netdata mapping.
+    observability.metrics = {
+      enable = true;
+      outputFile = "/var/lib/nix-csf/metrics.prom";
+    };
+
+    netdata = {
+      enable = true;
+      updateEvery = 15;
+      installHealthAlarms = true;
+      alertRecipient = "sysadmin";
+    };
+
+    autoRefresh.onCalendar = "hourly";
+  };
+}
+```
+
+### C) Apply and verify
+
+```bash
+sudo nixos-rebuild switch
+sudo systemctl show -P Result nix-csf-apply.service
+sudo systemctl status netdata --no-pager
+sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.conf
+sudo nft list table inet nix_csf
+```
+
+Important operator note:
+
+- Do not cut over remote SSH access to port 112 until you confirm your current admin source IP is geolocated to `BG`.
+- Keep console/out-of-band access available during first rollout.
+
+### D) Flake equivalent with Nix-native LFD temp+permanent ban path
+
+Use:
+
+- `examples/flake/test-server-bg-netdata-lfd/flake.nix`
+
+This example adds:
+
+- `controlPlane.escalation.enable = true` for promotion from repeated temp bans to permanent deny,
+- `lfdDetector.enable = true` to monitor sshd journal failures and emit temp bans,
+- local `clusterPolicy` + `dynamicOffenders` URLs so both permanent and temporary ban sets are rendered.
