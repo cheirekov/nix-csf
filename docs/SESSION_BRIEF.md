@@ -240,3 +240,18 @@ Owner: PM/BA + Codex
 - Validation evidence:
   - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
   - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+
+## 16) Batch NETDATA-DISCOVERY-AND-PROCESS-HARDENING-033
+
+- Scope delivered:
+  - fixed `nix_csf` charts discovery by wiring charts.d to user-managed directory:
+    - generated `/etc/netdata/conf.d/charts.d.conf` with explicit `chartsd=/etc/netdata/conf.d/charts.d`,
+    - generated collector script `/etc/netdata/conf.d/charts.d/nix_csf.chart.sh`,
+    - generated collector config `/etc/netdata/conf.d/charts.d/nix_csf.conf`,
+  - updated runbooks/README to reflect actual Netdata file layout and checks,
+  - hardened team process rules for continuous engineering:
+    - mandatory same-batch docs + process artifact updates,
+    - mandatory regression guard in every production hotfix batch.
+- Validation evidence:
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`

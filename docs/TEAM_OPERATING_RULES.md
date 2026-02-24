@@ -27,10 +27,16 @@ Purpose: keep this firewall project moving with one clear lane at a time.
 7. New feature ideas go to triage; only `P0` and `P1` can interrupt active work.
 8. Before starting a batch, update `docs/SESSION_BRIEF.md`.
 9. A ticket is done only when code, docs, and validation evidence are aligned.
+10. Process guard is mandatory in continuous engineering mode:
+   - no code handoff without same-batch updates to `README.md` + relevant runbook docs,
+   - no status handoff without board/changelog/session updates,
+   - no exception for patch releases.
+11. Every production hotfix must add at least one regression guard (eval/test/assertion) in the same batch.
 
 ## Definition of done
 
 - Module code updated.
 - Documentation updated (README + relevant docs).
+- Process artifacts updated (`docs/DELIVERY_BOARD.md`, `docs/PM_BA_CHANGELOG.md`, `docs/SESSION_BRIEF.md`).
 - Ticket status updated in board.
 - Changelog entry includes risk impact and validation evidence.

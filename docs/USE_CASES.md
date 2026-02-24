@@ -580,6 +580,8 @@ the `nix_csf_*` metric surface.
 
 Generated Netdata files:
 
+- `/etc/netdata/conf.d/charts.d.conf`
+- `/etc/netdata/conf.d/charts.d/nix_csf.chart.sh`
 - `/etc/netdata/conf.d/charts.d/nix_csf.conf`
 - `/etc/netdata/conf.d/health.d/nix_csf.conf` (when `installHealthAlarms = true`)
 
@@ -587,6 +589,8 @@ Operational checks:
 
 ```bash
 sudo systemctl status netdata --no-pager
+sudo test -f /etc/netdata/conf.d/charts.d.conf
+sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.chart.sh
 sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.conf
 sudo netdatacli ping
 curl -sf http://127.0.0.1:19999/v3/ >/dev/null
@@ -699,6 +703,8 @@ sudo sed -n '1,120p' /var/lib/nix-csf/imported/legacy-csf-unsupported.log
 sudo nixos-rebuild switch
 sudo systemctl show -P Result nix-csf-apply.service
 sudo systemctl status netdata --no-pager
+sudo test -f /etc/netdata/conf.d/charts.d.conf
+sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.chart.sh
 sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.conf
 curl -sf http://127.0.0.1:19999/v3/ >/dev/null
 sudo -u netdata test -r /var/lib/nix-csf/metrics.prom

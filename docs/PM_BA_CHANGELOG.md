@@ -1,5 +1,32 @@
 # PM/BA Changelog
 
+## 2026-02-24 — Batch NETDATA-DISCOVERY-AND-PROCESS-HARDENING-033
+
+- Ticket(s): `T-033`
+- Summary:
+  - fixed Netdata charts.d discovery path so `nix_csf.chart.sh` is actually discovered and loaded:
+    - generate `/etc/netdata/conf.d/charts.d.conf` with `chartsd=/etc/netdata/conf.d/charts.d`,
+    - install generated collector script at `/etc/netdata/conf.d/charts.d/nix_csf.chart.sh`,
+    - keep generated collector parameters in `/etc/netdata/conf.d/charts.d/nix_csf.conf`,
+  - retained prior hotfixes:
+    - non-root metrics traversal (`/var/lib/nix-csf` mode `0751` when metrics enabled),
+    - Netdata service PATH includes netdata package binaries (`systemd-cat-native` availability),
+  - updated docs/runbooks to match real runtime wiring,
+  - hardened process rules for continuous engineering mode:
+    - mandatory same-batch docs + process artifact updates for all patches,
+    - mandatory regression guard for each production hotfix.
+- BA requirement mapping:
+  - closes the observed gap where Netdata UI was reachable but `nix_csf.*` charts were absent.
+- PM milestone mapping:
+  - production patch hardening and process discipline reinforcement.
+- Risk impact:
+  - `low` (monitoring-path change; no firewall policy semantics changed).
+- Validation evidence:
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+- Open follow-ups:
+  - add VM integration assertion that Netdata charts API exposes `nix_csf.run_status`.
+
 ## 2026-02-24 — Batch NETDATA-CHARTSD-PATH-032
 
 - Ticket(s): `T-032`

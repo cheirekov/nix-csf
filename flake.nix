@@ -188,7 +188,8 @@
           '';
           eval-netdata = pkgs.runCommand "nix-csf-eval-netdata" {
             netdataEnabled = boolText netdataEval.config.services.netdata.enable;
-            pluginPathCount = toString (builtins.length netdataEval.config.services.netdata.extraPluginPaths);
+            chartsMainConfig = netdataEval.config.services.netdata.configDir."charts.d.conf";
+            chartScript = netdataEval.config.services.netdata.configDir."charts.d/nix_csf.chart.sh";
             chartsConfig = netdataEval.config.services.netdata.configDir."charts.d/nix_csf.conf";
             healthConfig = netdataEval.config.services.netdata.configDir."health.d/nix_csf.conf";
             tmpfilesRules = builtins.concatStringsSep "\n" netdataEval.config.systemd.tmpfiles.rules;
@@ -196,10 +197,12 @@
             netdataPackagePath = toString netdataEval.config.services.netdata.package;
           } ''
             test "$netdataEnabled" = "true"
-            test "$pluginPathCount" -ge 1
+            test -e "$chartsMainConfig"
+            test -e "$chartScript"
             test -e "$chartsConfig"
             test -e "$healthConfig"
-            grep -Fq 'nix_csf_enabled=yes' "$chartsConfig"
+            grep -Fq 'chartsd=/etc/netdata/conf.d/charts.d' "$chartsMainConfig"
+            grep -Fq 'nix_csf=yes' "$chartsMainConfig"
             grep -Fq 'nix_csf_metrics_file=/var/lib/nix-csf/metrics.prom' "$chartsConfig"
             grep -Fq 'alarm: nix_csf_cluster_policy_cache_expired' "$healthConfig"
             grep -Fq 'alarm: nix_csf_dynamic_snapshot_expired' "$healthConfig"

@@ -75,6 +75,7 @@ No active `IN_PROGRESS` ticket (WIP slot available).
 | T-023 | DONE | Netdata monitoring integration |
 | T-031 | DONE | Netdata metrics readability hotfix (`/var/lib/nix-csf` traversal for non-root collectors) |
 | T-032 | DONE | Netdata charts.d execution hotfix (`systemd-cat-native` PATH wiring) |
+| T-033 | DONE | Netdata charts.d discovery fix + process hard-rule hardening |
 
 ## Triage protocol
 

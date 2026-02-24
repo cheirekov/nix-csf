@@ -612,7 +612,10 @@ Detailed runbook: `docs/FAIL2BAN_ADAPTER.md`.
 - Enabling `services.nixCsf.fail2banAdapter.enable = true` installs `nix-csf-fail2ban-action`
   and (by default) writes `/etc/fail2ban/action.d/<actionName>.local`.
 - Enabling `services.nixCsf.netdata.enable = true` installs generated Netdata integration files:
-  `/etc/netdata/conf.d/charts.d/nix_csf.conf` and (optionally) `/etc/netdata/conf.d/health.d/nix_csf.conf`.
+  `/etc/netdata/conf.d/charts.d.conf`,
+  `/etc/netdata/conf.d/charts.d/nix_csf.chart.sh`,
+  `/etc/netdata/conf.d/charts.d/nix_csf.conf`,
+  and (optionally) `/etc/netdata/conf.d/health.d/nix_csf.conf`.
 
 ## Validation
 

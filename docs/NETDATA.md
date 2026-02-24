@@ -1,6 +1,6 @@
 # Netdata Integration
 
-This document defines `T-023`: Netdata integration for `nix-csf`.
+This document defines `T-023` and follow-up hardening (`T-031`, `T-032`, `T-033`) for Netdata integration in `nix-csf`.
 
 ## Goal
 
@@ -10,7 +10,8 @@ Map existing `nix_csf_*` metrics to Netdata charts/alarms without adding a secon
 
 When `services.nixCsf.netdata.enable = true`:
 
-- Netdata `charts.d` collector plugin `nix_csf.chart.sh`
+- generated `charts.d` main config: `/etc/netdata/conf.d/charts.d.conf`
+- generated collector script: `/etc/netdata/conf.d/charts.d/nix_csf.chart.sh`
 - generated collector config: `/etc/netdata/conf.d/charts.d/nix_csf.conf`
 - generated alarm file (optional): `/etc/netdata/conf.d/health.d/nix_csf.conf`
 
@@ -89,6 +90,8 @@ Semantics are aligned with `docs/monitoring/prometheus-alert-rules.yml`.
 
 ```bash
 sudo systemctl status netdata --no-pager
+sudo test -f /etc/netdata/conf.d/charts.d.conf
+sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.chart.sh
 sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.conf
 sudo test -f /etc/netdata/conf.d/health.d/nix_csf.conf
 sudo netdatacli ping
@@ -119,3 +122,13 @@ Mitigation (if you are not yet on `T-032`):
   systemd.services.netdata.path = [ config.services.netdata.package ];
 }
 ```
+
+If logs show:
+
+- `charts.d.plugin: ... No charts to collect data from`
+
+then `charts.d.plugin` did not discover enabled modules. Ensure these files exist:
+
+- `/etc/netdata/conf.d/charts.d.conf`
+- `/etc/netdata/conf.d/charts.d/nix_csf.chart.sh`
+- `/etc/netdata/conf.d/charts.d/nix_csf.conf`
