@@ -262,6 +262,7 @@ services.nixCsf = {
 
   # Optional: Netdata mapping for nix-csf metrics.
   # Requires services.netdata.enable = true and observability.metrics.enable = true.
+  # If you want the local Netdata dashboard UI, use services.netdata.package = pkgs.netdataCloud.
   # netdata = {
   #   enable = true;
   #   updateEvery = 15;

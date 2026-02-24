@@ -24,11 +24,26 @@ Collector source of truth remains the existing textfile metrics from `services.n
 - `services.nixCsf.observability.metrics.enable = true`
 - metrics file path is absolute
 
+## Dashboard package note
+
+On some Nixpkgs revisions, `pkgs.netdata` can run agent/API without bundled dashboard files.
+If the UI returns `File does not exist, or is not accessible:`, switch to `pkgs.netdataCloud`.
+
 ## Example
 
 ```nix
+{ pkgs, ... }:
 {
-  services.netdata.enable = true;
+  services.netdata = {
+    enable = true;
+    package = pkgs.netdataCloud;
+    config.web = {
+      "bind to" = "tcp:0.0.0.0:19999";
+      # Restrict dashboard/badges to operator CIDRs.
+      "allow dashboard from" = "localhost 127.0.0.1 ::1 172.16.0.0/16";
+      "allow badges from" = "localhost 127.0.0.1 ::1 172.16.0.0/16";
+    };
+  };
 
   services.nixCsf = {
     enable = true;
@@ -77,10 +92,30 @@ sudo systemctl status netdata --no-pager
 sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.conf
 sudo test -f /etc/netdata/conf.d/health.d/nix_csf.conf
 sudo netdatacli ping
+curl -sf http://127.0.0.1:19999/v3/ >/dev/null
+# Verify netdata user can read nix-csf metrics file.
+sudo -u netdata test -r /var/lib/nix-csf/metrics.prom
 ```
 
 Check recent collector/alarm logs:
 
 ```bash
 sudo journalctl -u netdata -n 120 --no-pager
+```
+
+## Known failure mode (`systemd-cat-native: command not found`)
+
+If Netdata logs show:
+
+- `charts.d.plugin: ... systemd-cat-native: command not found`
+
+then `charts.d` collectors (including `nix_csf.chart.sh`) are disabled.
+
+Mitigation (if you are not yet on `T-032`):
+
+```nix
+{ config, ... }:
+{
+  systemd.services.netdata.path = [ config.services.netdata.package ];
+}
 ```

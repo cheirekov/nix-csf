@@ -1,6 +1,6 @@
 # Session Brief
 
-Last updated: 2026-02-23  
+Last updated: 2026-02-24  
 Owner: PM/BA + Codex
 
 ## 1) Batch contract
@@ -219,3 +219,24 @@ Owner: PM/BA + Codex
   - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
   - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.shellcheck" --print-build-logs`
   - `./scripts/validate-fast.sh`
+
+## 14) Batch NETDATA-METRICS-READABILITY-031
+
+- Scope delivered:
+  - fixed non-root collector access to `/var/lib/nix-csf/metrics.prom` by making parent directory traversal possible without directory listing (`/var/lib/nix-csf` -> `0751` when metrics are enabled),
+  - preserved cache directory protection (`/var/lib/nix-csf/cache` remains `0750 root:root`),
+  - added eval check coverage to guard tmpfiles mode for Netdata-enabled evaluation,
+  - updated Netdata and use-case runbooks with explicit `sudo -u netdata test -r /var/lib/nix-csf/metrics.prom` verification.
+- Validation evidence:
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+
+## 15) Batch NETDATA-CHARTSD-PATH-032
+
+- Scope delivered:
+  - fixed Netdata charts.d collector startup failure by extending `systemd.services.netdata.path` with `services.netdata.package` when `services.nixCsf.netdata.enable = true`,
+  - added eval guard that asserts netdata package path inclusion in service PATH for Netdata-enabled evaluation,
+  - documented known failure mode (`systemd-cat-native: command not found`) and mitigation in Netdata runbook.
+- Validation evidence:
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`

@@ -550,8 +550,17 @@ Use this when your host is already running Netdata and you want direct charts/al
 the `nix_csf_*` metric surface.
 
 ```nix
+{ pkgs, ... }:
 {
-  services.netdata.enable = true;
+  services.netdata = {
+    enable = true;
+    package = pkgs.netdataCloud;
+    config.web = {
+      "bind to" = "tcp:0.0.0.0:19999";
+      "allow dashboard from" = "localhost 127.0.0.1 ::1 172.16.0.0/16";
+      "allow badges from" = "localhost 127.0.0.1 ::1 172.16.0.0/16";
+    };
+  };
 
   services.nixCsf = {
     enable = true;
@@ -580,6 +589,8 @@ Operational checks:
 sudo systemctl status netdata --no-pager
 sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.conf
 sudo netdatacli ping
+curl -sf http://127.0.0.1:19999/v3/ >/dev/null
+sudo -u netdata test -r /var/lib/nix-csf/metrics.prom
 sudo journalctl -u netdata -n 120 --no-pager
 ```
 
@@ -624,13 +635,22 @@ sudo sed -n '1,120p' /var/lib/nix-csf/imported/legacy-csf-unsupported.log
 ### B) NixOS configuration
 
 ```nix
+{ pkgs, ... }:
 {
   services.openssh = {
     enable = true;
     ports = [ 112 ];
   };
 
-  services.netdata.enable = true;
+  services.netdata = {
+    enable = true;
+    package = pkgs.netdataCloud;
+    config.web = {
+      "bind to" = "tcp:0.0.0.0:19999";
+      "allow dashboard from" = "localhost 127.0.0.1 ::1 172.16.0.0/16";
+      "allow badges from" = "localhost 127.0.0.1 ::1 172.16.0.0/16";
+    };
+  };
 
   services.nixCsf = {
     enable = true;
@@ -680,6 +700,8 @@ sudo nixos-rebuild switch
 sudo systemctl show -P Result nix-csf-apply.service
 sudo systemctl status netdata --no-pager
 sudo test -f /etc/netdata/conf.d/charts.d/nix_csf.conf
+curl -sf http://127.0.0.1:19999/v3/ >/dev/null
+sudo -u netdata test -r /var/lib/nix-csf/metrics.prom
 sudo nft list table inet nix_csf
 ```
 

@@ -5,6 +5,7 @@ let
     hasPrefix
     mkDefault
     mkEnableOption
+    mkAfter
     mkIf
     mkMerge
     mkOption
@@ -363,6 +364,11 @@ let
   netdataMetricsFile =
     if cfg.netdata.metricsFile != null then cfg.netdata.metricsFile
     else cfg.observability.metrics.outputFile;
+
+  stateDirMode =
+    # Metrics files are often consumed by non-root collectors (Netdata/Prometheus textfile readers).
+    # Use execute-only for "others" to allow path traversal to a known file without directory listing.
+    if cfg.observability.metrics.enable then "0751" else "0750";
 
   netdataChartsPluginPackage = pkgs.runCommand "nix-csf-netdata-plugin" { } ''
     mkdir -p "$out/libexec/netdata/charts.d"
@@ -1976,6 +1982,10 @@ in
 
     services.netdata.extraPluginPaths = lib.optionals cfg.netdata.enable [ netdataChartsPluginPackage ];
 
+    # Netdata charts.d.plugin uses helper binaries from the netdata package (for example systemd-cat-native).
+    # Ensure they are in PATH so third-party charts (including nix_csf.chart.sh) can execute reliably.
+    systemd.services.netdata.path = mkIf cfg.netdata.enable (mkAfter [ config.services.netdata.package ]);
+
     services.netdata.configDir = mkMerge [
       (mkIf cfg.netdata.enable {
         "charts.d/nix_csf.conf" = pkgs.writeText "nix-csf-netdata.conf" netdataCollectorConfigText;
@@ -1986,7 +1996,7 @@ in
     ];
 
     systemd.tmpfiles.rules = [
-      "d /var/lib/nix-csf 0750 root root -"
+      "d /var/lib/nix-csf ${stateDirMode} root root -"
       "d /var/lib/nix-csf/cache 0750 root root -"
     ];
 

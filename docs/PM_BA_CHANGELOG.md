@@ -1,5 +1,45 @@
 # PM/BA Changelog
 
+## 2026-02-24 — Batch NETDATA-CHARTSD-PATH-032
+
+- Ticket(s): `T-032`
+- Summary:
+  - fixed Netdata charts.d execution failure where logs reported `systemd-cat-native: command not found`,
+  - root cause: Netdata service `PATH` omitted `services.netdata.package/bin` even though helper binary existed in package output,
+  - module now appends `config.services.netdata.package` to `systemd.services.netdata.path` when `services.nixCsf.netdata.enable = true`,
+  - added eval guard that asserts Netdata package path is present in service PATH under Netdata-enabled evaluation.
+- BA requirement mapping:
+  - restores practical visibility of `nix_csf.*` charts in Netdata dashboards.
+- PM milestone mapping:
+  - release-candidate hardening: monitoring collector execution reliability.
+- Risk impact:
+  - `low` (PATH extension only; no firewall policy change).
+- Validation evidence:
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+- Open follow-ups:
+  - add VM integration assertion for charts API presence (`nix_csf.run_status`).
+
+## 2026-02-24 — Batch NETDATA-METRICS-READABILITY-031
+
+- Ticket(s): `T-031`
+- Summary:
+  - fixed Netdata collector visibility gap where `nix-csf` metrics existed but Netdata charts were missing,
+  - changed `/var/lib/nix-csf` tmpfiles mode to `0751` when `observability.metrics.enable = true` so non-root collectors can traverse to a known metrics file path,
+  - kept `cache` directory at `0750` (`root:root`) to avoid broadening cache visibility,
+  - added an eval guard to ensure Netdata-enabled evaluation keeps the expected tmpfiles rule.
+- BA requirement mapping:
+  - ensures Netdata integration is operational in real deployments, not only UI-visible.
+- PM milestone mapping:
+  - release-candidate hardening: monitoring path reliability.
+- Risk impact:
+  - `low` (directory listing for `/var/lib/nix-csf` remains blocked for non-root users; only path traversal is opened).
+- Validation evidence:
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
+  - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+- Open follow-ups:
+  - add VM/runtime integration assertion that Netdata user can read `metrics.prom` and charts appear.
+
 ## 2026-02-19 — Batch KICKOFF-001
 
 - Ticket(s): `T-000`, `T-001`

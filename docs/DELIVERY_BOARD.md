@@ -1,6 +1,6 @@
 # DELIVERY BOARD — nix-csf
 
-Last updated: 2026-02-23  
+Last updated: 2026-02-24  
 Owner: PM/BA + Security Architect + Nix Module Engineer
 
 ## North Star
@@ -73,6 +73,8 @@ No active `IN_PROGRESS` ticket (WIP slot available).
 | T-029 | DONE | LFD-like detector POC (Nix-native) |
 | T-030 | DONE | fail2ban adapter/coexistence profile |
 | T-023 | DONE | Netdata monitoring integration |
+| T-031 | DONE | Netdata metrics readability hotfix (`/var/lib/nix-csf` traversal for non-root collectors) |
+| T-032 | DONE | Netdata charts.d execution hotfix (`systemd-cat-native` PATH wiring) |
 
 ## Triage protocol
 

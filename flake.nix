@@ -191,6 +191,9 @@
             pluginPathCount = toString (builtins.length netdataEval.config.services.netdata.extraPluginPaths);
             chartsConfig = netdataEval.config.services.netdata.configDir."charts.d/nix_csf.conf";
             healthConfig = netdataEval.config.services.netdata.configDir."health.d/nix_csf.conf";
+            tmpfilesRules = builtins.concatStringsSep "\n" netdataEval.config.systemd.tmpfiles.rules;
+            servicePathEntries = builtins.concatStringsSep "\n" (map toString netdataEval.config.systemd.services.netdata.path);
+            netdataPackagePath = toString netdataEval.config.services.netdata.package;
           } ''
             test "$netdataEnabled" = "true"
             test "$pluginPathCount" -ge 1
@@ -200,6 +203,8 @@
             grep -Fq 'nix_csf_metrics_file=/var/lib/nix-csf/metrics.prom' "$chartsConfig"
             grep -Fq 'alarm: nix_csf_cluster_policy_cache_expired' "$healthConfig"
             grep -Fq 'alarm: nix_csf_dynamic_snapshot_expired' "$healthConfig"
+            printf '%s\n' "$tmpfilesRules" | grep -Fq 'd /var/lib/nix-csf 0751 root root -'
+            printf '%s\n' "$servicePathEntries" | grep -Fqx "$netdataPackagePath"
             touch "$out"
           '';
           eval-control-plane = pkgs.runCommand "nix-csf-eval-control-plane" {

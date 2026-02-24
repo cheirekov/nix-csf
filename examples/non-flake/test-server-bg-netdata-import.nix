@@ -1,4 +1,4 @@
-{ ... }:
+{ pkgs, ... }:
 {
   imports = [
     /path/to/nix-csf
@@ -9,7 +9,16 @@
     ports = [ 112 ];
   };
 
-  services.netdata.enable = true;
+  services.netdata = {
+    enable = true;
+    package = pkgs.netdataCloud;
+    config.web = {
+      "bind to" = "tcp:0.0.0.0:19999";
+      # Restrict dashboard/badges to operator CIDRs only.
+      "allow dashboard from" = "localhost 127.0.0.1 ::1 172.16.0.0/16";
+      "allow badges from" = "localhost 127.0.0.1 ::1 172.16.0.0/16";
+    };
+  };
 
   services.nixCsf = {
     enable = true;
