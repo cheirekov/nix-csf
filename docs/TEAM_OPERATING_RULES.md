@@ -32,6 +32,12 @@ Purpose: keep this firewall project moving with one clear lane at a time.
    - no status handoff without board/changelog/session updates,
    - no exception for patch releases.
 11. Every production hotfix must add at least one regression guard (eval/test/assertion) in the same batch.
+12. Validation lanes are split and mandatory:
+   - Agent lane: `./scripts/validate-agent.sh` only (no `nix build`).
+   - Operator lane: `./scripts/validate-capture.sh` (full `nix build` + VM checks).
+13. Ticket closure requires operator evidence for full validation:
+   - either `[nix-csf] validation succeeded`,
+   - or failure summary log path from `.artifacts/validate/*-summary.log`.
 
 ## Definition of done
 
@@ -40,3 +46,13 @@ Purpose: keep this firewall project moving with one clear lane at a time.
 - Process artifacts updated (`docs/DELIVERY_BOARD.md`, `docs/PM_BA_CHANGELOG.md`, `docs/SESSION_BRIEF.md`).
 - Ticket status updated in board.
 - Changelog entry includes risk impact and validation evidence.
+
+## Continuous engineering handoff checklist
+
+Before any handoff response:
+
+1. `Code`: feature/hotfix changes applied.
+2. `Docs`: README + feature runbook updated in same batch.
+3. `Process`: board + changelog + session brief updated.
+4. `Guard`: at least one eval/test/assertion added or updated for the changed behavior.
+5. `Operator`: provide exact verification commands for production users.

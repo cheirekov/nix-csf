@@ -16,14 +16,31 @@ Imported directly:
 - ipset-style lines:
   - `add <set> <cidr>`
   - `ipset add <set> <cidr>`
+- safe CSF advanced allow subset:
+  - `tcp|in|d=<port_or_range>|s=<ip_or_cidr>`
+  - `udp|in|d=<port_or_range>|s=<ip_or_cidr>`
 
 Reported as unsupported:
 
-- CSF advanced rules with pipe syntax (for example `tcp|in|d=22|s=1.2.3.4`)
+- CSF advanced rules outside the safe subset above (for example outbound direction or ambiguous fields)
 - `Include ...` directives
 - unknown/unparseable tokens
 
 Unsupported entries are written to a report with line numbers for manual conversion.
+
+Deduplication behavior:
+
+- import outputs (`*.local`) are de-duplicated (`sort -u`),
+- apply pipeline de-duplicates merged overlays again before nft rendering.
+- apply pipeline also emits deterministic local-list audit artifacts:
+  - `/var/lib/nix-csf/local-list-audit-summary.tsv` (duplicate/overlap counts),
+  - `/var/lib/nix-csf/local-list-conflicts.tsv` (exact CIDR overlaps across allow/deny/ignore).
+
+Conflict precedence reminder:
+
+- exact overlaps across semantic lists are resolved by runtime precedence:
+  - `deny` overrides `allow`,
+  - `ignore` removes deny-style enforcement and is promoted into effective allow.
 
 ## Command
 

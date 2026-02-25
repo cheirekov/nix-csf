@@ -273,6 +273,7 @@
 203.0.113.1
 add allow_set 203.0.113.2/32
 tcp|in|d=22|s=198.51.100.10
+tcp|out|d=80|s=198.51.100.11
 Include /root/custom.allow
 EOF
 
@@ -301,11 +302,13 @@ EOF
             test -s "$outdir/fixture-nixos-localFiles-snippet.nix"
             grep -qx '203.0.113.1' "$outdir/fixture-allow.local"
             grep -qx '203.0.113.2/32' "$outdir/fixture-allow.local"
+            grep -qx 'tcp|in|d=22|s=198.51.100.10' "$outdir/fixture-allow.local"
             grep -qx '198.51.100.20' "$outdir/fixture-deny.local"
             grep -qx '198.51.100.21/32' "$outdir/fixture-deny.local"
             grep -qx '2001:db8::1' "$outdir/fixture-ignore.local"
             grep -Fq 'advanced_port_rule' "$outdir/fixture-unsupported.log"
             grep -Fq 'include_directive' "$outdir/fixture-unsupported.log"
+            grep -Fq 'parsed_advanced_port_rules: 1' "$outdir/fixture-summary.log"
 
             set +e
             ${pkgs.bash}/bin/bash ${./scripts/nix-csf-import-csf.sh} \

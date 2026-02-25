@@ -140,6 +140,170 @@ normalize_cidrs() {
   grep -E '^[0-9A-Fa-f:]+(/[0-9]{1,3})?$' "${TMP_DIR}/_normalized.txt" | grep ':' > "${out_v6}" || true
 }
 
+extract_local_allow_port_rules() {
+  local in_file="$1"
+  local out_file="$2"
+  local raw_file="${TMP_DIR}/local-allow-port-rules.raw"
+  local invalid_file="${TMP_DIR}/local-allow-port-rules.invalid"
+  local invalid_count
+
+  : > "${raw_file}"
+  : > "${invalid_file}"
+
+  if [[ ! -s "${in_file}" ]]; then
+    : > "${out_file}"
+    return 0
+  fi
+
+  awk \
+    -v invalid="${invalid_file}" '
+    function trim(str) {
+      sub(/^[ \t]+/, "", str);
+      sub(/[ \t]+$/, "", str);
+      return str;
+    }
+    function emit_invalid(reason, raw_line) {
+      printf "%s\t%s\n", reason, raw_line >> invalid;
+    }
+    function normalize_port_expr(expr,    range_parts, count, first, last) {
+      if (expr ~ /^[0-9]{1,5}$/) {
+        first = expr + 0;
+        last = first;
+      } else if (expr ~ /^[0-9]{1,5}:[0-9]{1,5}$/) {
+        count = split(expr, range_parts, ":");
+        if (count != 2) return "";
+        first = range_parts[1] + 0;
+        last = range_parts[2] + 0;
+      } else {
+        return "";
+      }
+
+      if (first < 1 || first > 65535 || last < 1 || last > 65535 || first > last) {
+        return "";
+      }
+
+      return first "|" last;
+    }
+    {
+      raw = $0;
+      gsub(/\r/, "", raw);
+      work = raw;
+      sub(/#.*/, "", work);
+      sub(/;.*/, "", work);
+      work = trim(work);
+      if (work == "") next;
+
+      if (work !~ /^(tcp|udp)\|/) next;
+
+      part_count = split(work, parts, /\|/);
+      if (part_count < 4) {
+        emit_invalid("advanced_port_rule", raw);
+        next;
+      }
+
+      proto = tolower(trim(parts[1]));
+      direction = tolower(trim(parts[2]));
+      if (direction != "in") {
+        emit_invalid("advanced_port_rule", raw);
+        next;
+      }
+
+      source = "";
+      destination = "";
+      invalid_rule = 0;
+
+      for (i = 3; i <= part_count; i++) {
+        segment = trim(parts[i]);
+        if (segment == "") continue;
+        split_pos = index(segment, "=");
+        if (split_pos == 0) {
+          invalid_rule = 1;
+          continue;
+        }
+
+        key = tolower(trim(substr(segment, 1, split_pos - 1)));
+        value = trim(substr(segment, split_pos + 1));
+        if (value == "") {
+          invalid_rule = 1;
+          continue;
+        }
+
+        if (key == "s") {
+          if (source != "") {
+            invalid_rule = 1;
+          } else {
+            source = value;
+          }
+        } else if (key == "d") {
+          if (destination != "") {
+            invalid_rule = 1;
+          } else {
+            destination = value;
+          }
+        } else {
+          invalid_rule = 1;
+        }
+      }
+
+      if (invalid_rule || source == "" || destination == "") {
+        emit_invalid("advanced_port_rule", raw);
+        next;
+      }
+
+      is_ipv4 = (source ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}(\/[0-9]{1,2})?$/);
+      is_ipv6 = (source ~ /^[0-9A-Fa-f:]+(\/[0-9]{1,3})?$/ && index(source, ":") > 0);
+      if (!is_ipv4 && !is_ipv6) {
+        emit_invalid("advanced_port_rule", raw);
+        next;
+      }
+
+      normalized_port_range = normalize_port_expr(destination);
+      if (normalized_port_range == "") {
+        emit_invalid("advanced_port_rule", raw);
+        next;
+      }
+
+      split(normalized_port_range, range_parts, /\|/);
+      family = is_ipv4 ? "ipv4" : "ipv6";
+      printf "%s\t%s\t%s\t%s\t%s\n", proto, family, source, range_parts[1], range_parts[2];
+    }
+  ' "${in_file}" > "${raw_file}"
+
+  sort_unique "${raw_file}" "${out_file}"
+
+  invalid_count="$(count_file_lines "${invalid_file}")"
+  if [[ "${invalid_count}" != "0" ]]; then
+    warn "localFiles.allow contains unsupported advanced port rules; skipped ${invalid_count} entries"
+  fi
+}
+
+emit_local_allow_port_rules() {
+  local source_file="$1"
+  local protocol family source port_start port_end port_expr
+
+  if [[ ! -s "${source_file}" ]]; then
+    return 0
+  fi
+
+  while IFS=$'\t' read -r protocol family source port_start port_end; do
+    if [[ -z "${protocol}" || -z "${family}" || -z "${source}" || -z "${port_start}" || -z "${port_end}" ]]; then
+      continue
+    fi
+
+    if [[ "${port_start}" == "${port_end}" ]]; then
+      port_expr="${port_start}"
+    else
+      port_expr="${port_start}-${port_end}"
+    fi
+
+    if [[ "${family}" == "ipv4" ]]; then
+      printf '    ip saddr %s %s dport %s accept\n' "${source}" "${protocol}" "${port_expr}"
+    else
+      printf '    ip6 saddr %s %s dport %s accept\n' "${source}" "${protocol}" "${port_expr}"
+    fi
+  done < "${source_file}"
+}
+
 sort_unique() {
   local in_file="$1"
   local out_file="$2"
@@ -147,6 +311,153 @@ sort_unique() {
     sort -u "${in_file}" > "${out_file}"
   else
     : > "${out_file}"
+  fi
+}
+
+count_duplicate_entries() {
+  local in_file="$1"
+
+  if [[ ! -s "${in_file}" ]]; then
+    echo "0"
+    return 0
+  fi
+
+  awk '
+    NF {
+      counts[$0]++
+    }
+    END {
+      duplicate_count = 0
+      for (entry in counts) {
+        if (counts[entry] > 1) {
+          duplicate_count += (counts[entry] - 1)
+        }
+      }
+      print duplicate_count + 0
+    }
+  ' "${in_file}"
+}
+
+intersect_sorted_unique() {
+  local file_a="$1"
+  local file_b="$2"
+  local out_file="$3"
+
+  if [[ -s "${file_a}" && -s "${file_b}" ]]; then
+    comm -12 "${file_a}" "${file_b}" > "${out_file}"
+  else
+    : > "${out_file}"
+  fi
+}
+
+append_intersection_conflicts() {
+  local family="$1"
+  local pair="$2"
+  local resolution="$3"
+  local source_file="$4"
+  local target_file="$5"
+
+  if [[ ! -s "${source_file}" ]]; then
+    return 0
+  fi
+
+  awk \
+    -v family="${family}" \
+    -v pair="${pair}" \
+    -v resolution="${resolution}" '
+    NF {
+      printf "%s\t%s\t%s\t%s\n", family, $0, pair, resolution
+    }
+  ' "${source_file}" >> "${target_file}"
+}
+
+generate_local_list_audit_reports() {
+  local summary_tmp="${TMP_DIR}/local-list-audit-summary.tsv"
+  local conflicts_tmp="${TMP_DIR}/local-list-conflicts.tsv"
+  local summary_out="${STATE_DIR}/local-list-audit-summary.tsv"
+  local conflicts_out="${STATE_DIR}/local-list-conflicts.tsv"
+  local allow_deny_v4_file="${TMP_DIR}/local-overlap-allow-deny-v4.txt"
+  local allow_deny_v6_file="${TMP_DIR}/local-overlap-allow-deny-v6.txt"
+  local allow_ignore_v4_file="${TMP_DIR}/local-overlap-allow-ignore-v4.txt"
+  local allow_ignore_v6_file="${TMP_DIR}/local-overlap-allow-ignore-v6.txt"
+  local deny_ignore_v4_file="${TMP_DIR}/local-overlap-deny-ignore-v4.txt"
+  local deny_ignore_v6_file="${TMP_DIR}/local-overlap-deny-ignore-v6.txt"
+
+  local_allow_dup_v4_count="$(count_duplicate_entries "${TMP_DIR}/local-allow-v4.norm")"
+  local_allow_dup_v6_count="$(count_duplicate_entries "${TMP_DIR}/local-allow-v6.norm")"
+  local_deny_dup_v4_count="$(count_duplicate_entries "${TMP_DIR}/local-deny-v4.norm")"
+  local_deny_dup_v6_count="$(count_duplicate_entries "${TMP_DIR}/local-deny-v6.norm")"
+  local_ignore_dup_v4_count="$(count_duplicate_entries "${TMP_DIR}/local-ignore-v4.norm")"
+  local_ignore_dup_v6_count="$(count_duplicate_entries "${TMP_DIR}/local-ignore-v6.norm")"
+
+  intersect_sorted_unique "${TMP_DIR}/local-allow-v4.txt" "${TMP_DIR}/local-deny-v4.txt" "${allow_deny_v4_file}"
+  intersect_sorted_unique "${TMP_DIR}/local-allow-v6.txt" "${TMP_DIR}/local-deny-v6.txt" "${allow_deny_v6_file}"
+  intersect_sorted_unique "${TMP_DIR}/local-allow-v4.txt" "${TMP_DIR}/local-ignore-v4.txt" "${allow_ignore_v4_file}"
+  intersect_sorted_unique "${TMP_DIR}/local-allow-v6.txt" "${TMP_DIR}/local-ignore-v6.txt" "${allow_ignore_v6_file}"
+  intersect_sorted_unique "${TMP_DIR}/local-deny-v4.txt" "${TMP_DIR}/local-ignore-v4.txt" "${deny_ignore_v4_file}"
+  intersect_sorted_unique "${TMP_DIR}/local-deny-v6.txt" "${TMP_DIR}/local-ignore-v6.txt" "${deny_ignore_v6_file}"
+
+  local_overlap_allow_deny_v4_count="$(count_file_lines "${allow_deny_v4_file}")"
+  local_overlap_allow_deny_v6_count="$(count_file_lines "${allow_deny_v6_file}")"
+  local_overlap_allow_ignore_v4_count="$(count_file_lines "${allow_ignore_v4_file}")"
+  local_overlap_allow_ignore_v6_count="$(count_file_lines "${allow_ignore_v6_file}")"
+  local_overlap_deny_ignore_v4_count="$(count_file_lines "${deny_ignore_v4_file}")"
+  local_overlap_deny_ignore_v6_count="$(count_file_lines "${deny_ignore_v6_file}")"
+
+  local_duplicate_total_count="$(( \
+    local_allow_dup_v4_count + local_allow_dup_v6_count + \
+    local_deny_dup_v4_count + local_deny_dup_v6_count + \
+    local_ignore_dup_v4_count + local_ignore_dup_v6_count \
+  ))"
+
+  local_overlap_total_count="$(( \
+    local_overlap_allow_deny_v4_count + local_overlap_allow_deny_v6_count + \
+    local_overlap_allow_ignore_v4_count + local_overlap_allow_ignore_v6_count + \
+    local_overlap_deny_ignore_v4_count + local_overlap_deny_ignore_v6_count \
+  ))"
+
+  {
+    echo "# generated by nix-csf"
+    echo -e "kind\tfamily\tscope\tcount"
+    printf "duplicate\tipv4\tallow\t%s\n" "${local_allow_dup_v4_count}"
+    printf "duplicate\tipv6\tallow\t%s\n" "${local_allow_dup_v6_count}"
+    printf "duplicate\tipv4\tdeny\t%s\n" "${local_deny_dup_v4_count}"
+    printf "duplicate\tipv6\tdeny\t%s\n" "${local_deny_dup_v6_count}"
+    printf "duplicate\tipv4\tignore\t%s\n" "${local_ignore_dup_v4_count}"
+    printf "duplicate\tipv6\tignore\t%s\n" "${local_ignore_dup_v6_count}"
+    printf "overlap\tipv4\tallow_deny\t%s\n" "${local_overlap_allow_deny_v4_count}"
+    printf "overlap\tipv6\tallow_deny\t%s\n" "${local_overlap_allow_deny_v6_count}"
+    printf "overlap\tipv4\tallow_ignore\t%s\n" "${local_overlap_allow_ignore_v4_count}"
+    printf "overlap\tipv6\tallow_ignore\t%s\n" "${local_overlap_allow_ignore_v6_count}"
+    printf "overlap\tipv4\tdeny_ignore\t%s\n" "${local_overlap_deny_ignore_v4_count}"
+    printf "overlap\tipv6\tdeny_ignore\t%s\n" "${local_overlap_deny_ignore_v6_count}"
+    printf "total\tall\tduplicates\t%s\n" "${local_duplicate_total_count}"
+    printf "total\tall\toverlaps\t%s\n" "${local_overlap_total_count}"
+  } > "${summary_tmp}"
+
+  {
+    echo "# generated by nix-csf"
+    echo -e "family\tentry\tpair\tresolution"
+  } > "${conflicts_tmp}"
+
+  append_intersection_conflicts "ipv4" "allow_deny" "deny_precedes_allow" "${allow_deny_v4_file}" "${conflicts_tmp}"
+  append_intersection_conflicts "ipv6" "allow_deny" "deny_precedes_allow" "${allow_deny_v6_file}" "${conflicts_tmp}"
+  append_intersection_conflicts "ipv4" "allow_ignore" "ignore_promotes_allow" "${allow_ignore_v4_file}" "${conflicts_tmp}"
+  append_intersection_conflicts "ipv6" "allow_ignore" "ignore_promotes_allow" "${allow_ignore_v6_file}" "${conflicts_tmp}"
+  append_intersection_conflicts "ipv4" "deny_ignore" "ignore_removes_deny" "${deny_ignore_v4_file}" "${conflicts_tmp}"
+  append_intersection_conflicts "ipv6" "deny_ignore" "ignore_removes_deny" "${deny_ignore_v6_file}" "${conflicts_tmp}"
+
+  install -m 0640 "${summary_tmp}" "${summary_out}"
+  install -m 0640 "${conflicts_tmp}" "${conflicts_out}"
+
+  log_event "stdout" "info" "local_list_audit" \
+    "duplicates_total=${local_duplicate_total_count}" \
+    "overlaps_total=${local_overlap_total_count}" \
+    "summary=${summary_out}" \
+    "conflicts=${conflicts_out}"
+
+  if [[ "${local_files_enabled}" == "true" && ( "${local_duplicate_total_count}" != "0" || "${local_overlap_total_count}" != "0" ) ]]; then
+    warn "local list audit found duplicates=${local_duplicate_total_count}, overlaps=${local_overlap_total_count}; see ${summary_out} and ${conflicts_out}"
   fi
 }
 
@@ -679,6 +990,7 @@ write_metrics() {
     printf 'nix_csf_feature_enabled{feature="country_port_allow"} %s\n' "$(bool_to_num "${country_port_allow_enabled}")"
     printf 'nix_csf_feature_enabled{feature="blocklists"} %s\n' "$(bool_to_num "${blocklists_enabled}")"
     printf 'nix_csf_feature_enabled{feature="local_files"} %s\n' "$(bool_to_num "${local_files_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="local_allow_port_rules"} %s\n' "$(bool_to_num "${local_allow_port_rules_enabled}")"
     printf 'nix_csf_feature_enabled{feature="cluster_policy"} %s\n' "$(bool_to_num "${cluster_policy_enabled}")"
     printf 'nix_csf_feature_enabled{feature="dynamic_offenders"} %s\n' "$(bool_to_num "${dynamic_offenders_enabled}")"
     printf 'nix_csf_feature_enabled{feature="coexist_docker"} %s\n' "$(bool_to_num "${coexistence_docker_enabled}")"
@@ -745,6 +1057,7 @@ write_metrics() {
     printf 'nix_csf_set_entries{set="feed_ipv6"} %s\n' "${feed_v6_count}"
     printf 'nix_csf_set_entries{set="local_allow_ipv4"} %s\n' "${local_allow_v4_count}"
     printf 'nix_csf_set_entries{set="local_allow_ipv6"} %s\n' "${local_allow_v6_count}"
+    printf 'nix_csf_set_entries{set="local_allow_port_rules"} %s\n' "${local_allow_port_rule_count}"
     printf 'nix_csf_set_entries{set="local_deny_ipv4"} %s\n' "${local_deny_v4_count}"
     printf 'nix_csf_set_entries{set="local_deny_ipv6"} %s\n' "${local_deny_v6_count}"
     printf 'nix_csf_set_entries{set="local_ignore_ipv4"} %s\n' "${local_ignore_v4_count}"
@@ -759,6 +1072,22 @@ write_metrics() {
     printf 'nix_csf_set_entries{set="cluster_ignore_ipv6"} %s\n' "${cluster_ignore_v6_count}"
     printf 'nix_csf_set_entries{set="dynamic_ban_ipv4"} %s\n' "${dynamic_ban_v4_count}"
     printf 'nix_csf_set_entries{set="dynamic_ban_ipv6"} %s\n' "${dynamic_ban_v6_count}"
+    echo "# HELP nix_csf_local_list_duplicates Number of duplicate local list entries removed during dedupe."
+    echo "# TYPE nix_csf_local_list_duplicates gauge"
+    printf 'nix_csf_local_list_duplicates{role="allow",family="ipv4"} %s\n' "${local_allow_dup_v4_count}"
+    printf 'nix_csf_local_list_duplicates{role="allow",family="ipv6"} %s\n' "${local_allow_dup_v6_count}"
+    printf 'nix_csf_local_list_duplicates{role="deny",family="ipv4"} %s\n' "${local_deny_dup_v4_count}"
+    printf 'nix_csf_local_list_duplicates{role="deny",family="ipv6"} %s\n' "${local_deny_dup_v6_count}"
+    printf 'nix_csf_local_list_duplicates{role="ignore",family="ipv4"} %s\n' "${local_ignore_dup_v4_count}"
+    printf 'nix_csf_local_list_duplicates{role="ignore",family="ipv6"} %s\n' "${local_ignore_dup_v6_count}"
+    echo "# HELP nix_csf_local_list_overlaps Number of exact-CIDR overlaps across local allow/deny/ignore roles."
+    echo "# TYPE nix_csf_local_list_overlaps gauge"
+    printf 'nix_csf_local_list_overlaps{pair="allow_deny",family="ipv4"} %s\n' "${local_overlap_allow_deny_v4_count}"
+    printf 'nix_csf_local_list_overlaps{pair="allow_deny",family="ipv6"} %s\n' "${local_overlap_allow_deny_v6_count}"
+    printf 'nix_csf_local_list_overlaps{pair="allow_ignore",family="ipv4"} %s\n' "${local_overlap_allow_ignore_v4_count}"
+    printf 'nix_csf_local_list_overlaps{pair="allow_ignore",family="ipv6"} %s\n' "${local_overlap_allow_ignore_v6_count}"
+    printf 'nix_csf_local_list_overlaps{pair="deny_ignore",family="ipv4"} %s\n' "${local_overlap_deny_ignore_v4_count}"
+    printf 'nix_csf_local_list_overlaps{pair="deny_ignore",family="ipv6"} %s\n' "${local_overlap_deny_ignore_v6_count}"
     echo "# HELP nix_csf_source_count Number of configured source identifiers."
     echo "# TYPE nix_csf_source_count gauge"
     printf 'nix_csf_source_count{source="country_codes"} %s\n' "${#country_codes[@]}"
@@ -971,6 +1300,20 @@ mapfile -t local_ignore_files < <(jq -r '.localFiles.ignore[]?' "${CONFIG_FILE}"
 local_allow_source_count="0"
 local_deny_source_count="0"
 local_ignore_source_count="0"
+local_allow_dup_v4_count="0"
+local_allow_dup_v6_count="0"
+local_deny_dup_v4_count="0"
+local_deny_dup_v6_count="0"
+local_ignore_dup_v4_count="0"
+local_ignore_dup_v6_count="0"
+local_overlap_allow_deny_v4_count="0"
+local_overlap_allow_deny_v6_count="0"
+local_overlap_allow_ignore_v4_count="0"
+local_overlap_allow_ignore_v6_count="0"
+local_overlap_deny_ignore_v4_count="0"
+local_overlap_deny_ignore_v6_count="0"
+local_duplicate_total_count="0"
+local_overlap_total_count="0"
 
 if [[ "${local_files_enabled}" == "true" ]]; then
   local_allow_source_count="${#local_allow_files[@]}"
@@ -996,6 +1339,8 @@ if [[ "${local_files_enabled}" == "true" ]]; then
   done
 fi
 
+extract_local_allow_port_rules "${TMP_DIR}/local-allow.raw" "${TMP_DIR}/local-allow-port-rules.txt"
+
 normalize_cidrs "${TMP_DIR}/allow-v4.raw" "${TMP_DIR}/allow-v4.norm" "${TMP_DIR}/allow-v4.ignore"
 normalize_cidrs "${TMP_DIR}/allow-v6.raw" "${TMP_DIR}/allow-v6.ignore" "${TMP_DIR}/allow-v6.norm"
 normalize_cidrs "${TMP_DIR}/deny-v4.raw" "${TMP_DIR}/deny-v4.norm" "${TMP_DIR}/deny-v4.ignore"
@@ -1016,6 +1361,8 @@ sort_unique "${TMP_DIR}/local-deny-v4.norm" "${TMP_DIR}/local-deny-v4.txt"
 sort_unique "${TMP_DIR}/local-deny-v6.norm" "${TMP_DIR}/local-deny-v6.txt"
 sort_unique "${TMP_DIR}/local-ignore-v4.norm" "${TMP_DIR}/local-ignore-v4.txt"
 sort_unique "${TMP_DIR}/local-ignore-v6.norm" "${TMP_DIR}/local-ignore-v6.txt"
+
+generate_local_list_audit_reports
 
 merge_sorted_overlay "${TMP_DIR}/allow-v4.txt" "${TMP_DIR}/local-allow-v4.txt"
 merge_sorted_overlay "${TMP_DIR}/allow-v6.txt" "${TMP_DIR}/local-allow-v6.txt"
@@ -1512,6 +1859,7 @@ feed_v4_count="$(count_file_lines "${TMP_DIR}/feeds-v4.txt")"
 feed_v6_count="$(count_file_lines "${TMP_DIR}/feeds-v6.txt")"
 local_allow_v4_count="$(count_file_lines "${TMP_DIR}/local-allow-v4.txt")"
 local_allow_v6_count="$(count_file_lines "${TMP_DIR}/local-allow-v6.txt")"
+local_allow_port_rule_count="$(count_file_lines "${TMP_DIR}/local-allow-port-rules.txt")"
 local_deny_v4_count="$(count_file_lines "${TMP_DIR}/local-deny-v4.txt")"
 local_deny_v6_count="$(count_file_lines "${TMP_DIR}/local-deny-v6.txt")"
 local_ignore_v4_count="$(count_file_lines "${TMP_DIR}/local-ignore-v4.txt")"
@@ -1526,6 +1874,10 @@ cluster_ignore_v4_count="$(count_file_lines "${TMP_DIR}/cluster-ignore-v4.txt")"
 cluster_ignore_v6_count="$(count_file_lines "${TMP_DIR}/cluster-ignore-v6.txt")"
 dynamic_ban_v4_count="$(count_file_lines "${TMP_DIR}/dynamic-ban-v4.txt")"
 dynamic_ban_v6_count="$(count_file_lines "${TMP_DIR}/dynamic-ban-v6.txt")"
+local_allow_port_rules_enabled="false"
+if [[ "${local_allow_port_rule_count}" != "0" ]]; then
+  local_allow_port_rules_enabled="true"
+fi
 
 log_event "stdout" "info" "set_counts" \
   "allow_v4=${allow_v4_count}" \
@@ -1542,6 +1894,9 @@ log_event "stdout" "info" "set_counts" \
   "feed_v6=${feed_v6_count}" \
   "local_allow_v4=${local_allow_v4_count}" \
   "local_allow_v6=${local_allow_v6_count}" \
+  "local_allow_port_rules=${local_allow_port_rule_count}" \
+  "local_duplicates=${local_duplicate_total_count}" \
+  "local_overlaps=${local_overlap_total_count}" \
   "local_deny_v4=${local_deny_v4_count}" \
   "local_deny_v6=${local_deny_v6_count}" \
   "local_ignore_v4=${local_ignore_v4_count}" \
@@ -1645,6 +2000,7 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
 
   echo "    ip saddr @allow_ipv4 accept"
   echo "    ip6 saddr @allow_ipv6 accept"
+  emit_local_allow_port_rules "${TMP_DIR}/local-allow-port-rules.txt"
 
   if [[ "${country_enabled}" == "true" && "${country_mode}" == "deny" ]]; then
     echo "    ip saddr @country_ipv4 drop"

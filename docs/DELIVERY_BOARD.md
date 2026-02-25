@@ -24,19 +24,22 @@ Ship a production-usable NixOS firewall module that is:
 
 ### NOW
 
-No active `IN_PROGRESS` ticket (WIP slot available).
+| ID | Status | Title | Focus |
+|---|---|---|---|
+| T-035 | IN_PROGRESS | Local list overlap audit and conflict reporting | Implement deterministic dedupe/overlap artifacts + metrics/logging + operator docs |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
+| 1 | T-036 | TODO | Script/runbook completeness pass | One-page index + per-script usage examples + operator workflows |
+| 2 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | TBD | TODO | Release-candidate hardening |
+| 1 | TBD | TODO | Optional Netdata plugin-noise cleanup (`otel/freeipmi/logs-management` tuning profile) |
 
 ## Completed baseline
 
@@ -76,6 +79,8 @@ No active `IN_PROGRESS` ticket (WIP slot available).
 | T-031 | DONE | Netdata metrics readability hotfix (`/var/lib/nix-csf` traversal for non-root collectors) |
 | T-032 | DONE | Netdata charts.d execution hotfix (`systemd-cat-native` PATH wiring) |
 | T-033 | DONE | Netdata charts.d discovery fix + process hard-rule hardening |
+| T-034 | DONE | CSF advanced rule import parity (`tcp|in|...`) |
+| T-037 | DONE | Validation lane split (`validate-agent` no-build + operator-manual full `nix build`) |
 
 ## Triage protocol
 

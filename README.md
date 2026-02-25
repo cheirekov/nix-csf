@@ -595,6 +595,9 @@ Detailed runbook: `docs/FAIL2BAN_ADAPTER.md`.
 - Dynamic bans are evaluated after explicit allow rules, so allow/ignore overlays can override temporary bans.
 - Effective ignore precedence is hybrid-aware: `localFiles.ignore` + cluster `ignore*` are merged,
   promoted into allow sets, and subtracted from deny-style overlays.
+- Local list overlap audit is emitted on each apply/refresh:
+  - `/var/lib/nix-csf/local-list-audit-summary.tsv` (duplicate + exact-overlap counts),
+  - `/var/lib/nix-csf/local-list-conflicts.tsv` (exact CIDR overlap entries and resolution semantics).
 - `clusterPolicy.authTokenFiles` and `dynamicOffenders.authTokenFiles` allow staged token rotation;
   candidates are tried in order until one succeeds.
 - Auth token files are validated strictly at runtime:
@@ -619,25 +622,31 @@ Detailed runbook: `docs/FAIL2BAN_ADAPTER.md`.
 
 ## Validation
 
-Fast iteration check (no VM tests):
+Agent-safe validation (no `nix build`; no VM tests):
+
+```bash
+./scripts/validate-agent.sh
+```
+
+Compatibility alias (same behavior as `validate-agent.sh`):
 
 ```bash
 ./scripts/validate-fast.sh
 ```
 
-Full validation (includes x86_64 VM smoke + integration):
+Operator full validation (manual lane; includes x86_64 VM smoke + integration):
 
 ```bash
 ./scripts/validate.sh
 ```
 
-Full validation with log capture (recommended for operator handoff):
+Operator full validation with log capture (recommended):
 
 ```bash
 ./scripts/validate-capture.sh
 ```
 
-The validation script runs:
+Full validation runs:
 
 - `checks.x86_64-linux.version-semver` (VERSION SemVer gate)
 - `checks.x86_64-linux.eval-basic` (module evaluation wiring)
@@ -654,12 +663,18 @@ The validation script runs:
 - `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
 - `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, auth-token rotation fallback, LFD-like detector flow, and fail2ban adapter flow)
 
-If `/dev/kvm` is unavailable, the VM test falls back to TCG emulation and runs slower.
+If `/dev/kvm` is unavailable, VM checks fall back to TCG emulation and run much slower.
+
+`validate-agent.sh` intentionally does not run any `nix build`; it runs only:
+
+- shell syntax checks for `scripts/*.sh`,
+- Python syntax check for `scripts/nix-csf-control-plane.py`,
+- `nix flake check --no-build`.
 
 Suggested collaboration loop:
 
-1. Agent runs `./scripts/validate-fast.sh` after each implementation step.
-2. Operator runs `./scripts/validate-capture.sh` for VM/full checks.
+1. Agent runs `./scripts/validate-agent.sh` after each implementation step.
+2. Operator runs `./scripts/validate-capture.sh` for `nix build`/VM/full checks.
 3. If failing, share `*.summary.log` from `.artifacts/validate` for focused triage.
 
 Quick host troubleshooting bundle:

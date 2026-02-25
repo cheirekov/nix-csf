@@ -411,7 +411,8 @@ services.nixCsf = {
 
 ## 14) Import legacy CSF lists (`csf.allow/csf.deny/csf.ignore`)
 
-Use this when migrating from existing CSF deployments and you want to preserve plain CIDR/IP entries.
+Use this when migrating from existing CSF deployments and you want to preserve
+CIDR/IP entries plus safe inbound source-port allow rules.
 
 ```bash
 nix-csf-import-csf \
@@ -436,8 +437,14 @@ services.nixCsf.localFiles = {
 
 Note:
 
-- advanced CSF rule lines (for example `tcp|in|...`) are reported in `*-unsupported.log`,
+- safe subset is imported into allow local files:
+  - `tcp|in|d=<port_or_range>|s=<ip_or_cidr>`
+  - `udp|in|d=<port_or_range>|s=<ip_or_cidr>`
+- advanced lines outside this subset are reported in `*-unsupported.log`,
 - use `--strict` to fail the import if unsupported entries exist.
+- runtime local-list audit artifacts are written after apply/refresh:
+  - `/var/lib/nix-csf/local-list-audit-summary.tsv`
+  - `/var/lib/nix-csf/local-list-conflicts.tsv`
 
 ## 15) LFD-like SSH detector (`lfdDetector.*`)
 

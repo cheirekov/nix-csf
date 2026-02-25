@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
+echo "[nix-csf] full validation lane (operator/manual): includes nix build + VM tests"
+
 echo "[nix-csf] running flake checks (eval + lint + check definitions)"
 nix flake check "path:${ROOT_DIR}" --all-systems --no-build
 

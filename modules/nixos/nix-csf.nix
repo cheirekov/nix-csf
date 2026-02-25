@@ -690,7 +690,12 @@ in
         example = [ "/var/lib/nix-csf/lists/allow.local" ];
         description = ''
           Local file paths with CIDR/IP entries merged into allow sets.
-          Supports plain CIDR/IP lines and ipset-style `add` lines.
+          Supports:
+          - plain CIDR/IP lines,
+          - ipset-style `add` lines,
+          - safe CSF advanced inbound source-port allow rules:
+            `tcp|in|d=<port_or_range>|s=<ip_or_cidr>` and
+            `udp|in|d=<port_or_range>|s=<ip_or_cidr>`.
         '';
       };
 

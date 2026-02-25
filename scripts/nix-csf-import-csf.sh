@@ -19,7 +19,7 @@ Imports legacy CSF list files into nix-csf local list files:
   - <prefix>-ignore.local
 
 Also writes an unsupported-entry report for lines that cannot be migrated
-as plain CIDR/IP entries (for example CSF advanced port rules).
+as plain CIDR/IP or safe inbound source-port allow entries.
 EOF
 }
 
@@ -119,7 +119,7 @@ parse_csf_file() {
 
   if [[ -z "${input_file}" ]]; then
     write_empty_sorted_file "${output_file}"
-    printf '0 0\n' > "${stats_file}"
+    printf '0 0 0\n' > "${stats_file}"
     return 0
   fi
 
@@ -141,6 +141,26 @@ parse_csf_file() {
     function emit_unsupported(reason, raw_line) {
       unsupported++;
       printf "%s\t%s\t%d\t%s\t%s\n", role, source, NR, reason, raw_line >> report;
+    }
+    function normalize_port_expr(expr,    range_parts, count, first, last) {
+      if (expr ~ /^[0-9]{1,5}$/) {
+        first = expr + 0;
+        last = first;
+      } else if (expr ~ /^[0-9]{1,5}:[0-9]{1,5}$/) {
+        count = split(expr, range_parts, ":");
+        if (count != 2) return "";
+        first = range_parts[1] + 0;
+        last = range_parts[2] + 0;
+      } else {
+        return "";
+      }
+
+      if (first < 1 || first > 65535 || last < 1 || last > 65535 || first > last) {
+        return "";
+      }
+
+      if (first == last) return first "";
+      return first ":" last;
     }
     {
       raw = $0;
@@ -174,7 +194,80 @@ parse_csf_file() {
         emit_unsupported("include_directive", raw);
         next;
       } else if (work ~ /^(tcp|udp)\|/) {
-        emit_unsupported("advanced_port_rule", raw);
+        if (role != "allow") {
+          emit_unsupported("advanced_port_rule", raw);
+          next;
+        }
+
+        part_count = split(work, rule_parts, /\|/);
+        if (part_count < 4) {
+          emit_unsupported("advanced_port_rule", raw);
+          next;
+        }
+
+        proto = tolower(trim(rule_parts[1]));
+        direction = tolower(trim(rule_parts[2]));
+        if (direction != "in") {
+          emit_unsupported("advanced_port_rule", raw);
+          next;
+        }
+
+        src = "";
+        dst = "";
+        invalid_rule = 0;
+        for (i = 3; i <= part_count; i++) {
+          segment = trim(rule_parts[i]);
+          if (segment == "") continue;
+          split_pos = index(segment, "=");
+          if (split_pos == 0) {
+            invalid_rule = 1;
+            continue;
+          }
+
+          key = tolower(trim(substr(segment, 1, split_pos - 1)));
+          value = trim(substr(segment, split_pos + 1));
+          if (value == "") {
+            invalid_rule = 1;
+            continue;
+          }
+
+          if (key == "s") {
+            if (src != "") {
+              invalid_rule = 1;
+            } else {
+              src = value;
+            }
+          } else if (key == "d") {
+            if (dst != "") {
+              invalid_rule = 1;
+            } else {
+              dst = value;
+            }
+          } else {
+            invalid_rule = 1;
+          }
+        }
+
+        if (invalid_rule || src == "" || dst == "") {
+          emit_unsupported("advanced_port_rule", raw);
+          next;
+        }
+
+        is_src_ipv4 = (src ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}(\/[0-9]{1,2})?$/);
+        is_src_ipv6 = (src ~ /^[0-9A-Fa-f:]+(\/[0-9]{1,3})?$/ && index(src, ":") > 0);
+        if (!(is_src_ipv4 || is_src_ipv6)) {
+          emit_unsupported("advanced_port_rule", raw);
+          next;
+        }
+
+        dst_normalized = normalize_port_expr(dst);
+        if (dst_normalized == "") {
+          emit_unsupported("advanced_port_rule", raw);
+          next;
+        }
+
+        parsed_advanced++;
+        print proto "|in|d=" dst_normalized "|s=" src;
         next;
       } else if (work ~ /\|/) {
         emit_unsupported("advanced_rule", raw);
@@ -192,7 +285,7 @@ parse_csf_file() {
       }
     }
     END {
-      printf "%d %d\n", parsed + 0, unsupported + 0 > stats;
+      printf "%d %d %d\n", parsed + 0, unsupported + 0, parsed_advanced + 0 > stats;
     }
   ' "${input_file}" | sort -u > "${output_file}"
 }
@@ -205,9 +298,9 @@ parse_csf_file "allow" "${allow_file}" "${allow_out}" "${report_file}" "${allow_
 parse_csf_file "deny" "${deny_file}" "${deny_out}" "${report_file}" "${deny_stats}"
 parse_csf_file "ignore" "${ignore_file}" "${ignore_out}" "${report_file}" "${ignore_stats}"
 
-read -r allow_parsed allow_unsupported < "${allow_stats}"
-read -r deny_parsed deny_unsupported < "${deny_stats}"
-read -r ignore_parsed ignore_unsupported < "${ignore_stats}"
+read -r allow_parsed allow_unsupported allow_advanced < "${allow_stats}"
+read -r deny_parsed deny_unsupported deny_advanced < "${deny_stats}"
+read -r ignore_parsed ignore_unsupported ignore_advanced < "${ignore_stats}"
 
 total_unsupported=$((allow_unsupported + deny_unsupported + ignore_unsupported))
 
@@ -217,18 +310,21 @@ nix-csf-import-csf summary
 allow:
   source: ${allow_file:-<none>}
   parsed_cidr_or_ip: ${allow_parsed}
+  parsed_advanced_port_rules: ${allow_advanced}
   unsupported_entries: ${allow_unsupported}
   output: ${allow_out}
 
 deny:
   source: ${deny_file:-<none>}
   parsed_cidr_or_ip: ${deny_parsed}
+  parsed_advanced_port_rules: ${deny_advanced}
   unsupported_entries: ${deny_unsupported}
   output: ${deny_out}
 
 ignore:
   source: ${ignore_file:-<none>}
   parsed_cidr_or_ip: ${ignore_parsed}
+  parsed_advanced_port_rules: ${ignore_advanced}
   unsupported_entries: ${ignore_unsupported}
   output: ${ignore_out}
 

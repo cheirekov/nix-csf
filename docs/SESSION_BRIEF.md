@@ -255,3 +255,57 @@ Owner: PM/BA + Codex
 - Validation evidence:
   - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-netdata" --print-build-logs`
   - `nix flake check "path:/home/yc/work/nix-csf" --all-systems --no-build`
+
+## 17) Backlog triage LEGACY-IMPORT-AND-DOCS-034-036
+
+- Trigger:
+  - production operator feedback after importing legacy `csf.allow/csf.deny/csf.ignore`.
+- Team decision:
+  - `T-034` next: implement safe/explicit support for CSF `advanced_port_rule` subset (`tcp|in|d=...|s=...`) with strict fallback reporting.
+  - `T-035` next after `T-034`: add explicit overlap/conflict audit for allow/deny/ignore (beyond current implicit dedupe).
+  - `T-036` queued: publish complete script index with usage examples and operator scenarios.
+- Current behavior snapshot (confirmed):
+  - import tool dedupes each output file (`sort -u`),
+  - apply pipeline dedupes merged local overlays and keeps deny-first semantics.
+
+## 18) Batch VALIDATION-LANE-SPLIT-037
+
+- Trigger:
+  - repeated context/token churn from long `nix build` VM logs during agent runs.
+- Team decision:
+  - split validation into strict lanes:
+    - agent lane: `./scripts/validate-agent.sh` only, no `nix build`,
+    - operator lane: `./scripts/validate-capture.sh` for full `nix build` + VM evidence.
+- Scope delivered:
+  - added `scripts/validate-agent.sh`,
+  - converted `scripts/validate-fast.sh` to delegate to agent lane,
+  - preserved `scripts/validate.sh` as full operator lane,
+  - updated README + team operating rules to make the split mandatory.
+- Validation evidence:
+  - `bash -n scripts/validate-agent.sh`
+  - `bash -n scripts/validate-fast.sh`
+  - `bash -n scripts/validate.sh`
+- Follow-up:
+  - resume `T-034`; await operator full-validation result for final closure.
+
+## 19) Batch LOCAL-LIST-AUDIT-035 (+ T-034 closure)
+
+- Trigger:
+  - operator provided full validation evidence for `T-034` (`[nix-csf] validation succeeded`),
+  - next priority ticket `T-035` activated.
+- Scope delivered:
+  - `T-034` closed (advanced CSF allow-rule parity confirmed with manual/full validation),
+  - `T-035` implementation in progress:
+    - deterministic local list audit outputs:
+      - `/var/lib/nix-csf/local-list-audit-summary.tsv`,
+      - `/var/lib/nix-csf/local-list-conflicts.tsv`,
+    - duplicate/overlap metrics:
+      - `nix_csf_local_list_duplicates{role,family}`,
+      - `nix_csf_local_list_overlaps{pair,family}`,
+    - structured audit logging with warning on non-zero duplicate/overlap counts,
+    - smoke assertions for audit files and new metrics.
+- Validation evidence (agent lane):
+  - `./scripts/validate-agent.sh`
+  - `bash -n scripts/nix-csf-apply.sh`
+- Next:
+  - collect operator full-validation evidence for `T-035` via `./scripts/validate-capture.sh`.

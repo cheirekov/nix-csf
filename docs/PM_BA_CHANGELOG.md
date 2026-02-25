@@ -1,5 +1,72 @@
 # PM/BA Changelog
 
+## 2026-02-24 — Batch LOCAL-LIST-AUDIT-035 (+ T-034 closure)
+
+- Ticket(s): `T-034`, `T-035`
+- Summary:
+  - closed `T-034` after operator-provided full validation evidence (`[nix-csf] validation succeeded`),
+  - started `T-035` and implemented deterministic local list audit in apply pipeline:
+    - `/var/lib/nix-csf/local-list-audit-summary.tsv` with duplicate/overlap counts,
+    - `/var/lib/nix-csf/local-list-conflicts.tsv` with exact CIDR conflicts and resolution semantics,
+    - structured audit event + warning on non-zero duplicates/overlaps,
+    - Prometheus metrics for local duplicate and overlap cardinality by role/pair/family,
+  - added smoke coverage for duplicate+overlap metrics and audit artifacts.
+- BA requirement mapping:
+  - explicit operator visibility for allow/deny/ignore conflicts during CSF migration and day-2 operations.
+- PM milestone mapping:
+  - post-1.0 production hardening lane for list-governance clarity.
+- Risk impact:
+  - `low` (observability/reporting additions; enforcement semantics remain unchanged).
+- Validation evidence:
+  - `./scripts/validate-agent.sh`
+  - `bash -n scripts/nix-csf-apply.sh`
+- Open follow-ups:
+  - operator full validation (`./scripts/validate-capture.sh`) before marking `T-035` done.
+
+## 2026-02-24 — Batch VALIDATION-LANE-SPLIT-037
+
+- Ticket(s): `T-037`
+- Summary:
+  - formalized two validation lanes to reduce context/token burn and keep progress stable:
+    - added `scripts/validate-agent.sh` (no `nix build`; shell + python syntax + `flake check --no-build`),
+    - changed `scripts/validate-fast.sh` to delegate to `validate-agent.sh` for backward compatibility,
+    - kept `scripts/validate.sh` and `scripts/validate-capture.sh` as operator-manual full-validation lane (`nix build` + VM tests),
+  - updated team hard rules and README runbook so full `nix build` evidence is user-provided for ticket closure.
+- BA requirement mapping:
+  - predictable collaboration loop with explicit manual ownership of heavy test workloads.
+- PM milestone mapping:
+  - delivery throughput hardening before continuing `T-034` completion.
+- Risk impact:
+  - `low` (process/script lane split only; no firewall runtime behavior changes).
+- Validation evidence:
+  - `bash -n scripts/validate-agent.sh`
+  - `bash -n scripts/validate-fast.sh`
+  - `bash -n scripts/validate.sh`
+- Open follow-ups:
+  - continue `T-034`; close only after operator full-validation evidence (`./scripts/validate-capture.sh`).
+
+## 2026-02-24 — Backlog triage LEGACY-IMPORT-AND-DOCS-034-036
+
+- Ticket(s): `T-034`, `T-035`, `T-036`
+- Summary:
+  - reviewed production feedback after Netdata closure and CSF legacy import usage,
+  - triaged advanced CSF allow-line compatibility gap (`advanced_port_rule`) into a dedicated parity ticket (`T-034`),
+  - confirmed current dedupe behavior:
+    - import stage dedupes each output via `sort -u`,
+    - apply stage dedupes merged local overlays via normalized `sort -u`,
+  - created follow-up ticket (`T-035`) for explicit overlap/conflict reporting instead of implicit dedupe only,
+  - created documentation hardening ticket (`T-036`) for full script usage index + examples.
+- BA requirement mapping:
+  - migration parity, operator clarity, and production runbook maturity.
+- PM milestone mapping:
+  - post-1.0 patch stabilization and backlog quality gate.
+- Risk impact:
+  - `none` (triage and prioritization only; no runtime behavior change in this entry).
+- Validation evidence:
+  - board/session/changelog alignment updated.
+- Open follow-ups:
+  - execute `T-034` as next implementation lane.
+
 ## 2026-02-24 — Batch NETDATA-DISCOVERY-AND-PROCESS-HARDENING-033
 
 - Ticket(s): `T-033`
