@@ -87,11 +87,23 @@ nix-csf-import-csf \
 Manual detector run for debugging:
 
 ```bash
+cat >/tmp/nix-csf-detectors.json <<'JSON'
+[
+  {
+    "name": "ssh-auth",
+    "enable": true,
+    "journalIdentifier": "sshd",
+    "lineContains": "Failed password",
+    "windowSeconds": 300,
+    "threshold": 5,
+    "banTTLSeconds": 900,
+    "reason": "lfd:sshd_failed_login"
+  }
+]
+JSON
+
 sudo nix-csf-lfd-detector \
-  --journal-identifier sshd \
-  --window-seconds 300 \
-  --threshold 5 \
-  --ban-ttl-seconds 900 \
+  --detectors-file /tmp/nix-csf-detectors.json \
   --endpoint http://127.0.0.1:18081 \
   --refresh-after-ban \
   --metrics-file /var/lib/nix-csf/lfd-detector.prom
@@ -191,4 +203,3 @@ sudo nft list table inet nix_csf
 ./scripts/release.sh --version <semver> --dry-run
 ./scripts/release.sh --version <semver>
 ```
-

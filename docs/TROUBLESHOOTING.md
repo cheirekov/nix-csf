@@ -153,7 +153,31 @@ Frequent signatures and fixes:
   - verify `forwarding.zones` and `forwarding.rules` are both configured,
   - verify rule `fromZone`/`toZone` names match existing zone keys.
 
-## 7) Expected IP not blocked/allowed
+## 7) Egress controls not active / unexpected outbound behavior
+
+Check:
+
+```bash
+sudo systemctl show -P Result nix-csf-apply.service
+sudo nft list table inet nix_csf | sed -n '/chain output {/,/}/p'
+sudo grep -nE 'chain output|egress_|oifname|tcp dport|udp dport' /var/lib/nix-csf/generated-ruleset.nft
+sudo grep -E 'nix_csf_(feature_enabled\{feature="egress"|egress_policy|set_entries\{set="egress_|source_count\{source="egress_)' /var/lib/nix-csf/metrics.prom
+```
+
+Frequent signatures and fixes:
+
+- output chain policy remains `accept` with no egress selectors
+  - set `services.nixCsf.egress.enable = true`.
+- `services.nixCsf.egress.defaultPolicy = "drop" requires at least one explicit allow selector`
+  - define one or more of:
+    - `egress.trustedInterfaces`,
+    - `egress.allowIPv4` / `egress.allowIPv6`,
+    - `egress.allowTCPPorts` / `egress.allowUDPPorts`.
+- deny selectors configured but traffic still allowed
+  - verify destination-family match (`denyIPv4` vs `denyIPv6`),
+  - verify metrics show non-zero `egress_deny_*` set cardinality.
+
+## 8) Expected IP not blocked/allowed
 
 Check membership directly:
 

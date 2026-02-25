@@ -42,11 +42,12 @@ Current module version source of truth: `VERSION`.
 - Legacy CSF import tool (`nix-csf-import-csf`)
 - Cluster policy + dynamic offender snapshots (TTL-aware)
 - Optional local control-plane + `nix-csfctl` mutation workflow
-- Nix-native LFD-like detector (`lfdDetector`) and fail2ban adapter
+- Nix-native LFD-like detector framework v2 (explicit `lfdDetector.detectors` or curated `lfdDetector.detectorPack`) and fail2ban adapter
 - Auth token rotation (`*.authTokenFiles`) for remote snapshots
 - Docker coexistence profile (`coexistence.profile = "docker-coexist"`)
 - NAT datapath foundation (`nat.*`: IPv4 masquerade + explicit port forwards)
 - Forwarding policy matrix (`forwarding.zones` + `forwarding.rules`)
+- Optional egress controls (`egress.*`: output policy + destination/interface allow/deny selectors)
 - Structured logs + Prometheus textfile metrics + Netdata integration
 - Validation lanes split for agent/operator workflows
 
@@ -200,10 +201,12 @@ services.nixCsf = {
 
   lfdDetector = {
     enable = true;
-    journalIdentifier = "sshd";
-    threshold = 5;
-    windowSeconds = 300;
-    banTTLSeconds = 900;
+    detectorPack = {
+      enable = true;
+      profile = "server-web"; # ssh-auth + nginx-auth
+      sshAuth.threshold = 5;
+      nginxAuth.threshold = 10;
+    };
     refreshAfterBan = true;
   };
 };
@@ -271,6 +274,22 @@ services.nixCsf = {
 };
 ```
 
+### Optional egress controls (Stage 1)
+
+```nix
+services.nixCsf = {
+  egress = {
+    enable = true;
+    defaultPolicy = "drop";
+    trustedInterfaces = [ "wg0" ];
+    allowIPv4 = [ "198.51.100.0/24" ];
+    denyIPv4 = [ "203.0.113.0/24" ];
+    allowTCPPorts = [ 53 443 ];
+    allowUDPPorts = [ 53 ];
+  };
+};
+```
+
 ## Operator commands
 
 ### Legacy CSF import
@@ -334,6 +353,8 @@ With captured summary/log handoff:
 - Dynamic bans are evaluated after explicit allow/ignore overlays.
 - Stage-1 NAT is IPv4-focused and not combined with `coexistence.profile = "docker-coexist"`.
 - `forwarding.rules` requires `forwardPolicy = "drop"` and is not combined with `coexistence.profile = "docker-coexist"` in Stage 1.
+- `egress.enable = false` keeps output policy lockout-safe (`accept`).
+- When `egress.enable = true` and `egress.defaultPolicy = "drop"`, define explicit allow selectors (`trustedInterfaces`, allow CIDRs, or allow ports).
 - Local list conflict audit artifacts are written to:
   - `/var/lib/nix-csf/local-list-audit-summary.tsv`
   - `/var/lib/nix-csf/local-list-conflicts.tsv`

@@ -65,18 +65,18 @@
   - declarative SNAT/masquerade for routed networks,
   - declarative DNAT/port-forward path,
   - explicit safety defaults (off unless enabled).
-- Forwarding policy matrix (`T-041`). [in progress 2026-02-25]
+- Forwarding policy matrix (`T-041`). [done 2026-02-25]
   - interface/zone-aware forward allow model for gateway hosts.
-- Optional egress controls (`T-042`):
+- Optional egress controls (`T-042`). [done 2026-02-25]
   - output allowlist/denylist for hardened hosts.
 - Gateway-grade test coverage (`T-047`, Stage 1 subset):
   - VM validation for NAT + forward + egress combinations.
 
 ## Phase 6 — Detector/escalation expansion (new epic / Stage 2)
 
-- LFD detector framework v2 (`T-043`):
+- LFD detector framework v2 (`T-043`). [done 2026-02-25]
   - reusable multi-source signal model (not SSH-only).
-- Built-in detector pack v2 (`T-044`):
+- Built-in detector pack v2 (`T-044`). [in progress 2026-02-25]
   - SSH plus additional service-level detectors (auth/flood patterns).
 - Escalation engine v2 (`T-045`):
   - normalized temp-ban and permanent-promotion path across sources.

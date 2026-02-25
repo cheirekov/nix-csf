@@ -12,10 +12,12 @@
 - Centralized cluster policy propagation for multi-host allow/deny overlays.
 - Cluster policy schema v2 governance (`allow`/`deny`/`ignore` + revision/TTL).
 - Clear separation between declarative policy state and runtime dynamic offender state.
+- Reusable detector framework for multi-source journal signals (explicit `lfdDetector.detectors` or curated `lfdDetector.detectorPack`).
 - Secret-managed auth lifecycle for remote cluster and dynamic endpoints.
 - Coexistence strategy for hosts that run additional firewall mutators (for example Docker).
 - Optional NAT datapath foundation for gateway hosts (`nat.*`).
 - Optional forwarding matrix for zone/interface-routed traffic (`forwarding.*`).
+- Optional egress/output controls for hardened outbound policy (`egress.*`).
 - Operator-ready monitoring pack (Prometheus alerts + Grafana dashboards + runbook).
 - Repeatable SemVer-based release lifecycle.
 
@@ -72,10 +74,12 @@
    - `postrouting` masquerade rules for configured source CIDRs.
 10. Optional forwarding matrix expands `forwarding.zones` + `forwarding.rules` into explicit
     `chain forward` accept clauses under deny-by-default (`forwardPolicy = drop`) posture.
-11. Optional control-plane mode stores mutable policy/dynamic state in `controlPlane.dataDir`
+11. Optional egress mode expands `chain output` with explicit deny/allow selectors
+    (trusted interfaces, destination CIDRs, destination ports) and policy-driven tail behavior.
+12. Optional control-plane mode stores mutable policy/dynamic state in `controlPlane.dataDir`
    and serves snapshots consumed by standard `clusterPolicy`/`dynamicOffenders` client flow.
-12. Rules are regenerated and atomically re-applied.
-13. Optional observability export writes:
+13. Rules are regenerated and atomically re-applied.
+14. Optional observability export writes:
    - structured event logs to journald,
    - snapshot metrics in Prometheus textfile format (including build/version metadata and auth-slot telemetry).
 
@@ -98,6 +102,9 @@
 - Stage-1 forwarding guardrails:
   - `forwarding.rules` requires `forwardPolicy = "drop"`,
   - `forwarding.rules` is blocked with `coexistence.profile = "docker-coexist"` to avoid ambiguous forward ownership.
+- Stage-1 egress guardrails:
+  - `egress.enable = false` keeps output lockout-safe (`policy accept`),
+  - `egress.defaultPolicy = "drop"` requires explicit allow selectors.
 
 ## Centralized dynamic model
 

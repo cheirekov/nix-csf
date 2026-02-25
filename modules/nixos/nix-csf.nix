@@ -161,6 +161,17 @@ let
     threatProfile = cfg.threatProfile;
     defaultPolicy = cfg.defaultPolicy;
     forwardPolicy = cfg.forwardPolicy;
+    egress = {
+      enable = cfg.egress.enable;
+      defaultPolicy = cfg.egress.defaultPolicy;
+      trustedInterfaces = cfg.egress.trustedInterfaces;
+      allowIPv4 = cfg.egress.allowIPv4;
+      allowIPv6 = cfg.egress.allowIPv6;
+      denyIPv4 = cfg.egress.denyIPv4;
+      denyIPv6 = cfg.egress.denyIPv6;
+      allowTCPPorts = cfg.egress.allowTCPPorts;
+      allowUDPPorts = cfg.egress.allowUDPPorts;
+    };
     trustedInterfaces = cfg.trustedInterfaces;
     openTCPPorts = cfg.openTCPPorts;
     openUDPPorts = cfg.openUDPPorts;
@@ -332,6 +343,119 @@ let
     else if cfg.controlPlane.enable then "http://127.0.0.1:${toString cfg.controlPlane.port}"
     else "http://127.0.0.1:18081";
 
+  lfdDetectorLegacyDetector = {
+    name = "legacy-sshd";
+    enable = true;
+    journalUnit = cfg.lfdDetector.sshdUnit;
+    journalIdentifier = cfg.lfdDetector.journalIdentifier;
+    lineContains = null;
+    extractRegex = null;
+    windowSeconds = cfg.lfdDetector.windowSeconds;
+    threshold = cfg.lfdDetector.threshold;
+    banTTLSeconds = cfg.lfdDetector.banTTLSeconds;
+    reason = cfg.lfdDetector.reason;
+  };
+
+  lfdDetectorPackProfileDefaults = {
+    server-basic = {
+      sshAuth = true;
+      nginxAuth = false;
+      dovecotAuth = false;
+    };
+    server-web = {
+      sshAuth = true;
+      nginxAuth = true;
+      dovecotAuth = false;
+    };
+    server-mail = {
+      sshAuth = true;
+      nginxAuth = false;
+      dovecotAuth = true;
+    };
+    server-hardened = {
+      sshAuth = true;
+      nginxAuth = true;
+      dovecotAuth = true;
+    };
+  };
+
+  lfdDetectorPackProfile = lfdDetectorPackProfileDefaults.${cfg.lfdDetector.detectorPack.profile};
+
+  lfdDetectorPackSshAuthEnabled =
+    if cfg.lfdDetector.detectorPack.sshAuth.enable == null then lfdDetectorPackProfile.sshAuth
+    else cfg.lfdDetector.detectorPack.sshAuth.enable;
+
+  lfdDetectorPackNginxAuthEnabled =
+    if cfg.lfdDetector.detectorPack.nginxAuth.enable == null then lfdDetectorPackProfile.nginxAuth
+    else cfg.lfdDetector.detectorPack.nginxAuth.enable;
+
+  lfdDetectorPackDovecotAuthEnabled =
+    if cfg.lfdDetector.detectorPack.dovecotAuth.enable == null then lfdDetectorPackProfile.dovecotAuth
+    else cfg.lfdDetector.detectorPack.dovecotAuth.enable;
+
+  lfdDetectorPackDetectors = [
+    {
+      name = "ssh-auth";
+      enable = lfdDetectorPackSshAuthEnabled;
+      journalUnit = cfg.lfdDetector.detectorPack.sshAuth.journalUnit;
+      journalIdentifier = cfg.lfdDetector.detectorPack.sshAuth.journalIdentifier;
+      lineContains = cfg.lfdDetector.detectorPack.sshAuth.lineContains;
+      extractRegex = cfg.lfdDetector.detectorPack.sshAuth.extractRegex;
+      windowSeconds = cfg.lfdDetector.detectorPack.sshAuth.windowSeconds;
+      threshold = cfg.lfdDetector.detectorPack.sshAuth.threshold;
+      banTTLSeconds = cfg.lfdDetector.detectorPack.sshAuth.banTTLSeconds;
+      reason = cfg.lfdDetector.detectorPack.sshAuth.reason;
+    }
+    {
+      name = "nginx-auth";
+      enable = lfdDetectorPackNginxAuthEnabled;
+      journalUnit = cfg.lfdDetector.detectorPack.nginxAuth.journalUnit;
+      journalIdentifier = cfg.lfdDetector.detectorPack.nginxAuth.journalIdentifier;
+      lineContains = cfg.lfdDetector.detectorPack.nginxAuth.lineContains;
+      extractRegex = cfg.lfdDetector.detectorPack.nginxAuth.extractRegex;
+      windowSeconds = cfg.lfdDetector.detectorPack.nginxAuth.windowSeconds;
+      threshold = cfg.lfdDetector.detectorPack.nginxAuth.threshold;
+      banTTLSeconds = cfg.lfdDetector.detectorPack.nginxAuth.banTTLSeconds;
+      reason = cfg.lfdDetector.detectorPack.nginxAuth.reason;
+    }
+    {
+      name = "dovecot-auth";
+      enable = lfdDetectorPackDovecotAuthEnabled;
+      journalUnit = cfg.lfdDetector.detectorPack.dovecotAuth.journalUnit;
+      journalIdentifier = cfg.lfdDetector.detectorPack.dovecotAuth.journalIdentifier;
+      lineContains = cfg.lfdDetector.detectorPack.dovecotAuth.lineContains;
+      extractRegex = cfg.lfdDetector.detectorPack.dovecotAuth.extractRegex;
+      windowSeconds = cfg.lfdDetector.detectorPack.dovecotAuth.windowSeconds;
+      threshold = cfg.lfdDetector.detectorPack.dovecotAuth.threshold;
+      banTTLSeconds = cfg.lfdDetector.detectorPack.dovecotAuth.banTTLSeconds;
+      reason = cfg.lfdDetector.detectorPack.dovecotAuth.reason;
+    }
+  ];
+
+  lfdDetectorConfiguredDetectors =
+    if cfg.lfdDetector.detectors != [ ] then
+      map (detector: {
+        name = detector.name;
+        enable = detector.enable;
+        journalUnit = detector.journalUnit;
+        journalIdentifier = detector.journalIdentifier;
+        lineContains = detector.lineContains;
+        extractRegex = detector.extractRegex;
+        windowSeconds = detector.windowSeconds;
+        threshold = detector.threshold;
+        banTTLSeconds = detector.banTTLSeconds;
+        reason = detector.reason;
+      }) cfg.lfdDetector.detectors
+    else if cfg.lfdDetector.detectorPack.enable then
+      lfdDetectorPackDetectors
+    else
+      [ lfdDetectorLegacyDetector ];
+
+  lfdDetectorEnabledDetectors = builtins.filter (detector: detector.enable) lfdDetectorConfiguredDetectors;
+
+  lfdDetectorDetectorsFile =
+    (pkgs.formats.json { }).generate "nix-csf-lfd-detectors.json" lfdDetectorConfiguredDetectors;
+
   lfdDetectorAuthTokenFile =
     if cfg.lfdDetector.authTokenFile != null then cfg.lfdDetector.authTokenFile
     else if cfg.controlPlane.enable && cfg.controlPlane.requireAuth && cfg.controlPlane.authTokenFile != null then cfg.controlPlane.authTokenFile
@@ -339,14 +463,8 @@ let
 
   lfdDetectorExecStart =
     let
-      sourceArgs =
-        (if cfg.lfdDetector.sshdUnit != null then [ "--sshd-unit" cfg.lfdDetector.sshdUnit ] else [ ])
-        ++ (if cfg.lfdDetector.journalIdentifier != null then [ "--journal-identifier" cfg.lfdDetector.journalIdentifier ] else [ ]);
-      baseArgs = sourceArgs ++ [
-        "--window-seconds" (toString cfg.lfdDetector.windowSeconds)
-        "--threshold" (toString cfg.lfdDetector.threshold)
-        "--ban-ttl-seconds" (toString cfg.lfdDetector.banTTLSeconds)
-        "--reason" cfg.lfdDetector.reason
+      baseArgs = [
+        "--detectors-file" lfdDetectorDetectorsFile
         "--endpoint" lfdDetectorEndpoint
       ];
       authArgs =
@@ -596,6 +714,75 @@ in
       type = types.enum [ "drop" "accept" ];
       default = "drop";
       description = "Default policy for forwarded traffic.";
+    };
+
+    egress = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable optional egress/output filtering controls.
+          This is disabled by default to keep outbound behavior lockout-safe.
+        '';
+      };
+
+      defaultPolicy = mkOption {
+        type = types.enum [ "drop" "accept" ];
+        default = "accept";
+        description = ''
+          Default output policy used when egress.enable = true.
+          Keep this at `accept` unless you explicitly define required allow rules.
+        '';
+      };
+
+      trustedInterfaces = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "wg0" "tailscale0" ];
+        description = "Output interfaces that are always accepted in egress mode.";
+      };
+
+      allowIPv4 = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "198.51.100.0/24" ];
+        description = "IPv4 destinations explicitly allowed in egress mode.";
+      };
+
+      allowIPv6 = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "2001:db8::/32" ];
+        description = "IPv6 destinations explicitly allowed in egress mode.";
+      };
+
+      denyIPv4 = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "203.0.113.0/24" ];
+        description = "IPv4 destinations explicitly denied in egress mode.";
+      };
+
+      denyIPv6 = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "2001:db8:dead::/48" ];
+        description = "IPv6 destinations explicitly denied in egress mode.";
+      };
+
+      allowTCPPorts = mkOption {
+        type = types.listOf types.port;
+        default = [ ];
+        example = [ 53 443 ];
+        description = "TCP destination ports explicitly allowed in egress mode.";
+      };
+
+      allowUDPPorts = mkOption {
+        type = types.listOf types.port;
+        default = [ ];
+        example = [ 53 ];
+        description = "UDP destination ports explicitly allowed in egress mode.";
+      };
     };
 
     trustedInterfaces = mkOption {
@@ -1660,8 +1847,8 @@ in
         type = types.bool;
         default = false;
         description = ''
-          Enable LFD-like SSH login failure detection.
-          The detector reads sshd journal events and emits temporary bans through `nix-csfctl ban-temp`
+          Enable LFD-like detector framework.
+          Detectors read journal signals and emit temporary bans through `nix-csfctl ban-temp`
           so `nix-csf` remains the single nftables writer.
         '';
       };
@@ -1672,6 +1859,8 @@ in
         example = "sshd.service";
         description = ''
           Optional systemd unit name inspected for SSH authentication failures.
+          Legacy single-detector field; ignored when `lfdDetector.detectors` is configured
+          or when `lfdDetector.detectorPack.enable = true`.
           Set to null to disable unit-based journal matching.
         '';
       };
@@ -1681,8 +1870,331 @@ in
         default = "sshd";
         description = ''
           Optional syslog identifier inspected for SSH authentication failures.
+          Legacy single-detector field; ignored when `lfdDetector.detectors` is configured
+          or when `lfdDetector.detectorPack.enable = true`.
           Set to null to disable identifier-based journal matching.
         '';
+      };
+
+      detectors = mkOption {
+        type = types.listOf (types.submodule ({ ... }: {
+          options = {
+            name = mkOption {
+              type = types.str;
+              example = "sshd-auth";
+              description = ''
+                Stable detector identifier used in logs and per-detector metrics labels.
+              '';
+            };
+
+            enable = mkOption {
+              type = types.bool;
+              default = true;
+              description = "Enable this detector entry.";
+            };
+
+            journalUnit = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              example = "sshd.service";
+              description = ''
+                Optional systemd unit source for this detector.
+              '';
+            };
+
+            journalIdentifier = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              example = "sshd";
+              description = ''
+                Optional syslog identifier source for this detector.
+              '';
+            };
+
+            lineContains = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              example = "Failed password";
+              description = ''
+                Optional substring filter applied before source-IP extraction.
+              '';
+            };
+
+            extractRegex = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              example = "from ([0-9A-Fa-f:.]+)";
+              description = ''
+                Optional Bash regex with capture group 1 containing the source IP.
+                When null, built-in SSH failure extraction is used.
+              '';
+            };
+
+            windowSeconds = mkOption {
+              type = types.ints.positive;
+              default = 300;
+              description = "Rolling observation window for this detector in seconds.";
+            };
+
+            threshold = mkOption {
+              type = types.ints.positive;
+              default = 5;
+              description = "Observed failures per source IP required to trigger a ban.";
+            };
+
+            banTTLSeconds = mkOption {
+              type = types.ints.positive;
+              default = 900;
+              description = "Temporary ban TTL emitted by this detector.";
+            };
+
+            reason = mkOption {
+              type = types.str;
+              default = "lfd:detector";
+              description = "Reason string attached to bans emitted by this detector.";
+            };
+          };
+        }));
+        default = [ ];
+        example = [
+          {
+            name = "sshd-auth";
+            journalIdentifier = "sshd";
+            lineContains = "Failed password";
+            windowSeconds = 300;
+            threshold = 5;
+            banTTLSeconds = 900;
+            reason = "lfd:sshd_failed_login";
+          }
+          {
+            name = "app-auth";
+            journalIdentifier = "app-auth";
+            lineContains = "auth failed";
+            extractRegex = "from ([0-9A-Fa-f:.]+)";
+            windowSeconds = 300;
+            threshold = 10;
+            banTTLSeconds = 600;
+            reason = "lfd:app_auth_failed";
+          }
+        ];
+        description = ''
+          Detector framework v2 definitions.
+          When non-empty, these detectors are used and legacy single-detector
+          fields (`sshdUnit`, `journalIdentifier`, `windowSeconds`, `threshold`,
+          `banTTLSeconds`, `reason`) are treated as fallback-only.
+          Cannot be combined with `lfdDetector.detectorPack.enable = true`.
+        '';
+      };
+
+      detectorPack = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Enable curated built-in detector pack.
+            This provides service-oriented defaults (SSH, nginx auth, dovecot auth)
+            with profile-based enablement and per-detector tuning.
+            Cannot be combined with explicit `lfdDetector.detectors`.
+          '';
+        };
+
+        profile = mkOption {
+          type = types.enum [ "server-basic" "server-web" "server-mail" "server-hardened" ];
+          default = "server-basic";
+          description = ''
+            Built-in pack profile selecting default enabled detectors:
+            - server-basic: ssh-auth
+            - server-web: ssh-auth + nginx-auth
+            - server-mail: ssh-auth + dovecot-auth
+            - server-hardened: ssh-auth + nginx-auth + dovecot-auth
+          '';
+        };
+
+        sshAuth = {
+          enable = mkOption {
+            type = types.nullOr types.bool;
+            default = null;
+            description = ''
+              Override profile default for built-in `ssh-auth` detector.
+              `null` means profile-controlled.
+            '';
+          };
+
+          journalUnit = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "sshd.service";
+            description = "Optional systemd unit source for built-in ssh-auth detector.";
+          };
+
+          journalIdentifier = mkOption {
+            type = types.nullOr types.str;
+            default = "sshd";
+            description = "Optional syslog identifier source for built-in ssh-auth detector.";
+          };
+
+          lineContains = mkOption {
+            type = types.nullOr types.str;
+            default = "Failed password";
+            description = "Optional line filter for built-in ssh-auth detector.";
+          };
+
+          extractRegex = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "from ([0-9A-Fa-f:.]+)";
+            description = ''
+              Optional Bash regex with capture group 1 containing source IP.
+              When null, built-in SSH extraction is used.
+            '';
+          };
+
+          windowSeconds = mkOption {
+            type = types.ints.positive;
+            default = 300;
+            description = "Rolling observation window for built-in ssh-auth detector.";
+          };
+
+          threshold = mkOption {
+            type = types.ints.positive;
+            default = 5;
+            description = "Failure threshold for built-in ssh-auth detector.";
+          };
+
+          banTTLSeconds = mkOption {
+            type = types.ints.positive;
+            default = 900;
+            description = "Temporary ban TTL for built-in ssh-auth detector.";
+          };
+
+          reason = mkOption {
+            type = types.str;
+            default = "lfd:sshd_failed_login";
+            description = "Reason string for built-in ssh-auth detector bans.";
+          };
+        };
+
+        nginxAuth = {
+          enable = mkOption {
+            type = types.nullOr types.bool;
+            default = null;
+            description = ''
+              Override profile default for built-in `nginx-auth` detector.
+              `null` means profile-controlled.
+            '';
+          };
+
+          journalUnit = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "nginx.service";
+            description = "Optional systemd unit source for built-in nginx-auth detector.";
+          };
+
+          journalIdentifier = mkOption {
+            type = types.nullOr types.str;
+            default = "nginx";
+            description = "Optional syslog identifier source for built-in nginx-auth detector.";
+          };
+
+          lineContains = mkOption {
+            type = types.nullOr types.str;
+            default = "password";
+            description = "Optional line filter for built-in nginx-auth detector.";
+          };
+
+          extractRegex = mkOption {
+            type = types.nullOr types.str;
+            default = "client: ([0-9A-Fa-f:.]+)";
+            example = "client: ([0-9A-Fa-f:.]+)";
+            description = "Bash regex (capture group 1) for source-IP extraction.";
+          };
+
+          windowSeconds = mkOption {
+            type = types.ints.positive;
+            default = 300;
+            description = "Rolling observation window for built-in nginx-auth detector.";
+          };
+
+          threshold = mkOption {
+            type = types.ints.positive;
+            default = 10;
+            description = "Failure threshold for built-in nginx-auth detector.";
+          };
+
+          banTTLSeconds = mkOption {
+            type = types.ints.positive;
+            default = 900;
+            description = "Temporary ban TTL for built-in nginx-auth detector.";
+          };
+
+          reason = mkOption {
+            type = types.str;
+            default = "lfd:nginx_auth_failed";
+            description = "Reason string for built-in nginx-auth detector bans.";
+          };
+        };
+
+        dovecotAuth = {
+          enable = mkOption {
+            type = types.nullOr types.bool;
+            default = null;
+            description = ''
+              Override profile default for built-in `dovecot-auth` detector.
+              `null` means profile-controlled.
+            '';
+          };
+
+          journalUnit = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "dovecot.service";
+            description = "Optional systemd unit source for built-in dovecot-auth detector.";
+          };
+
+          journalIdentifier = mkOption {
+            type = types.nullOr types.str;
+            default = "dovecot";
+            description = "Optional syslog identifier source for built-in dovecot-auth detector.";
+          };
+
+          lineContains = mkOption {
+            type = types.nullOr types.str;
+            default = "auth failed";
+            description = "Optional line filter for built-in dovecot-auth detector.";
+          };
+
+          extractRegex = mkOption {
+            type = types.nullOr types.str;
+            default = "rip=([0-9A-Fa-f:.]+)";
+            example = "rip=([0-9A-Fa-f:.]+)";
+            description = "Bash regex (capture group 1) for source-IP extraction.";
+          };
+
+          windowSeconds = mkOption {
+            type = types.ints.positive;
+            default = 300;
+            description = "Rolling observation window for built-in dovecot-auth detector.";
+          };
+
+          threshold = mkOption {
+            type = types.ints.positive;
+            default = 10;
+            description = "Failure threshold for built-in dovecot-auth detector.";
+          };
+
+          banTTLSeconds = mkOption {
+            type = types.ints.positive;
+            default = 900;
+            description = "Temporary ban TTL for built-in dovecot-auth detector.";
+          };
+
+          reason = mkOption {
+            type = types.str;
+            default = "lfd:dovecot_auth_failed";
+            description = "Reason string for built-in dovecot-auth detector bans.";
+          };
+        };
       };
 
       endpoint = mkOption {
@@ -1709,25 +2221,37 @@ in
       windowSeconds = mkOption {
         type = types.ints.positive;
         default = 300;
-        description = "Rolling SSH failure observation window in seconds.";
+        description = ''
+          Legacy single-detector rolling window in seconds.
+          Used only when `lfdDetector.detectors` is empty and `lfdDetector.detectorPack.enable = false`.
+        '';
       };
 
       threshold = mkOption {
         type = types.ints.positive;
         default = 5;
-        description = "Failure events per source IP required before emitting a temporary ban.";
+        description = ''
+          Legacy single-detector threshold.
+          Used only when `lfdDetector.detectors` is empty and `lfdDetector.detectorPack.enable = false`.
+        '';
       };
 
       banTTLSeconds = mkOption {
         type = types.ints.positive;
         default = 900;
-        description = "TTL used for detector-generated temporary bans.";
+        description = ''
+          Legacy single-detector temporary-ban TTL.
+          Used only when `lfdDetector.detectors` is empty and `lfdDetector.detectorPack.enable = false`.
+        '';
       };
 
       reason = mkOption {
         type = types.str;
         default = "lfd:sshd_failed_login";
-        description = "Reason string attached to detector-generated temporary bans.";
+        description = ''
+          Legacy single-detector reason string.
+          Used only when `lfdDetector.detectors` is empty and `lfdDetector.detectorPack.enable = false`.
+        '';
       };
 
       refreshAfterBan = mkOption {
@@ -2147,6 +2671,14 @@ in
         '';
       }
       {
+        assertion = !(cfg.lfdDetector.detectorPack.enable && cfg.lfdDetector.detectors != [ ]);
+        message = ''
+          services.nixCsf.lfdDetector.detectors cannot be combined with
+          services.nixCsf.lfdDetector.detectorPack.enable = true.
+          Choose explicit detectors or the built-in detector pack.
+        '';
+      }
+      {
         assertion = cfg.lfdDetector.endpoint == null || builtins.match "^https?://[^[:space:]]+$" cfg.lfdDetector.endpoint != null;
         message = "services.nixCsf.lfdDetector.endpoint must be an http:// or https:// URL when set.";
       }
@@ -2159,6 +2691,29 @@ in
         message = "services.nixCsf.lfdDetector.metrics.outputFile must be an absolute path.";
       }
       {
+        assertion = all (detector: detector.name != "" && builtins.match "^[A-Za-z0-9_.:-]+$" detector.name != null) lfdDetectorConfiguredDetectors;
+        message = "services.nixCsf.lfdDetector resolved detector names must match [A-Za-z0-9_.:-]+.";
+      }
+      {
+        assertion =
+          let
+            detectorNames = map (detector: detector.name) lfdDetectorConfiguredDetectors;
+          in
+            builtins.length detectorNames == builtins.length (lib.unique detectorNames);
+        message = "services.nixCsf.lfdDetector resolved detector names must be unique.";
+      }
+      {
+        assertion = all (detector: detector.extractRegex == null || detector.extractRegex != "") lfdDetectorConfiguredDetectors;
+        message = "services.nixCsf.lfdDetector resolved detector extractRegex must be non-empty when set.";
+      }
+      {
+        assertion = all (detector: !detector.enable || detector.journalUnit != null || detector.journalIdentifier != null) lfdDetectorConfiguredDetectors;
+        message = ''
+          services.nixCsf.lfdDetector resolved detectors require at least one journal source when enabled:
+          journalUnit or journalIdentifier.
+        '';
+      }
+      {
         assertion = !cfg.lfdDetector.enable || cfg.dynamicOffenders.enable;
         message = ''
           services.nixCsf.lfdDetector.enable requires services.nixCsf.dynamicOffenders.enable
@@ -2166,11 +2721,8 @@ in
         '';
       }
       {
-        assertion = !cfg.lfdDetector.enable || cfg.lfdDetector.sshdUnit != null || cfg.lfdDetector.journalIdentifier != null;
-        message = ''
-          services.nixCsf.lfdDetector.enable requires at least one journal source:
-          services.nixCsf.lfdDetector.sshdUnit or services.nixCsf.lfdDetector.journalIdentifier.
-        '';
+        assertion = !cfg.lfdDetector.enable || lfdDetectorEnabledDetectors != [ ];
+        message = "services.nixCsf.lfdDetector.enable requires at least one enabled detector.";
       }
       {
         assertion = !cfg.lfdDetector.enable || cfg.lfdDetector.endpoint != null || cfg.controlPlane.enable;
@@ -2299,6 +2851,61 @@ in
         message = ''
           services.nixCsf.coexistence.profile = "docker-coexist" requires
           services.nixCsf.forwardPolicy = "accept" to avoid breaking container forwarding.
+        '';
+      }
+      {
+        assertion = cfg.egress.enable
+          || (
+            cfg.egress.defaultPolicy == "accept"
+            && cfg.egress.trustedInterfaces == [ ]
+            && cfg.egress.allowIPv4 == [ ]
+            && cfg.egress.allowIPv6 == [ ]
+            && cfg.egress.denyIPv4 == [ ]
+            && cfg.egress.denyIPv6 == [ ]
+            && cfg.egress.allowTCPPorts == [ ]
+            && cfg.egress.allowUDPPorts == [ ]
+          );
+        message = ''
+          services.nixCsf.egress.* options require services.nixCsf.egress.enable = true.
+          When egress is disabled, keep egress configuration at defaults.
+        '';
+      }
+      {
+        assertion = all (iface: iface != "") cfg.egress.trustedInterfaces;
+        message = "services.nixCsf.egress.trustedInterfaces entries must be non-empty.";
+      }
+      {
+        assertion = all (iface: builtins.match "^[A-Za-z0-9_.:-]+$" iface != null) cfg.egress.trustedInterfaces;
+        message = "services.nixCsf.egress.trustedInterfaces entries contain invalid interface tokens.";
+      }
+      {
+        assertion = all validIPv4OrCIDR cfg.egress.allowIPv4;
+        message = "services.nixCsf.egress.allowIPv4 entries must be IPv4 addresses or CIDRs.";
+      }
+      {
+        assertion = all validIPv6OrCIDR cfg.egress.allowIPv6;
+        message = "services.nixCsf.egress.allowIPv6 entries must be IPv6 addresses or CIDRs.";
+      }
+      {
+        assertion = all validIPv4OrCIDR cfg.egress.denyIPv4;
+        message = "services.nixCsf.egress.denyIPv4 entries must be IPv4 addresses or CIDRs.";
+      }
+      {
+        assertion = all validIPv6OrCIDR cfg.egress.denyIPv6;
+        message = "services.nixCsf.egress.denyIPv6 entries must be IPv6 addresses or CIDRs.";
+      }
+      {
+        assertion = !cfg.egress.enable
+          || cfg.egress.defaultPolicy != "drop"
+          || cfg.egress.trustedInterfaces != [ ]
+          || cfg.egress.allowIPv4 != [ ]
+          || cfg.egress.allowIPv6 != [ ]
+          || cfg.egress.allowTCPPorts != [ ]
+          || cfg.egress.allowUDPPorts != [ ];
+        message = ''
+          services.nixCsf.egress.defaultPolicy = "drop" requires at least one explicit allow selector:
+          egress.trustedInterfaces, egress.allowIPv4, egress.allowIPv6,
+          egress.allowTCPPorts, or egress.allowUDPPorts.
         '';
       }
       {
@@ -2501,7 +3108,7 @@ in
     };
 
     systemd.services.nix-csf-lfd-detector = mkIf cfg.lfdDetector.enable {
-      description = "nix-csf LFD-like SSH detector";
+      description = "nix-csf LFD-like detector framework";
       after =
         [ "network-online.target" ]
         ++ lib.optionals (cfg.controlPlane.enable && cfg.lfdDetector.endpoint == null) [ "nix-csf-control-plane.service" ];
@@ -2515,7 +3122,7 @@ in
     };
 
     systemd.timers.nix-csf-lfd-detector = mkIf cfg.lfdDetector.enable {
-      description = "Periodic run timer for nix-csf LFD-like detector";
+      description = "Periodic run timer for nix-csf LFD-like detector framework";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = cfg.lfdDetector.schedule.onCalendar;

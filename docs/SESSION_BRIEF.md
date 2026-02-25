@@ -3,7 +3,46 @@
 Last updated: 2026-02-25  
 Owner: PM/BA + Codex
 
+## 0) Current batch snapshot (`DETECTOR-PACK-044`)
+
+- Batch type: `IMPLEMENTATION`
+- Active ticket: `T-044` (`IN_PROGRESS`)
+- Status:
+  - `T-043` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
+  - `T-044` implementation landed in agent lane; awaiting operator full-validation evidence for closure.
+- Scope delivered in this batch:
+  - added built-in detector pack API:
+    - `services.nixCsf.lfdDetector.detectorPack.enable/profile`,
+    - curated detectors with tuning knobs:
+      - `sshAuth`,
+      - `nginxAuth`,
+      - `dovecotAuth`,
+  - added detector profile presets:
+    - `server-basic`,
+    - `server-web`,
+    - `server-mail`,
+    - `server-hardened`,
+  - added guardrails and resolution semantics:
+    - explicit detectors and detector-pack cannot be combined,
+    - resolved-detector assertions now validate name/source/extract across custom, pack, and legacy fallback paths,
+  - updated quality coverage:
+    - integration scenario moved to built-in `server-web` pack path (`ssh-auth` + `nginx-auth`),
+    - new eval check `eval-lfd-detector-pack` validates generated detector definitions and tuned values,
+  - updated docs:
+    - `README.md`,
+    - `docs/LFD_DETECTOR.md`,
+    - `docs/USE_CASES.md`.
+- Validation evidence (agent lane):
+  - `bash -n scripts/nix-csf-lfd-detector.sh`
+  - `bash -n scripts/validate.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector" "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector-pack" --print-build-logs`
+  - `./scripts/validate-agent.sh`
+- Next operator step:
+  - run `./scripts/validate-capture.sh` and share summary on failure (or `[nix-csf] validation succeeded` on success).
+
 ## 1) Batch contract
+
+- Historical archive: this section and lower numbered sections retain prior-batch records for audit continuity. Current active state is tracked in section `0`.
 
 - Batch type: `IMPLEMENTATION`
 - Active ticket: `T-024` (Cluster control-plane and snapshot publisher POC).

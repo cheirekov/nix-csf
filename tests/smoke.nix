@@ -69,6 +69,17 @@ pkgs.testers.runNixOSTest {
           }
         ];
       };
+      egress = {
+        enable = true;
+        defaultPolicy = "drop";
+        trustedInterfaces = [ "wg0" ];
+        allowIPv4 = [ "198.51.100.0/24" ];
+        allowIPv6 = [ "2001:db8::/32" ];
+        denyIPv4 = [ "203.0.113.0/24" ];
+        denyIPv6 = [ "2001:db8:dead::/48" ];
+        allowTCPPorts = [ 53 443 ];
+        allowUDPPorts = [ 53 ];
+      };
       allowIPv4 = [ "10.0.0.0/8" "203.0.116.9/32" ];
       denyIPv4 = [ "198.51.100.0/24" ];
       localFiles = {
@@ -221,6 +232,12 @@ pkgs.testers.runNixOSTest {
     machine.succeed("nft list table inet nix_csf | grep -E 'ip saddr @country_port_deny_ipv4.*tcp dport'")
     machine.succeed("nft list table inet nix_csf | grep -E 'ip saddr != @country_port_allow_ipv4.*tcp dport'")
     machine.succeed("nft list table inet nix_csf | grep -E 'ip saddr != @country_port_allow_ipv4.*udp dport'")
+    machine.succeed("grep -F 'type filter hook output priority filter; policy drop;' /var/lib/nix-csf/generated-ruleset.nft")
+    machine.succeed("grep -F 'oifname \"wg0\" accept' /var/lib/nix-csf/generated-ruleset.nft")
+    machine.succeed("grep -F 'ip daddr @egress_deny_ipv4 drop' /var/lib/nix-csf/generated-ruleset.nft")
+    machine.succeed("grep -F 'ip daddr @egress_allow_ipv4 accept' /var/lib/nix-csf/generated-ruleset.nft")
+    machine.succeed("awk '/tcp dport \\{/{ if ($0 ~ /53/ && $0 ~ /443/ && $0 ~ /accept/) found=1 } END { exit !found }' /var/lib/nix-csf/generated-ruleset.nft")
+    machine.succeed("grep -F 'udp dport { 53 } accept' /var/lib/nix-csf/generated-ruleset.nft")
     machine.succeed("nft list table inet nix_csf | grep -F 'syn_flood_v4'")
     machine.succeed("nft list table inet nix_csf | grep -F 'conn_flood_v4'")
     machine.succeed("nft list table inet nix_csf | grep -F 'ip saddr @feed_ipv4 drop'")
@@ -239,13 +256,19 @@ pkgs.testers.runNixOSTest {
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"nat_masquerade\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"nat_port_forward\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"forwarding_matrix\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"egress\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"local_files\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"local_allow_port_rules\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"country_port_allow\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"icmp_rate_limit\"} 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_icmp_profile{profile=\"legacy\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_egress_policy{policy=\"drop\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"dynamic_ban_ipv4\"} 2' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"egress_allow_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"egress_allow_ipv6\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"egress_deny_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"egress_deny_ipv6\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"local_allow_port_rules\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_local_list_duplicates{role=\"allow\",family=\"ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_local_list_overlaps{pair=\"deny_ignore\",family=\"ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
@@ -255,6 +278,9 @@ pkgs.testers.runNixOSTest {
     machine.succeed("grep -F 'nix_csf_source_count{source=\"forwarding_zones\"} 3' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"forwarding_rules\"} 2' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"forwarding_rules_expanded\"} 2' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_source_count{source=\"egress_trusted_interfaces\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_source_count{source=\"egress_allow_tcp_ports\"} 2' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_source_count{source=\"egress_allow_udp_ports\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_dynamic_snapshot_schema_version 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_dynamic_snapshot_cache_expired 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("awk -F '\\t' '$1 == \"duplicate\" && $2 == \"ipv4\" && $3 == \"allow\" && $4 == \"1\" { found = 1 } END { exit !found }' /var/lib/nix-csf/local-list-audit-summary.tsv")

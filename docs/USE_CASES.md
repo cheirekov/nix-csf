@@ -446,9 +446,9 @@ Note:
   - `/var/lib/nix-csf/local-list-audit-summary.tsv`
   - `/var/lib/nix-csf/local-list-conflicts.tsv`
 
-## 15) LFD-like SSH detector (`lfdDetector.*`)
+## 15) LFD-like detector framework (`lfdDetector.*`, v2)
 
-Use this when you want CSF/LFD-style SSH failure detection while keeping `nix-csf` as the single firewall writer.
+Use this when you want CSF/LFD-style detection with multiple signal sources while keeping `nix-csf` as the single firewall writer.
 
 ```nix
 services.nixCsf = {
@@ -471,11 +471,12 @@ services.nixCsf = {
 
   lfdDetector = {
     enable = true;
-    journalIdentifier = "sshd"; # or sshdUnit = "sshd.service";
-    threshold = 5;
-    windowSeconds = 300;
-    banTTLSeconds = 900;
-    reason = "lfd:sshd_failed_login";
+    detectorPack = {
+      enable = true;
+      profile = "server-web"; # ssh-auth + nginx-auth
+      sshAuth.threshold = 5;
+      nginxAuth.threshold = 10;
+    };
     refreshAfterBan = true;
     schedule.onCalendar = "minutely";
   };
@@ -490,10 +491,12 @@ sudo systemctl start nix-csf-lfd-detector.service
 sudo systemctl status nix-csf-lfd-detector.service --no-pager
 sudo journalctl -u nix-csf-lfd-detector.service -n 80 --no-pager
 sudo cat /var/lib/nix-csf/lfd-detector.prom
+grep -F 'nix_csf_lfd_detector_detectors_enabled' /var/lib/nix-csf/lfd-detector.prom
 sudo nft list set inet nix_csf dynamic_ban_ipv4
 ```
 
 For deeper details and guardrails, see `docs/LFD_DETECTOR.md`.
+Use `lfdDetector.detectors` only when you need custom sources/patterns and do not enable `lfdDetector.detectorPack`.
 
 ## 16) fail2ban adapter (`fail2banAdapter.*`)
 
@@ -852,3 +855,42 @@ Current Stage-1 boundary:
 
 - `forwarding.rules` requires `forwardPolicy = "drop"` for explicit allow semantics.
 - `forwarding.rules` is not combined with `coexistence.profile = "docker-coexist"` in this stage.
+
+## 21) Optional egress controls (`egress.*`, Stage 1)
+
+Use this when the host should keep inbound/forward behavior unchanged, but enforce
+explicit output policy for selected destinations/interfaces.
+
+```nix
+services.nixCsf = {
+  enable = true;
+
+  egress = {
+    enable = true;
+    defaultPolicy = "drop";
+    trustedInterfaces = [ "wg0" ];
+    allowIPv4 = [ "198.51.100.0/24" ];
+    allowIPv6 = [ "2001:db8::/32" ];
+    denyIPv4 = [ "203.0.113.0/24" ];
+    denyIPv6 = [ "2001:db8:dead::/48" ];
+    allowTCPPorts = [ 53 443 ];
+    allowUDPPorts = [ 53 ];
+  };
+};
+```
+
+Operational checks:
+
+```bash
+sudo systemctl show -P Result nix-csf-apply.service
+sudo nft list table inet nix_csf | sed -n '/chain output {/,/}/p'
+grep -F 'type filter hook output priority filter; policy drop;' /var/lib/nix-csf/generated-ruleset.nft
+grep -F 'ip daddr @egress_deny_ipv4 drop' /var/lib/nix-csf/generated-ruleset.nft
+grep -F 'nix_csf_feature_enabled{feature="egress"} 1' /var/lib/nix-csf/metrics.prom
+grep -F 'nix_csf_egress_policy{policy="drop"} 1' /var/lib/nix-csf/metrics.prom
+```
+
+Guardrails:
+
+- `egress.enable = false` keeps output policy lockout-safe (`accept`).
+- `egress.defaultPolicy = "drop"` requires at least one explicit allow selector.

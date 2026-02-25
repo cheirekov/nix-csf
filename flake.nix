@@ -126,6 +126,19 @@
               };
             };
           });
+          egressEval = mkEvalSystem ({ ... }: {
+            services.nixCsf.egress = {
+              enable = true;
+              defaultPolicy = "drop";
+              trustedInterfaces = [ "wg0" ];
+              allowIPv4 = [ "198.51.100.0/24" ];
+              allowIPv6 = [ "2001:db8::/32" ];
+              denyIPv4 = [ "203.0.113.0/24" ];
+              denyIPv6 = [ "2001:db8:dead::/48" ];
+              allowTCPPorts = [ 53 443 ];
+              allowUDPPorts = [ 53 ];
+            };
+          });
           controlPlaneEval = mkEvalSystem ({ ... }: {
             services.nixCsf.controlPlane = {
               enable = true;
@@ -148,8 +161,54 @@
               };
               lfdDetector = {
                 enable = true;
-                threshold = 3;
-                windowSeconds = 120;
+                detectors = [
+                  {
+                    name = "ssh-auth";
+                    journalIdentifier = "sshd";
+                    lineContains = "Failed password";
+                    windowSeconds = 120;
+                    threshold = 3;
+                    banTTLSeconds = 600;
+                    reason = "lfd:sshd_failed_login";
+                  }
+                  {
+                    name = "app-auth";
+                    journalIdentifier = "app-auth";
+                    lineContains = "auth failed";
+                    extractRegex = "from ([0-9A-Fa-f:.]+)";
+                    windowSeconds = 180;
+                    threshold = 4;
+                    banTTLSeconds = 300;
+                    reason = "lfd:app_auth_failed";
+                  }
+                ];
+                schedule.onCalendar = "minutely";
+              };
+            };
+          });
+          lfdDetectorPackEval = mkEvalSystem ({ ... }: {
+            services.nixCsf = {
+              controlPlane = {
+                enable = true;
+                requireAuth = false;
+                environment = "lab";
+              };
+              dynamicOffenders = {
+                enable = true;
+                url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
+                requireHTTPS = false;
+                failOpen = true;
+              };
+              lfdDetector = {
+                enable = true;
+                detectorPack = {
+                  enable = true;
+                  profile = "server-web";
+                  nginxAuth = {
+                    threshold = 7;
+                    banTTLSeconds = 450;
+                  };
+                };
                 schedule.onCalendar = "minutely";
               };
             };
@@ -283,6 +342,28 @@
             test "$forwardingFirstProtocol" = "tcp"
             touch "$out"
           '';
+          eval-egress = pkgs.runCommand "nix-csf-eval-egress" {
+            egressEnabled = boolText egressEval.config.services.nixCsf.egress.enable;
+            egressPolicy = egressEval.config.services.nixCsf.egress.defaultPolicy;
+            trustedInterfaces = builtins.concatStringsSep "," egressEval.config.services.nixCsf.egress.trustedInterfaces;
+            allowIPv4 = builtins.concatStringsSep "," egressEval.config.services.nixCsf.egress.allowIPv4;
+            allowIPv6 = builtins.concatStringsSep "," egressEval.config.services.nixCsf.egress.allowIPv6;
+            denyIPv4 = builtins.concatStringsSep "," egressEval.config.services.nixCsf.egress.denyIPv4;
+            denyIPv6 = builtins.concatStringsSep "," egressEval.config.services.nixCsf.egress.denyIPv6;
+            allowTCPPorts = builtins.concatStringsSep "," (map toString egressEval.config.services.nixCsf.egress.allowTCPPorts);
+            allowUDPPorts = builtins.concatStringsSep "," (map toString egressEval.config.services.nixCsf.egress.allowUDPPorts);
+          } ''
+            test "$egressEnabled" = "true"
+            test "$egressPolicy" = "drop"
+            test "$trustedInterfaces" = "wg0"
+            test "$allowIPv4" = "198.51.100.0/24"
+            test "$allowIPv6" = "2001:db8::/32"
+            test "$denyIPv4" = "203.0.113.0/24"
+            test "$denyIPv6" = "2001:db8:dead::/48"
+            test "$allowTCPPorts" = "53,443"
+            test "$allowUDPPorts" = "53"
+            touch "$out"
+          '';
           eval-control-plane = pkgs.runCommand "nix-csf-eval-control-plane" {
             controlPlaneEnabled = boolText controlPlaneEval.config.services.nixCsf.controlPlane.enable;
             controlPlaneExec = controlPlaneEval.config.systemd.services.nix-csf-control-plane.serviceConfig.ExecStart;
@@ -295,10 +376,48 @@
             lfdDetectorEnabled = boolText lfdDetectorEval.config.services.nixCsf.lfdDetector.enable;
             lfdDetectorExec = lfdDetectorEval.config.systemd.services.nix-csf-lfd-detector.serviceConfig.ExecStart;
             lfdTimerOnCalendar = lfdDetectorEval.config.systemd.timers.nix-csf-lfd-detector.timerConfig.OnCalendar;
+            lfdDetectorCount = toString (builtins.length lfdDetectorEval.config.services.nixCsf.lfdDetector.detectors);
           } ''
             test "$lfdDetectorEnabled" = "true"
             test -n "$lfdDetectorExec"
             test "$lfdTimerOnCalendar" = "minutely"
+            test "$lfdDetectorCount" = "2"
+            case "$lfdDetectorExec" in
+              *--detectors-file*) ;;
+              *) exit 1 ;;
+            esac
+            touch "$out"
+          '';
+          eval-lfd-detector-pack = pkgs.runCommand "nix-csf-eval-lfd-detector-pack" {
+            nativeBuildInputs = [ pkgs.jq pkgs.python3 ];
+            lfdDetectorEnabled = boolText lfdDetectorPackEval.config.services.nixCsf.lfdDetector.enable;
+            lfdDetectorExec = lfdDetectorPackEval.config.systemd.services.nix-csf-lfd-detector.serviceConfig.ExecStart;
+            lfdDetectorPackProfile = lfdDetectorPackEval.config.services.nixCsf.lfdDetector.detectorPack.profile;
+          } ''
+            test "$lfdDetectorEnabled" = "true"
+            test "$lfdDetectorPackProfile" = "server-web"
+
+            detectorsFile="$(
+              python3 - <<'PY'
+import os
+import shlex
+cmd = os.environ["lfdDetectorExec"]
+args = shlex.split(cmd)
+for index, token in enumerate(args):
+    if token == "--detectors-file" and index + 1 < len(args):
+        print(args[index + 1])
+        break
+else:
+    raise SystemExit(1)
+PY
+            )"
+
+            test -n "$detectorsFile"
+            test -f "$detectorsFile"
+            jq -e 'length == 3' "$detectorsFile" >/dev/null
+            jq -e 'map(select(.name == "ssh-auth" and .enable == true)) | length == 1' "$detectorsFile" >/dev/null
+            jq -e 'map(select(.name == "nginx-auth" and .enable == true and .threshold == 7 and .banTTLSeconds == 450)) | length == 1' "$detectorsFile" >/dev/null
+            jq -e 'map(select(.name == "dovecot-auth" and .enable == false)) | length == 1' "$detectorsFile" >/dev/null
             touch "$out"
           '';
           eval-fail2ban-adapter = pkgs.runCommand "nix-csf-eval-fail2ban-adapter" {

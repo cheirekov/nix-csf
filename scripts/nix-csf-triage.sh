@@ -111,7 +111,7 @@ run_shell "journal: nix-csf-control-plane" "journalctl -u nix-csf-control-plane.
 section "State Files"
 run_shell "state directory listing" "ls -lah /var/lib/nix-csf /var/lib/nix-csf/cache 2>/dev/null || true"
 run_shell "cache file timestamps" "for f in /var/lib/nix-csf/cache/*.json; do [ -e \"\$f\" ] || continue; stat -c '%y %s %n' \"\$f\"; done"
-run_shell "generated ruleset key lines" "grep -nE 'table ip nix_csf_nat|dnat to|masquerade|chain input|chain forward|country_port_allow|country_port_deny|country_ipv|feed_ipv|dynamic_ban|forwarding|coexist' /var/lib/nix-csf/generated-ruleset.nft 2>/dev/null || true"
+run_shell "generated ruleset key lines" "grep -nE 'table ip nix_csf_nat|dnat to|masquerade|chain input|chain forward|chain output|country_port_allow|country_port_deny|country_ipv|feed_ipv|dynamic_ban|egress_|forwarding|coexist' /var/lib/nix-csf/generated-ruleset.nft 2>/dev/null || true"
 
 if [[ "${include_nft}" == "true" ]]; then
   section "NFT Snapshot"

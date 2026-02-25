@@ -1,5 +1,141 @@
 # PM/BA Changelog
 
+## 2026-02-25 — `T-043` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-043` (`DONE`)
+- Summary:
+  - operator reported full validation success (`[nix-csf] validation succeeded`) after detector framework v2 rollout,
+  - detector framework v2 accepted with:
+    - multi-source detector model via `lfdDetector.detectors`,
+    - runtime `--detectors-file` wiring,
+    - per-detector metrics families.
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - Stage-2 lane advanced to `T-044` (built-in detector pack v2).
+
+## 2026-02-25 — Batch DETECTOR-PACK-044 (implementation lane)
+
+- Ticket(s): `T-044` (`IN_PROGRESS`)
+- Summary:
+  - implemented built-in detector pack v2 API:
+    - added `services.nixCsf.lfdDetector.detectorPack.*`,
+    - profile presets: `server-basic`, `server-web`, `server-mail`, `server-hardened`,
+    - built-in detectors:
+      - `ssh-auth`,
+      - `nginx-auth`,
+      - `dovecot-auth`,
+    - per-detector tuning exposed for sources/filter/extract/threshold/window/ttl/reason,
+  - resolution semantics/guardrails:
+    - resolved detector precedence:
+      - explicit `lfdDetector.detectors` (if non-empty),
+      - else `lfdDetector.detectorPack` (if enabled),
+      - else legacy single-detector fallback,
+    - assertion added to prevent mixed config (`detectors` + `detectorPack.enable`),
+    - detector validation assertions now target resolved detectors (name/source/extract),
+  - quality and coverage updates:
+    - integration scenario migrated from ad-hoc `app-auth` detector to built-in `nginx-auth` path,
+    - added eval check `checks.<system>.eval-lfd-detector-pack` validating generated detectors-file content,
+    - added detector-pack eval check to operator validation script,
+  - documentation updates:
+    - `README.md`,
+    - `docs/LFD_DETECTOR.md`,
+    - `docs/USE_CASES.md`.
+- BA requirement mapping:
+  - satisfies `T-044` acceptance for curated service detector profiles and per-detector threshold tuning.
+- PM milestone mapping:
+  - advances Stage-2 detector/escalation lane after `T-043` closure.
+- Risk impact:
+  - `medium` (detector-source defaults expanded; firewall writer contract unchanged).
+- Validation evidence (agent lane):
+  - `bash -n scripts/nix-csf-lfd-detector.sh`
+  - `bash -n scripts/validate.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector" "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector-pack" --print-build-logs`
+  - `./scripts/validate-agent.sh`
+- Open follow-ups:
+  - operator full-validation evidence (`./scripts/validate-capture.sh`) required before moving `T-044` to `DONE`.
+
+## 2026-02-25 — Batch DETECTOR-FRAMEWORK-043 (implementation lane)
+
+- Ticket(s): `T-043` (`IN_PROGRESS`)
+- Summary:
+  - implemented LFD detector framework v2 with reusable multi-source detector model:
+    - added `services.nixCsf.lfdDetector.detectors` API (name, source selectors, optional filter/extract regex, threshold/window/ttl/reason),
+    - runtime service now passes generated detector definitions through `--detectors-file`,
+    - legacy single-detector options (`sshdUnit`, `journalIdentifier`, `windowSeconds`, `threshold`, `banTTLSeconds`, `reason`) remain as fallback for compatibility,
+  - detector runtime/compiler upgrades (`scripts/nix-csf-lfd-detector.sh`):
+    - supports multiple enabled detectors per run,
+    - detector-specific counting and ban emission while preserving unified control-plane mutation path,
+    - per-detector metrics families (`*_by_detector`) plus detector-count metrics,
+    - explicit detector-name/source guardrails and duplicate-name protection,
+  - quality and coverage updates:
+    - `eval-lfd-detector` now evaluates v2 detector definitions and asserts `--detectors-file` wiring,
+    - integration scenario upgraded with two detectors (`ssh-auth`, `app-auth`) and end-to-end assertions for both ban paths,
+  - documentation updates:
+    - `README.md`, `docs/LFD_DETECTOR.md`, `docs/USE_CASES.md`, `docs/SCRIPTS_RUNBOOK.md`.
+- BA requirement mapping:
+  - satisfies `T-043` acceptance for generic detector abstraction with detector-specific thresholds/windows and consistent control-plane event path.
+- PM milestone mapping:
+  - starts Stage-2 delivery lane after `T-042` closure.
+- Risk impact:
+  - `medium` (detector runtime behavior expanded; firewall writer contract unchanged).
+- Validation evidence (agent lane):
+  - `bash -n scripts/nix-csf-lfd-detector.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector" --print-build-logs`
+  - `./scripts/validate-agent.sh`
+- Open follow-ups:
+  - operator full-validation evidence (`./scripts/validate-capture.sh`) required before moving `T-043` to `DONE`.
+
+## 2026-02-25 — `T-042` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-042` (`DONE`)
+- Summary:
+  - operator provided full validation evidence after smoke assertion adjustment,
+  - closure evidence: `[nix-csf] validation succeeded`,
+  - Stage-1 egress controls accepted:
+    - output policy model (`egress.*`),
+    - egress sets/rules/metrics,
+    - eval + smoke coverage.
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - Stage-2 lane advanced to `T-043` (detector framework v2).
+
+## 2026-02-25 — Batch EGRESS-CONTROLS-042 (+ `T-041` closure)
+
+- Ticket(s): `T-041` (`DONE`), `T-042` (`IN_PROGRESS`)
+- Summary:
+  - closed `T-041` after operator full-validation confirmation (`[nix-csf] validation succeeded`),
+  - implemented Stage-1 optional egress model (`services.nixCsf.egress.*`) through runtime compiler:
+    - output-chain policy is now driven by `egress.defaultPolicy` when `egress.enable = true`,
+    - emits explicit output allow/deny sets (`egress_allow_*`, `egress_deny_*`),
+    - enforces output-path controls for trusted interfaces, destination CIDRs, and destination TCP/UDP ports,
+    - keeps lockout-safe default (`egress.enable = false` -> output policy accept),
+  - observability and logging updates:
+    - added egress set cardinality and source-count metrics,
+    - added egress policy metric (`nix_csf_egress_policy{policy=*}`),
+    - extended structured `set_counts` event with egress fields,
+  - quality coverage updates:
+    - added `checks.<system>.eval-egress`,
+    - wired `eval-egress` into `scripts/validate.sh`,
+    - extended smoke scenario with deterministic egress config + ruleset/metric assertions,
+  - documentation/process updates:
+    - README/architecture/use-cases/troubleshooting updates for egress behavior and runbook checks,
+    - board/roadmap/session artifacts aligned to `T-042` active lane.
+- BA requirement mapping:
+  - delivers requested optional hardened egress path while preserving default-safe outbound behavior.
+- PM milestone mapping:
+  - closes Stage-1 forwarding ticket (`T-041`) and advances Stage-1 epic to `T-042`.
+- Risk impact:
+  - `medium` (new output-chain behavior when explicitly enabled).
+- Validation evidence (agent lane):
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `bash -n scripts/validate.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-egress" --print-build-logs`
+  - `./scripts/validate-agent.sh`
+- Open follow-ups:
+  - operator full-validation evidence (`./scripts/validate-capture.sh`) required to move `T-042` from `IN_PROGRESS` to `DONE`.
+
 ## 2026-02-25 — Batch FORWARD-MATRIX-041 (implementation lane)
 
 - Ticket(s): `T-041` (`IN_PROGRESS`)

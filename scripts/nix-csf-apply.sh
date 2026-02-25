@@ -78,6 +78,16 @@ nat_port_forward_source_match_count="0"
 forwarding_zone_count="0"
 forwarding_rule_count="0"
 forwarding_rule_expanded_count="0"
+egress_enabled="false"
+egress_default_policy="accept"
+egress_effective_policy="accept"
+egress_trusted_interface_count="0"
+egress_allow_tcp_port_count="0"
+egress_allow_udp_port_count="0"
+egress_allow_v4_count="0"
+egress_allow_v6_count="0"
+egress_deny_v4_count="0"
+egress_deny_v6_count="0"
 declare -a forwarding_rule_ports=()
 declare -a forwarding_rule_in_ifaces=()
 declare -a forwarding_rule_out_ifaces=()
@@ -85,6 +95,9 @@ declare -a forwarding_rule_source_v4=()
 declare -a forwarding_rule_source_v6=()
 declare -a forwarding_rule_destination_v4=()
 declare -a forwarding_rule_destination_v6=()
+declare -a egress_trusted_interfaces=()
+declare -a egress_allow_tcp_ports=()
+declare -a egress_allow_udp_ports=()
 
 log_event() {
   local sink="$1"
@@ -1123,6 +1136,7 @@ write_metrics() {
     printf 'nix_csf_feature_enabled{feature="dynamic_offenders"} %s\n' "$(bool_to_num "${dynamic_offenders_enabled}")"
     printf 'nix_csf_feature_enabled{feature="nat"} %s\n' "$(bool_to_num "${nat_enabled}")"
     printf 'nix_csf_feature_enabled{feature="nat_masquerade"} %s\n' "$(bool_to_num "${nat_masquerade_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="egress"} %s\n' "$(bool_to_num "${egress_enabled}")"
     if [[ "${nat_port_forward_count}" != "0" ]]; then
       echo 'nix_csf_feature_enabled{feature="nat_port_forward"} 1'
     else
@@ -1147,6 +1161,15 @@ write_metrics() {
     else
       echo 'nix_csf_coexistence_profile{profile="exclusive-firewall"} 0'
       echo 'nix_csf_coexistence_profile{profile="docker-coexist"} 1'
+    fi
+    echo "# HELP nix_csf_egress_policy Active egress output policy (1 active, 0 inactive)."
+    echo "# TYPE nix_csf_egress_policy gauge"
+    if [[ "${egress_effective_policy}" == "drop" ]]; then
+      echo 'nix_csf_egress_policy{policy="accept"} 0'
+      echo 'nix_csf_egress_policy{policy="drop"} 1'
+    else
+      echo 'nix_csf_egress_policy{policy="accept"} 1'
+      echo 'nix_csf_egress_policy{policy="drop"} 0'
     fi
     echo "# HELP nix_csf_icmp_profile Active ICMP policy profile (1 active, 0 inactive)."
     echo "# TYPE nix_csf_icmp_profile gauge"
@@ -1212,6 +1235,10 @@ write_metrics() {
     printf 'nix_csf_set_entries{set="cluster_ignore_ipv6"} %s\n' "${cluster_ignore_v6_count}"
     printf 'nix_csf_set_entries{set="dynamic_ban_ipv4"} %s\n' "${dynamic_ban_v4_count}"
     printf 'nix_csf_set_entries{set="dynamic_ban_ipv6"} %s\n' "${dynamic_ban_v6_count}"
+    printf 'nix_csf_set_entries{set="egress_allow_ipv4"} %s\n' "${egress_allow_v4_count}"
+    printf 'nix_csf_set_entries{set="egress_allow_ipv6"} %s\n' "${egress_allow_v6_count}"
+    printf 'nix_csf_set_entries{set="egress_deny_ipv4"} %s\n' "${egress_deny_v4_count}"
+    printf 'nix_csf_set_entries{set="egress_deny_ipv6"} %s\n' "${egress_deny_v6_count}"
     echo "# HELP nix_csf_local_list_duplicates Number of duplicate local list entries removed during dedupe."
     echo "# TYPE nix_csf_local_list_duplicates gauge"
     printf 'nix_csf_local_list_duplicates{role="allow",family="ipv4"} %s\n' "${local_allow_dup_v4_count}"
@@ -1245,6 +1272,9 @@ write_metrics() {
     printf 'nix_csf_source_count{source="forwarding_zones"} %s\n' "${forwarding_zone_count}"
     printf 'nix_csf_source_count{source="forwarding_rules"} %s\n' "${forwarding_rule_count}"
     printf 'nix_csf_source_count{source="forwarding_rules_expanded"} %s\n' "${forwarding_rule_expanded_count}"
+    printf 'nix_csf_source_count{source="egress_trusted_interfaces"} %s\n' "${egress_trusted_interface_count}"
+    printf 'nix_csf_source_count{source="egress_allow_tcp_ports"} %s\n' "${egress_allow_tcp_port_count}"
+    printf 'nix_csf_source_count{source="egress_allow_udp_ports"} %s\n' "${egress_allow_udp_port_count}"
     echo "# HELP nix_csf_auth_token_candidates Number of configured auth token candidates per remote source."
     echo "# TYPE nix_csf_auth_token_candidates gauge"
     printf 'nix_csf_auth_token_candidates{source="cluster_policy"} %s\n' "${cluster_policy_auth_token_candidate_count}"
@@ -1325,6 +1355,11 @@ nat_port_forward_declared_count="$(jq -r '(.nat.portForwards // []) | length' "$
 mapfile -t nat_masquerade_source_ipv4 < <(jq -r '.nat.masquerade.sourceIPv4[]?' "${CONFIG_FILE}")
 forwarding_zone_declared_count="$(jq -r '(.forwarding.zones // {}) | keys | length' "${CONFIG_FILE}")"
 forwarding_rule_declared_count="$(jq -r '(.forwarding.rules // []) | length' "${CONFIG_FILE}")"
+egress_enabled="$(jq -r '.egress.enable // false' "${CONFIG_FILE}")"
+egress_default_policy="$(jq -r '.egress.defaultPolicy // "accept"' "${CONFIG_FILE}")"
+mapfile -t egress_trusted_interfaces < <(jq -r '.egress.trustedInterfaces[]?' "${CONFIG_FILE}")
+mapfile -t egress_allow_tcp_ports < <(jq -r '.egress.allowTCPPorts[]?' "${CONFIG_FILE}")
+mapfile -t egress_allow_udp_ports < <(jq -r '.egress.allowUDPPorts[]?' "${CONFIG_FILE}")
 coexistence_docker_enabled="false"
 icmp_rate_limit_effective="false"
 icmp_rate_limit_clause=""
@@ -1364,6 +1399,58 @@ fi
 
 if [[ "${coexistence_profile}" == "docker-coexist" && "${forwarding_rule_declared_count}" != "0" ]]; then
   fail "forwarding.rules is not supported with coexistence.profile=docker-coexist"
+fi
+
+if [[ "${egress_enabled}" != "true" && "${egress_enabled}" != "false" ]]; then
+  fail "egress.enable must be true or false"
+fi
+
+if [[ "${egress_default_policy}" != "accept" && "${egress_default_policy}" != "drop" ]]; then
+  fail "egress.defaultPolicy must be one of: accept, drop"
+fi
+
+if [[ "${egress_enabled}" == "true" ]]; then
+  egress_effective_policy="${egress_default_policy}"
+
+  for iface in "${egress_trusted_interfaces[@]}"; do
+    validate_interface_name "egress.trustedInterfaces" "${iface}"
+  done
+
+  for port in "${egress_allow_tcp_ports[@]}"; do
+    validate_port_number_token "egress.allowTCPPorts" "${port}"
+  done
+
+  for port in "${egress_allow_udp_ports[@]}"; do
+    validate_port_number_token "egress.allowUDPPorts" "${port}"
+  done
+
+  if [[ "${egress_default_policy}" == "drop" \
+    && "${#egress_trusted_interfaces[@]}" -eq 0 \
+    && "${#egress_allow_tcp_ports[@]}" -eq 0 \
+    && "${#egress_allow_udp_ports[@]}" -eq 0 ]]; then
+    if ! jq -e '
+      ((.egress.allowIPv4 // []) | length) > 0
+      or ((.egress.allowIPv6 // []) | length) > 0
+    ' "${CONFIG_FILE}" >/dev/null 2>&1; then
+      fail "egress.defaultPolicy=drop requires at least one explicit allow selector"
+    fi
+  fi
+else
+  egress_effective_policy="accept"
+  if [[ "${egress_default_policy}" != "accept" \
+    || "${#egress_trusted_interfaces[@]}" -gt 0 \
+    || "${#egress_allow_tcp_ports[@]}" -gt 0 \
+    || "${#egress_allow_udp_ports[@]}" -gt 0 ]]; then
+    fail "egress configuration requires egress.enable=true"
+  fi
+  if ! jq -e '
+    ((.egress.allowIPv4 // []) | length) == 0
+    and ((.egress.allowIPv6 // []) | length) == 0
+    and ((.egress.denyIPv4 // []) | length) == 0
+    and ((.egress.denyIPv6 // []) | length) == 0
+  ' "${CONFIG_FILE}" >/dev/null 2>&1; then
+    fail "egress configuration requires egress.enable=true"
+  fi
 fi
 
 if [[ "${forwarding_rule_declared_count}" != "0" && "${forwarding_zone_declared_count}" == "0" ]]; then
@@ -1471,6 +1558,8 @@ log_event "stdout" "info" "run_start" \
   "coexistence_profile=${coexistence_profile}" \
   "nat_enabled=${nat_enabled}" \
   "forwarding_rules_declared=${forwarding_rule_declared_count}" \
+  "egress_enabled=${egress_enabled}" \
+  "egress_policy=${egress_effective_policy}" \
   "icmp_profile=${icmp_profile}" \
   "icmp_rate_limit=${icmp_rate_limit_effective}"
 
@@ -1567,6 +1656,47 @@ merge_sorted_overlay "${TMP_DIR}/allow-v4.txt" "${TMP_DIR}/local-allow-v4.txt"
 merge_sorted_overlay "${TMP_DIR}/allow-v6.txt" "${TMP_DIR}/local-allow-v6.txt"
 merge_sorted_overlay "${TMP_DIR}/deny-v4.txt" "${TMP_DIR}/local-deny-v4.txt"
 merge_sorted_overlay "${TMP_DIR}/deny-v6.txt" "${TMP_DIR}/local-deny-v6.txt"
+
+: > "${TMP_DIR}/egress-allow-v4.raw"
+: > "${TMP_DIR}/egress-allow-v6.raw"
+: > "${TMP_DIR}/egress-deny-v4.raw"
+: > "${TMP_DIR}/egress-deny-v6.raw"
+
+jq -r '.egress.allowIPv4[]?' "${CONFIG_FILE}" >> "${TMP_DIR}/egress-allow-v4.raw"
+jq -r '.egress.allowIPv6[]?' "${CONFIG_FILE}" >> "${TMP_DIR}/egress-allow-v6.raw"
+jq -r '.egress.denyIPv4[]?' "${CONFIG_FILE}" >> "${TMP_DIR}/egress-deny-v4.raw"
+jq -r '.egress.denyIPv6[]?' "${CONFIG_FILE}" >> "${TMP_DIR}/egress-deny-v6.raw"
+
+if [[ "${egress_enabled}" == "true" ]]; then
+  while IFS= read -r cidr; do
+    [[ -z "${cidr}" ]] && continue
+    validate_ipv4_or_cidr_token "egress.allowIPv4" "${cidr}"
+  done < "${TMP_DIR}/egress-allow-v4.raw"
+
+  while IFS= read -r cidr; do
+    [[ -z "${cidr}" ]] && continue
+    validate_ipv6_or_cidr_token "egress.allowIPv6" "${cidr}"
+  done < "${TMP_DIR}/egress-allow-v6.raw"
+
+  while IFS= read -r cidr; do
+    [[ -z "${cidr}" ]] && continue
+    validate_ipv4_or_cidr_token "egress.denyIPv4" "${cidr}"
+  done < "${TMP_DIR}/egress-deny-v4.raw"
+
+  while IFS= read -r cidr; do
+    [[ -z "${cidr}" ]] && continue
+    validate_ipv6_or_cidr_token "egress.denyIPv6" "${cidr}"
+  done < "${TMP_DIR}/egress-deny-v6.raw"
+fi
+
+normalize_cidrs "${TMP_DIR}/egress-allow-v4.raw" "${TMP_DIR}/egress-allow-v4.norm" "${TMP_DIR}/egress-allow-v4.ignore"
+normalize_cidrs "${TMP_DIR}/egress-allow-v6.raw" "${TMP_DIR}/egress-allow-v6.ignore" "${TMP_DIR}/egress-allow-v6.norm"
+normalize_cidrs "${TMP_DIR}/egress-deny-v4.raw" "${TMP_DIR}/egress-deny-v4.norm" "${TMP_DIR}/egress-deny-v4.ignore"
+normalize_cidrs "${TMP_DIR}/egress-deny-v6.raw" "${TMP_DIR}/egress-deny-v6.ignore" "${TMP_DIR}/egress-deny-v6.norm"
+sort_unique "${TMP_DIR}/egress-allow-v4.norm" "${TMP_DIR}/egress-allow-v4.txt"
+sort_unique "${TMP_DIR}/egress-allow-v6.norm" "${TMP_DIR}/egress-allow-v6.txt"
+sort_unique "${TMP_DIR}/egress-deny-v4.norm" "${TMP_DIR}/egress-deny-v4.txt"
+sort_unique "${TMP_DIR}/egress-deny-v6.norm" "${TMP_DIR}/egress-deny-v6.txt"
 
 country_enabled="$(jq -r '.country.enable' "${CONFIG_FILE}")"
 country_mode="$(jq -r '.country.mode // "deny"' "${CONFIG_FILE}")"
@@ -2294,6 +2424,13 @@ fi
 forwarding_zone_count="${forwarding_zone_declared_count}"
 forwarding_rule_count="$(count_file_lines "${TMP_DIR}/forward-matrix.raw")"
 forwarding_rule_expanded_count="$(count_file_lines "${TMP_DIR}/forward-matrix.txt")"
+egress_allow_v4_count="$(count_file_lines "${TMP_DIR}/egress-allow-v4.txt")"
+egress_allow_v6_count="$(count_file_lines "${TMP_DIR}/egress-allow-v6.txt")"
+egress_deny_v4_count="$(count_file_lines "${TMP_DIR}/egress-deny-v4.txt")"
+egress_deny_v6_count="$(count_file_lines "${TMP_DIR}/egress-deny-v6.txt")"
+egress_trusted_interface_count="${#egress_trusted_interfaces[@]}"
+egress_allow_tcp_port_count="${#egress_allow_tcp_ports[@]}"
+egress_allow_udp_port_count="${#egress_allow_udp_ports[@]}"
 local_allow_port_rules_enabled="false"
 if [[ "${local_allow_port_rule_count}" != "0" ]]; then
   local_allow_port_rules_enabled="true"
@@ -2336,6 +2473,14 @@ log_event "stdout" "info" "set_counts" \
   "forwarding_zones=${forwarding_zone_count}" \
   "forwarding_rules=${forwarding_rule_count}" \
   "forwarding_rules_expanded=${forwarding_rule_expanded_count}" \
+  "egress_policy=${egress_effective_policy}" \
+  "egress_allow_v4=${egress_allow_v4_count}" \
+  "egress_allow_v6=${egress_allow_v6_count}" \
+  "egress_deny_v4=${egress_deny_v4_count}" \
+  "egress_deny_v6=${egress_deny_v6_count}" \
+  "egress_trusted_interfaces=${egress_trusted_interface_count}" \
+  "egress_allow_tcp_ports=${egress_allow_tcp_port_count}" \
+  "egress_allow_udp_ports=${egress_allow_udp_port_count}" \
   "dynamic_ban_v4=${dynamic_ban_v4_count}" \
   "dynamic_ban_v6=${dynamic_ban_v6_count}"
 
@@ -2438,6 +2583,10 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
   emit_set "feed_ipv6" "ipv6_addr" "${TMP_DIR}/feeds-v6.txt"
   emit_set "dynamic_ban_ipv4" "ipv4_addr" "${TMP_DIR}/dynamic-ban-v4.txt" "interval,timeout"
   emit_set "dynamic_ban_ipv6" "ipv6_addr" "${TMP_DIR}/dynamic-ban-v6.txt" "interval,timeout"
+  emit_set "egress_allow_ipv4" "ipv4_addr" "${TMP_DIR}/egress-allow-v4.txt"
+  emit_set "egress_allow_ipv6" "ipv6_addr" "${TMP_DIR}/egress-allow-v6.txt"
+  emit_set "egress_deny_ipv4" "ipv4_addr" "${TMP_DIR}/egress-deny-v4.txt"
+  emit_set "egress_deny_ipv6" "ipv6_addr" "${TMP_DIR}/egress-deny-v6.txt"
 
   echo "  chain input {"
   echo "    type filter hook input priority filter; policy ${default_policy};"
@@ -2687,7 +2836,41 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
 
   echo "  }"
   echo "  chain output {"
-  echo "    type filter hook output priority filter; policy accept;"
+  echo "    type filter hook output priority filter; policy ${egress_effective_policy};"
+
+  if [[ "${egress_enabled}" == "true" ]]; then
+    echo "    ct state invalid drop"
+    echo "    ct state established,related accept"
+    echo "    oifname \"lo\" accept"
+
+    for iface in "${egress_trusted_interfaces[@]}"; do
+      if [[ -n "${iface}" ]]; then
+        printf '    oifname "%s" accept\n' "${iface}"
+      fi
+    done
+
+    echo "    ip daddr @egress_deny_ipv4 drop"
+    echo "    ip6 daddr @egress_deny_ipv6 drop"
+
+    echo "    ip daddr @egress_allow_ipv4 accept"
+    echo "    ip6 daddr @egress_allow_ipv6 accept"
+
+    if [[ "${#egress_allow_tcp_ports[@]}" -gt 0 ]]; then
+      printf '    tcp dport { %s } accept\n' "$(render_port_set egress_allow_tcp_ports)"
+    fi
+
+    if [[ "${#egress_allow_udp_ports[@]}" -gt 0 ]]; then
+      printf '    udp dport { %s } accept\n' "$(render_port_set egress_allow_udp_ports)"
+    fi
+
+    if [[ "${egress_effective_policy}" == "drop" ]]; then
+      if [[ "${log_drops}" == "true" ]]; then
+        echo "    log prefix \"nix-csf output drop: \" level warn"
+      fi
+      echo "    reject with icmpx type admin-prohibited"
+    fi
+  fi
+
   echo "  }"
   echo "}"
 } > "${tmp_rules}"
