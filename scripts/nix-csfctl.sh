@@ -9,6 +9,7 @@ Usage:
 Global options:
   --endpoint URL            Control-plane base URL (default: http://127.0.0.1:18081)
   --auth-token-file PATH    Bearer token file for authenticated endpoints
+  --node-id ID              Send X-Nix-Csf-Node header on all requests
   --output MODE             json|pretty (default: json)
   -h, --help                Show this help
 
@@ -16,16 +17,16 @@ Commands:
   health
       GET /healthz
 
-  policy add <allow|deny|ignore> <CIDR>
+  policy add <allow|deny|ignore> <CIDR> [--scope cluster|local] [--node-id ID] [--source NAME]
       POST /v1/policy/<list>
 
-  policy remove <allow|deny|ignore> <CIDR>
+  policy remove <allow|deny|ignore> <CIDR> [--scope cluster|local|any]
       DELETE /v1/policy/<list>
 
-  ban-temp <CIDR> [--ttl SECONDS] [--reason TEXT]
+  ban-temp <CIDR> [--ttl SECONDS] [--reason TEXT] [--scope cluster|local] [--node-id ID] [--source NAME]
       POST /v1/offenders/ban-temp
 
-  unban <CIDR>
+  unban <CIDR> [--scope cluster|local|any] [--node-id ID]
       POST /v1/offenders/unban
 
   promotions [--limit N]
@@ -53,8 +54,45 @@ validate_positive_int() {
   fi
 }
 
+validate_scope_value() {
+  local value="$1"
+  local name="$2"
+  case "${value}" in
+    cluster|local) ;;
+    *) fail "${name} must be one of: cluster|local" ;;
+  esac
+}
+
+validate_scope_filter() {
+  local value="$1"
+  local name="$2"
+  case "${value}" in
+    cluster|local|any) ;;
+    *) fail "${name} must be one of: cluster|local|any" ;;
+  esac
+}
+
+validate_node_id() {
+  local value="$1"
+  local name="$2"
+  [[ -n "${value}" ]] || fail "${name} must not be empty"
+  if [[ "${value}" =~ [[:space:]] ]]; then
+    fail "${name} must not contain whitespace"
+  fi
+}
+
+validate_source_name() {
+  local value="$1"
+  local name="$2"
+  [[ -n "${value}" ]] || fail "${name} must not be empty"
+  if [[ "${value}" =~ [[:space:]] ]]; then
+    fail "${name} must not contain whitespace"
+  fi
+}
+
 endpoint="${NIX_CSFCTL_ENDPOINT:-http://127.0.0.1:18081}"
 auth_token_file="${NIX_CSFCTL_AUTH_TOKEN_FILE:-}"
+global_node_id="${NIX_CSFCTL_NODE_ID:-}"
 output_mode="json"
 
 while [[ "$#" -gt 0 ]]; do
@@ -72,6 +110,11 @@ while [[ "$#" -gt 0 ]]; do
     --output)
       [[ "$#" -ge 2 ]] || fail "--output requires a value"
       output_mode="$2"
+      shift 2
+      ;;
+    --node-id)
+      [[ "$#" -ge 2 ]] || fail "--node-id requires a value"
+      global_node_id="$2"
       shift 2
       ;;
     -h|--help)
@@ -93,6 +136,10 @@ done
 
 if [[ "${output_mode}" != "json" && "${output_mode}" != "pretty" ]]; then
   fail "--output must be 'json' or 'pretty'"
+fi
+
+if [[ -n "${global_node_id}" ]]; then
+  validate_node_id "${global_node_id}" "--node-id"
 fi
 
 [[ "$#" -gt 0 ]] || {
@@ -149,6 +196,10 @@ request() {
     curl_args+=( -H "${extra_header_name}: ${extra_header_value}" )
   fi
 
+  if [[ -n "${global_node_id}" ]]; then
+    curl_args+=( -H "X-Nix-Csf-Node: ${global_node_id}" )
+  fi
+
   if [[ -n "${body}" ]]; then
     curl_args+=( -H "Content-Type: application/json" --data "${body}" )
   fi
@@ -190,17 +241,68 @@ case "${command}" in
     ;;
 
   policy)
-    [[ "$#" -eq 3 ]] || fail "usage: nix-csfctl policy <add|remove> <allow|deny|ignore> <CIDR>"
+    [[ "$#" -ge 3 ]] || fail "usage: nix-csfctl policy <add|remove> <allow|deny|ignore> <CIDR> [options]"
     action="$1"
     list_name="$2"
     cidr="$3"
+    shift 3
+    scope=""
+    node_id=""
+    source=""
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --scope)
+          [[ "$#" -ge 2 ]] || fail "--scope requires a value"
+          scope="$2"
+          shift 2
+          ;;
+        --node-id)
+          [[ "$#" -ge 2 ]] || fail "--node-id requires a value"
+          node_id="$2"
+          shift 2
+          ;;
+        --source)
+          [[ "$#" -ge 2 ]] || fail "--source requires a value"
+          source="$2"
+          shift 2
+          ;;
+        *)
+          fail "unknown policy option: $1"
+          ;;
+      esac
+    done
     validate_list_name "${list_name}"
-    payload="$(jq -cn --arg cidr "${cidr}" '{cidr: $cidr}')"
+    if [[ -n "${node_id}" ]]; then
+      validate_node_id "${node_id}" "policy --node-id"
+    fi
+    if [[ -n "${source}" ]]; then
+      validate_source_name "${source}" "policy --source"
+    fi
     case "${action}" in
       add)
+        if [[ -n "${scope}" ]]; then
+          validate_scope_value "${scope}" "policy --scope"
+        fi
+        payload="$(jq -cn \
+          --arg cidr "${cidr}" \
+          --arg scope "${scope}" \
+          --arg nodeId "${node_id}" \
+          --arg source "${source}" \
+          '{cidr: $cidr}
+          + (if $scope != "" then {scope: $scope} else {} end)
+          + (if $nodeId != "" then {nodeId: $nodeId} else {} end)
+          + (if $source != "" then {source: $source} else {} end)')"
         request "POST" "/v1/policy/${list_name}" "${payload}"
         ;;
       remove)
+        if [[ -n "${scope}" ]]; then
+          validate_scope_filter "${scope}" "policy --scope"
+        fi
+        payload="$(jq -cn \
+          --arg cidr "${cidr}" \
+          --arg scope "${scope}" \
+          '{cidr: $cidr}
+          + (if $scope != "" then {scope: $scope} else {} end)')"
         request "DELETE" "/v1/policy/${list_name}" "${payload}"
         ;;
       *)
@@ -210,11 +312,14 @@ case "${command}" in
     ;;
 
   ban-temp)
-    [[ "$#" -ge 1 ]] || fail "usage: nix-csfctl ban-temp <CIDR> [--ttl SECONDS] [--reason TEXT]"
+    [[ "$#" -ge 1 ]] || fail "usage: nix-csfctl ban-temp <CIDR> [--ttl SECONDS] [--reason TEXT] [--scope cluster|local] [--node-id ID] [--source NAME]"
     cidr="$1"
     shift
     ttl=""
     reason=""
+    scope=""
+    node_id=""
+    source=""
     while [[ "$#" -gt 0 ]]; do
       case "$1" in
         --ttl)
@@ -227,6 +332,21 @@ case "${command}" in
           reason="$2"
           shift 2
           ;;
+        --scope)
+          [[ "$#" -ge 2 ]] || fail "--scope requires a value"
+          scope="$2"
+          shift 2
+          ;;
+        --node-id)
+          [[ "$#" -ge 2 ]] || fail "--node-id requires a value"
+          node_id="$2"
+          shift 2
+          ;;
+        --source)
+          [[ "$#" -ge 2 ]] || fail "--source requires a value"
+          source="$2"
+          shift 2
+          ;;
         *)
           fail "unknown ban-temp option: $1"
           ;;
@@ -236,24 +356,77 @@ case "${command}" in
     if [[ -n "${ttl}" ]]; then
       validate_positive_int "${ttl}" "ttl"
     fi
-
-    if [[ -n "${ttl}" && -n "${reason}" ]]; then
-      payload="$(jq -cn --arg cidr "${cidr}" --argjson ttl "${ttl}" --arg reason "${reason}" '{cidr: $cidr, ttlSeconds: $ttl, reason: $reason}')"
-    elif [[ -n "${ttl}" ]]; then
-      payload="$(jq -cn --arg cidr "${cidr}" --argjson ttl "${ttl}" '{cidr: $cidr, ttlSeconds: $ttl}')"
-    elif [[ -n "${reason}" ]]; then
-      payload="$(jq -cn --arg cidr "${cidr}" --arg reason "${reason}" '{cidr: $cidr, reason: $reason}')"
-    else
-      payload="$(jq -cn --arg cidr "${cidr}" '{cidr: $cidr}')"
+    if [[ -n "${scope}" ]]; then
+      validate_scope_value "${scope}" "ban-temp --scope"
     fi
+    if [[ -n "${node_id}" ]]; then
+      validate_node_id "${node_id}" "ban-temp --node-id"
+    fi
+    if [[ -n "${source}" ]]; then
+      validate_source_name "${source}" "ban-temp --source"
+    fi
+
+    ttl_or_null="null"
+    if [[ -n "${ttl}" ]]; then
+      ttl_or_null="${ttl}"
+    fi
+    reason_or_null="null"
+    if [[ -n "${reason}" ]]; then
+      reason_or_null="$(jq -Rn --arg value "${reason}" '$value')"
+    fi
+    payload="$(jq -cn \
+      --arg cidr "${cidr}" \
+      --arg scope "${scope}" \
+      --arg nodeId "${node_id}" \
+      --arg source "${source}" \
+      --argjson ttlSeconds "${ttl_or_null}" \
+      --argjson reason "${reason_or_null}" \
+      '{cidr: $cidr}
+      + (if $ttlSeconds != null then {ttlSeconds: $ttlSeconds} else {} end)
+      + (if $reason != null then {reason: $reason} else {} end)
+      + (if $scope != "" then {scope: $scope} else {} end)
+      + (if $nodeId != "" then {nodeId: $nodeId} else {} end)
+      + (if $source != "" then {source: $source} else {} end)')"
 
     request "POST" "/v1/offenders/ban-temp" "${payload}"
     ;;
 
   unban)
-    [[ "$#" -ge 1 ]] || fail "usage: nix-csfctl unban <CIDR>"
+    [[ "$#" -ge 1 ]] || fail "usage: nix-csfctl unban <CIDR> [--scope cluster|local|any] [--node-id ID]"
     cidr="$1"
-    payload="$(jq -cn --arg cidr "${cidr}" '{cidr: $cidr}')"
+    shift
+    scope=""
+    node_id=""
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --scope)
+          [[ "$#" -ge 2 ]] || fail "--scope requires a value"
+          scope="$2"
+          shift 2
+          ;;
+        --node-id)
+          [[ "$#" -ge 2 ]] || fail "--node-id requires a value"
+          node_id="$2"
+          shift 2
+          ;;
+        *)
+          fail "unknown unban option: $1"
+          ;;
+      esac
+    done
+    if [[ -n "${scope}" ]]; then
+      validate_scope_filter "${scope}" "unban --scope"
+    fi
+    if [[ -n "${node_id}" ]]; then
+      validate_node_id "${node_id}" "unban --node-id"
+    fi
+    payload="$(jq -cn \
+      --arg cidr "${cidr}" \
+      --arg scope "${scope}" \
+      --arg nodeId "${node_id}" \
+      '{cidr: $cidr}
+      + (if $scope != "" then {scope: $scope} else {} end)
+      + (if $nodeId != "" then {nodeId: $nodeId} else {} end)')"
     request "POST" "/v1/offenders/unban" "${payload}"
     ;;
 

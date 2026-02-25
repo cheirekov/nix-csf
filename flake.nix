@@ -145,6 +145,13 @@
                 enable = true;
                 requireAuth = false;
                 environment = "lab";
+                propagation = {
+                  policyDefaultScope = "local";
+                  dynamicDefaultScope = "cluster";
+                  escalationPromotionScope = "local";
+                  requireNodeForLocalScope = false;
+                  includeProvenanceMetadata = false;
+                };
                 escalation = {
                   enable = true;
                   tempBanThreshold = 3;
@@ -387,6 +394,11 @@
             printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-reason-class lfd'
             printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-reason-class fail2ban'
             printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-reason-class conn_flood'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--policy-default-scope local'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--dynamic-default-scope cluster'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-promotion-scope local'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--allow-local-scope-without-node'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--disable-provenance-metadata'
             printf '%s\n' "$controlPlaneExec" > "$out"
           '';
           eval-lfd-detector = pkgs.runCommand "nix-csf-eval-lfd-detector" {

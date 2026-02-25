@@ -286,9 +286,22 @@ Operator mutation examples (control-plane write path):
 ```bash
 nix-csfctl policy add deny 203.0.119.9/32
 nix-csfctl ban-temp 203.0.119.10/32 --ttl 900 --reason syn_flood
+nix-csfctl policy add deny 203.0.119.140/32 --scope local --node-id edge-us-01 --source lfd
+nix-csfctl ban-temp 203.0.119.142/32 --ttl 600 --reason lfd:ssh_auth --scope local --node-id edge-us-01 --source lfd
 nix-csfctl promotions --limit 20
 sudo systemctl start nix-csf-refresh.service
 ```
+
+Propagation v2 snapshot notes:
+
+- snapshots include `lastMutationId` for replay-safe polling,
+- when provenance is enabled (`controlPlane.propagation.includeProvenanceMetadata = true`), policy and offender entries include:
+  - `scope`,
+  - `originNode`,
+  - `source`,
+  - `mutationId`,
+  - `updatedAt`,
+- local scope entries are visible only to matching `nodeId` (`clusterPolicy.nodeId` / `dynamicOffenders.nodeId`).
 
 ## 9) Docker coexistence host profile
 

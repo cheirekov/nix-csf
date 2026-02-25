@@ -319,12 +319,14 @@ pkgs.testers.runNixOSTest {
         url = "http://127.0.0.1:18081/snapshots/lab/cluster-policy.json";
         requireHTTPS = false;
         failOpen = true;
+        nodeId = "node-a";
       };
       dynamicOffenders = {
         enable = true;
         url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
         requireHTTPS = false;
         failOpen = true;
+        nodeId = "node-a";
         defaultEntryTTLSeconds = 300;
       };
       controlPlane = {
@@ -506,7 +508,11 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.succeed("command -v nix-csfctl >/dev/null")
     controlplanepoc.succeed("nix-csfctl --output pretty health | jq -e '.status == \"ok\"'")
     controlplanepoc.succeed("nix-csfctl --output pretty policy add deny 203.0.119.9/32 | jq -e '.changed == true'")
+    controlplanepoc.succeed("nix-csfctl --output pretty policy add deny 203.0.119.140/32 --scope local --node-id node-a --source lfd | jq -e '.changed == true and .scope == \"local\" and .originNode == \"node-a\"'")
+    controlplanepoc.succeed("nix-csfctl --output pretty policy add deny 203.0.119.141/32 --scope local --node-id node-b --source lfd | jq -e '.changed == true and .scope == \"local\" and .originNode == \"node-b\"'")
     controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.10/32 --ttl 600 --reason syn_flood | jq -e '.changed == true'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.142/32 --ttl 600 --reason lfd:ssh_auth --scope local --node-id node-a --source lfd | jq -e '.changed == true and .scope == \"local\" and .originNode == \"node-a\"'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.143/32 --ttl 600 --reason lfd:ssh_auth --scope local --node-id node-b --source lfd | jq -e '.changed == true and .scope == \"local\" and .originNode == \"node-b\"'")
     controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.enabled == true and .escalation.reasonClass == \"conn_flood\" and .escalation.reasonClassEligible == true and .escalation.escalated == false'")
     controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == true and .escalation.promotionChanged == true and .escalation.cooldownSeconds == 3600'")
     controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.122/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == false'")
@@ -543,10 +549,20 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.succeed("systemctl start nix-csf-refresh.service")
     controlplanepoc.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx success")
     controlplanepoc.succeed("grep -F '\"203.0.119.9/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
+    controlplanepoc.succeed("grep -F '\"203.0.119.140/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
+    controlplanepoc.fail("grep -F '\"203.0.119.141/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
+    controlplanepoc.succeed("jq -e '[.denyIPv4Meta[]? | select(.cidr == \"203.0.119.140/32\" and .scope == \"local\" and .originNode == \"node-a\" and .source == \"lfd\" and (.mutationId > 0))] | length == 1' /var/lib/nix-csf/cache/cluster-policy.json")
+    controlplanepoc.succeed("jq -e '.lastMutationId | type == \"number\" and . > 0' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.succeed("grep -F '\"203.0.119.11/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.succeed("grep -F '\"203.0.119.122/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.fail("grep -F '\"203.0.119.123/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.10/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.142/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.fail("grep -F '\"cidr\": \"203.0.119.143/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.succeed("jq -e '[.banIPv4[]? | select(.cidr == \"203.0.119.142/32\" and .scope == \"local\" and .originNode == \"node-a\" and .source == \"lfd\" and (.mutationId > 0))] | length == 1' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.succeed("jq -e '.lastMutationId | type == \"number\" and . > 0' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.succeed("curl -sf -H 'X-Nix-Csf-Node: node-b' http://127.0.0.1:18081/snapshots/lab/cluster-policy.json | jq -e '(.denyIPv4 | index(\"203.0.119.141/32\") != null) and (.denyIPv4 | index(\"203.0.119.140/32\") == null)'")
+    controlplanepoc.succeed("curl -sf -H 'X-Nix-Csf-Node: node-b' http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json | jq -e '([.banIPv4[]?.cidr] | index(\"203.0.119.143/32\") != null) and ([.banIPv4[]?.cidr] | index(\"203.0.119.142/32\") == null)'")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.120/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.121/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.123/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")

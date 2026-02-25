@@ -78,9 +78,9 @@
   - reusable multi-source signal model (not SSH-only).
 - Built-in detector pack v2 (`T-044`). [done 2026-02-25]
   - SSH plus additional service-level detectors (auth/flood patterns).
-- Escalation engine v2 (`T-045`). [in progress 2026-02-25]
+- Escalation engine v2 (`T-045`). [done 2026-02-25]
   - normalized temp-ban and permanent-promotion path across sources.
-- Cluster propagation semantics v2 (`T-046`):
+- Cluster propagation semantics v2 (`T-046`). [in progress 2026-02-25]
   - controlled sharing for temporary and permanent actions.
 - Documentation blueprints and examples (`T-048`):
   - deployment patterns for standalone and clustered nodes.

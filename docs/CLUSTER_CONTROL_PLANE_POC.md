@@ -1,8 +1,8 @@
 # Cluster Control-Plane POC (Retro + Design)
 
-Last updated: 2026-02-20  
+Last updated: 2026-02-25  
 Owners: Security Architect + Nix Module Engineer + SRE + PM/BA
-Status: baseline implemented (`T-024`), escalation PoC completed (`T-026`), operator workflow completed (`T-025`).
+Status: baseline implemented (`T-024`), escalation PoC completed (`T-026`), operator workflow completed (`T-025`), propagation semantics v2 in progress (`T-046`).
 
 ## 1) Objective
 
@@ -152,3 +152,26 @@ For `T-026`:
 
 - repeated temp bans for same source trigger promotion according to configured `N/W`.
 - promotion appears in cluster policy deny snapshot and is auditable.
+
+## 9) Propagation semantics v2 (`T-046`)
+
+Scope/governance additions:
+
+- mutation scope:
+  - `cluster` (visible to all nodes),
+  - `local` (visible only to matching node identity),
+- node identity:
+  - request header `X-Nix-Csf-Node`,
+  - optional payload field `nodeId`,
+- provenance metadata (when enabled):
+  - `scope`, `originNode`, `source`, `mutationId`, `updatedAt`,
+- replay-safe marker:
+  - snapshot-level `lastMutationId`.
+
+Module knobs:
+
+- `services.nixCsf.controlPlane.propagation.policyDefaultScope`,
+- `services.nixCsf.controlPlane.propagation.dynamicDefaultScope`,
+- `services.nixCsf.controlPlane.propagation.escalationPromotionScope`,
+- `services.nixCsf.controlPlane.propagation.requireNodeForLocalScope`,
+- `services.nixCsf.controlPlane.propagation.includeProvenanceMetadata`.

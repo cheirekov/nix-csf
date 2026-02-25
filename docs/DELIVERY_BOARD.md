@@ -26,16 +26,15 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Focus |
 |---|---|---|---|
-| T-045 | IN_PROGRESS | Escalation engine v2 | Temp->perm promotion policy with cooldown/reason-class governance and deterministic audit metadata |
+| T-046 | IN_PROGRESS | Cluster propagation semantics v2 | Controlled sharing rules for dynamic/permanent actions across nodes with provenance + replay-safe markers |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-046 | TODO | Cluster propagation semantics v2 | Controlled sharing rules for dynamic/permanent actions across nodes |
-| 2 | T-047 | TODO | Integration test expansion for gateway + detector flows | VM scenarios for NAT/forward/egress and detector/escalation paths |
-| 3 | T-048 | TODO | Documentation and deployment blueprints for Stage 1/2 | End-to-end examples (gateway, bastion, app, clustered nodes) |
-| 4 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
+| 1 | T-047 | TODO | Integration test expansion for gateway + detector flows | VM scenarios for NAT/forward/egress and detector/escalation paths |
+| 2 | T-048 | TODO | Documentation and deployment blueprints for Stage 1/2 | End-to-end examples (gateway, bastion, app, clustered nodes) |
+| 3 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
 
 ### LATER
 
@@ -93,6 +92,7 @@ Ship a production-usable NixOS firewall module that is:
 | T-042 | DONE | Optional egress policy controls |
 | T-043 | DONE | LFD detector framework v2 |
 | T-044 | DONE | Built-in detector pack v2 |
+| T-045 | DONE | Escalation engine v2 |
 
 ## Triage protocol
 

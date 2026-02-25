@@ -1,5 +1,55 @@
 # PM/BA Changelog
 
+## 2026-02-25 — `T-045` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-045` (`DONE`)
+- Summary:
+  - operator reported full validation success (`[nix-csf] validation succeeded`) after escalation engine v2 rollout,
+  - escalation v2 accepted with:
+    - cooldown/reason-class governance,
+    - deterministic promotion audit metadata.
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - Stage-2 lane advanced to `T-046` (cluster propagation semantics v2).
+
+## 2026-02-25 — Batch PROPAGATION-V2-046 (implementation lane)
+
+- Ticket(s): `T-046` (`IN_PROGRESS`)
+- Summary:
+  - implemented propagation semantics v2 in control-plane runtime:
+    - scope-aware mutations (`cluster`/`local`) for policy and dynamic offender endpoints,
+    - node-aware visibility boundaries with `X-Nix-Csf-Node` + payload `nodeId`,
+    - provenance metadata in snapshots/audit (`scope`, `originNode`, `source`, `mutationId`, `updatedAt`),
+    - replay-safe snapshot marker `lastMutationId`,
+  - module/service wiring:
+    - added `services.nixCsf.controlPlane.propagation.*` options,
+    - control-plane ExecStart now emits propagation-v2 flags,
+  - operator tooling:
+    - `nix-csfctl` now supports global `--node-id`,
+    - added mutation-level `--scope`, `--node-id`, `--source` arguments for relevant commands,
+  - quality and coverage updates:
+    - `eval-control-plane` asserts propagation-v2 flags,
+    - integration scenario validates local-vs-cluster visibility and provenance metadata for node-a/node-b flows,
+  - documentation updates:
+    - `README.md`,
+    - `docs/USE_CASES.md`,
+    - `docs/CLUSTER_CONTROL_PLANE_POC.md`,
+    - board/roadmap/session state transitions.
+- BA requirement mapping:
+  - satisfies `T-046` acceptance for controlled sharing boundaries, provenance metadata, and replay-safe marker exposure.
+- PM milestone mapping:
+  - advances Stage-2 cluster semantics hardening before Stage-2 integration/documentation expansion (`T-047`/`T-048`).
+- Risk impact:
+  - `medium` (control-plane mutation/snapshot semantics changed; pull-client schema remains backward-compatible).
+- Validation evidence (agent lane):
+  - `python3 -m py_compile scripts/nix-csf-control-plane.py`
+  - `bash -n scripts/nix-csfctl.sh`
+  - `./scripts/validate-agent.sh`
+  - `nix build .#checks.x86_64-linux.control-plane-lint --print-build-logs`
+- Open follow-ups:
+  - operator full-validation evidence (`./scripts/validate-capture.sh`) required before moving `T-046` to `DONE`.
+
 ## 2026-02-25 — `T-044` closure (operator full-validation confirmed)
 
 - Ticket(s): `T-044` (`DONE`)

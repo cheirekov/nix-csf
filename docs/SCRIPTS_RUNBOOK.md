@@ -51,9 +51,11 @@ Health, policy mutation, and offender operations:
 ```bash
 nix-csfctl --output pretty health
 nix-csfctl policy add deny 203.0.119.9/32
+nix-csfctl policy add deny 203.0.119.140/32 --scope local --node-id edge-us-01 --source lfd
 nix-csfctl policy remove deny 203.0.119.9/32
 nix-csfctl ban-temp 203.0.119.10/32 --ttl 900 --reason ssh_flood
-nix-csfctl unban 203.0.119.10/32
+nix-csfctl ban-temp 203.0.119.142/32 --ttl 600 --reason lfd:ssh_auth --scope local --node-id edge-us-01 --source lfd
+nix-csfctl unban 203.0.119.142/32 --scope local --node-id edge-us-01
 nix-csfctl promotions --limit 20
 ```
 
@@ -185,7 +187,9 @@ Audit outputs to review after apply/refresh:
 ```bash
 nix-csfctl --output pretty health
 nix-csfctl policy add deny 203.0.119.9/32
+nix-csfctl policy add deny 203.0.119.140/32 --scope local --node-id edge-us-01 --source lfd
 nix-csfctl ban-temp 203.0.119.10/32 --ttl 600 --reason syn_flood
+nix-csfctl ban-temp 203.0.119.142/32 --ttl 600 --reason lfd:ssh_auth --scope local --node-id edge-us-01 --source lfd
 sudo systemctl start nix-csf-refresh.service
 ```
 

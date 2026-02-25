@@ -3,48 +3,44 @@
 Last updated: 2026-02-25  
 Owner: PM/BA + Codex
 
-## 0) Current batch snapshot (`ESCALATION-V2-045`)
+## 0) Current batch snapshot (`PROPAGATION-V2-046`)
 
 - Batch type: `IMPLEMENTATION`
-- Active ticket: `T-045` (`IN_PROGRESS`)
+- Active ticket: `T-046` (`IN_PROGRESS`)
 - Status:
-  - `T-044` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
-  - `T-045` implementation landed in agent lane; awaiting operator full-validation evidence for closure.
+  - `T-045` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
+  - `T-046` implementation landed in agent lane; awaiting operator full-validation evidence for closure.
 - Scope delivered in this batch:
-  - closed `T-044` delivery after operator validation handoff,
-  - implemented escalation engine v2 in control-plane/runtime path:
-    - new policy knobs:
-      - `controlPlane.escalation.cooldownSeconds`,
-      - `controlPlane.escalation.reasonClasses`,
-    - cooldown-aware promotion behavior for repeated temp-ban events,
-    - reason-class eligibility gating across detector/fail2ban/manual ban sources,
-    - deterministic promotion audit metadata:
-      - monotonic `id`,
-      - `reasonClass`,
-      - `cooldownSeconds`,
-      - `cooldownUntil`,
-  - module/service wiring updates:
-    - control-plane ExecStart now passes cooldown and reason-class flags,
-    - new assertion for `reasonClasses` token validity (non-empty, no whitespace),
-  - updated quality coverage:
-    - `eval-control-plane` now validates escalation v2 flags in rendered ExecStart,
-    - integration scenario extended with:
-      - reason-class exclusion (`syn_flood`),
-      - cooldown suppression of repeated promotions,
-      - audit metadata assertions (`id`, `reasonClass`, cooldown fields),
-  - updated docs:
-    - `README.md`,
-    - `docs/LFD_DETECTOR.md`,
-    - `docs/USE_CASES.md`,
-    - board/roadmap/changelog state transitions.
+  - control-plane propagation semantics v2:
+    - mutation scope support (`cluster` / `local`) for policy and dynamic offender APIs,
+    - node-aware visibility boundaries via `X-Nix-Csf-Node` + payload `nodeId`,
+    - provenance metadata in snapshots and audit records:
+      - `scope`,
+      - `originNode`,
+      - `source`,
+      - `mutationId`,
+      - `updatedAt`,
+    - replay-safe snapshot marker `lastMutationId`,
+  - module/API wiring updates:
+    - new Nix options:
+      - `services.nixCsf.controlPlane.propagation.policyDefaultScope`,
+      - `services.nixCsf.controlPlane.propagation.dynamicDefaultScope`,
+      - `services.nixCsf.controlPlane.propagation.escalationPromotionScope`,
+      - `services.nixCsf.controlPlane.propagation.requireNodeForLocalScope`,
+      - `services.nixCsf.controlPlane.propagation.includeProvenanceMetadata`,
+    - control-plane ExecStart passes new propagation flags,
+    - `nix-csfctl` supports:
+      - global `--node-id` request header,
+      - command-level `--scope` / `--node-id` / `--source`,
+  - quality coverage updates:
+    - `eval-control-plane` asserts propagation-v2 service flags,
+    - integration scenario adds node-scoped visibility checks (node-a vs node-b),
+    - provenance + `lastMutationId` assertions added for cached snapshots.
 - Validation evidence (agent lane):
   - `python3 -m py_compile scripts/nix-csf-control-plane.py`
-  - `bash -n scripts/nix-csf-lfd-detector.sh`
   - `bash -n scripts/nix-csfctl.sh`
-  - `bash -n scripts/validate.sh`
-  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-control-plane" --print-build-logs`
-  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector" "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector-pack" --print-build-logs`
   - `./scripts/validate-agent.sh`
+  - `nix build .#checks.x86_64-linux.control-plane-lint --print-build-logs`
 - Next operator step:
   - run `./scripts/validate-capture.sh` and share summary on failure (or `[nix-csf] validation succeeded` on success).
 

@@ -24,6 +24,9 @@ def default_state() -> dict[str, Any]:
     return {
         "policyRevision": 0,
         "dynamicRevision": 0,
+        "meta": {
+            "nextMutationId": 1,
+        },
         "policy": {
             "allowIPv4": [],
             "allowIPv6": [],
@@ -31,6 +34,14 @@ def default_state() -> dict[str, Any]:
             "denyIPv6": [],
             "ignoreIPv4": [],
             "ignoreIPv6": [],
+        },
+        "policyMeta": {
+            "allowIPv4": {},
+            "allowIPv6": {},
+            "denyIPv4": {},
+            "denyIPv6": {},
+            "ignoreIPv4": {},
+            "ignoreIPv6": {},
         },
         "dynamic": {
             "entries": [],
@@ -60,9 +71,23 @@ def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 class StateStore:
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        *,
+        policy_default_scope: str,
+        dynamic_default_scope: str,
+        escalation_promotion_scope: str,
+        require_node_for_local_scope: bool,
+        include_provenance_metadata: bool,
+    ) -> None:
         self.data_dir = data_dir
         self.state_file = data_dir / "state.json"
+        self.policy_default_scope = policy_default_scope
+        self.dynamic_default_scope = dynamic_default_scope
+        self.escalation_promotion_scope = escalation_promotion_scope
+        self.require_node_for_local_scope = require_node_for_local_scope
+        self.include_provenance_metadata = include_provenance_metadata
         self._lock = threading.RLock()
         self._state = self._load_or_init()
 
@@ -85,12 +110,65 @@ class StateStore:
         state = default_state()
         state["policyRevision"] = int(loaded.get("policyRevision", 0))
         state["dynamicRevision"] = int(loaded.get("dynamicRevision", 0))
+        max_mutation_id = 0
 
         policy = loaded.get("policy", {}) if isinstance(loaded.get("policy", {}), dict) else {}
         for key in state["policy"].keys():
             value = policy.get(key, [])
             if isinstance(value, list):
                 state["policy"][key] = [str(item) for item in value if isinstance(item, str)]
+
+        policy_meta_loaded = loaded.get("policyMeta", {}) if isinstance(loaded.get("policyMeta", {}), dict) else {}
+        for key in state["policyMeta"].keys():
+            key_meta = policy_meta_loaded.get(key, {})
+            if not isinstance(key_meta, dict):
+                key_meta = {}
+
+            sanitized_key_meta: dict[str, dict[str, Any]] = {}
+            for cidr in state["policy"][key]:
+                raw_meta = key_meta.get(cidr, {})
+                if not isinstance(raw_meta, dict):
+                    raw_meta = {}
+
+                scope = raw_meta.get("scope", "cluster")
+                if scope not in ("cluster", "local"):
+                    scope = "cluster"
+
+                origin_node = raw_meta.get("originNode")
+                if origin_node is not None and not isinstance(origin_node, str):
+                    origin_node = None
+                if isinstance(origin_node, str):
+                    origin_node = origin_node.strip()
+                    if origin_node == "":
+                        origin_node = None
+                    elif any(ch.isspace() for ch in origin_node):
+                        origin_node = None
+
+                source = raw_meta.get("source")
+                if not isinstance(source, str) or source.strip() == "":
+                    source = "legacy"
+                source = source.strip()
+
+                mutation_id = raw_meta.get("mutationId", 0)
+                if not isinstance(mutation_id, int) or mutation_id < 0:
+                    mutation_id = 0
+
+                updated_at = raw_meta.get("updatedAt", 0)
+                if not isinstance(updated_at, int) or updated_at < 0:
+                    updated_at = 0
+
+                if mutation_id > max_mutation_id:
+                    max_mutation_id = mutation_id
+
+                sanitized_key_meta[cidr] = {
+                    "scope": scope,
+                    "originNode": origin_node,
+                    "source": source,
+                    "mutationId": mutation_id,
+                    "updatedAt": updated_at,
+                }
+
+            state["policyMeta"][key] = sanitized_key_meta
 
         dynamic = loaded.get("dynamic", {}) if isinstance(loaded.get("dynamic", {}), dict) else {}
         entries = dynamic.get("entries", [])
@@ -107,14 +185,49 @@ class StateStore:
                     continue
                 if not isinstance(expires_at, int):
                     continue
+
+                scope = entry.get("scope", "cluster")
+                if scope not in ("cluster", "local"):
+                    scope = "cluster"
+
+                origin_node = entry.get("originNode")
+                if origin_node is not None and not isinstance(origin_node, str):
+                    origin_node = None
+                if isinstance(origin_node, str):
+                    origin_node = origin_node.strip()
+                    if origin_node == "":
+                        origin_node = None
+                    elif any(ch.isspace() for ch in origin_node):
+                        origin_node = None
+
+                source = entry.get("source")
+                if not isinstance(source, str) or source.strip() == "":
+                    source = "legacy"
+                source = source.strip()
+
+                mutation_id = entry.get("mutationId", 0)
+                if not isinstance(mutation_id, int) or mutation_id < 0:
+                    mutation_id = 0
+
+                updated_at = entry.get("updatedAt", 0)
+                if not isinstance(updated_at, int) or updated_at < 0:
+                    updated_at = 0
+
                 if reason is not None and not isinstance(reason, str):
                     reason = None
+                if mutation_id > max_mutation_id:
+                    max_mutation_id = mutation_id
                 sanitized_entries.append(
                     {
                         "cidr": cidr,
                         "family": family,
                         "expiresAt": expires_at,
                         "reason": reason,
+                        "scope": scope,
+                        "originNode": origin_node,
+                        "source": source,
+                        "mutationId": mutation_id,
+                        "updatedAt": updated_at,
                     }
                 )
             state["dynamic"]["entries"] = sanitized_entries
@@ -162,6 +275,26 @@ class StateStore:
                 reason_class = entry.get("reasonClass")
                 cooldown_seconds = entry.get("cooldownSeconds", 0)
                 cooldown_until_value = entry.get("cooldownUntil", 0)
+                scope = entry.get("scope", "cluster")
+                if scope not in ("cluster", "local"):
+                    scope = "cluster"
+                origin_node = entry.get("originNode")
+                if origin_node is not None and not isinstance(origin_node, str):
+                    origin_node = None
+                if isinstance(origin_node, str):
+                    origin_node = origin_node.strip()
+                    if origin_node == "" or any(ch.isspace() for ch in origin_node):
+                        origin_node = None
+                source = entry.get("source")
+                if not isinstance(source, str) or source.strip() == "":
+                    source = "legacy"
+                source = source.strip()
+                mutation_id = entry.get("mutationId", 0)
+                if not isinstance(mutation_id, int) or mutation_id < 0:
+                    mutation_id = 0
+                updated_at = entry.get("updatedAt", 0)
+                if not isinstance(updated_at, int) or updated_at < 0:
+                    updated_at = 0
                 if not isinstance(cidr, str) or family not in ("ipv4", "ipv6"):
                     continue
                 if not isinstance(first_seen, int) or not isinstance(last_seen, int):
@@ -182,6 +315,8 @@ class StateStore:
                     cooldown_seconds = 0
                 if not isinstance(cooldown_until_value, int) or cooldown_until_value < 0:
                     cooldown_until_value = 0
+                if mutation_id > max_mutation_id:
+                    max_mutation_id = mutation_id
                 if promotion_id is None:
                     promotion_id = next_promotion_id
                 sanitized_entry: dict[str, Any] = {
@@ -195,7 +330,13 @@ class StateStore:
                     "promotedBy": promoted_by,
                     "cooldownSeconds": cooldown_seconds,
                     "cooldownUntil": cooldown_until_value,
+                    "scope": scope,
+                    "source": source,
+                    "mutationId": mutation_id,
+                    "updatedAt": updated_at,
                 }
+                if origin_node is not None:
+                    sanitized_entry["originNode"] = origin_node
                 if reason is not None:
                     sanitized_entry["reason"] = reason
                 if reason_class is not None:
@@ -213,11 +354,133 @@ class StateStore:
                 state["escalation"]["nextPromotionId"], next_promotion_id_loaded
             )
 
+        meta_loaded = loaded.get("meta", {}) if isinstance(loaded.get("meta", {}), dict) else {}
+        loaded_next_mutation_id = meta_loaded.get("nextMutationId", 0)
+        if not isinstance(loaded_next_mutation_id, int) or loaded_next_mutation_id <= 0:
+            loaded_next_mutation_id = 0
+        state["meta"]["nextMutationId"] = max(max_mutation_id + 1, loaded_next_mutation_id, 1)
+
         atomic_write_json(self.state_file, state)
         return state
 
     def _save_locked(self) -> None:
         atomic_write_json(self.state_file, self._state)
+
+    def _next_mutation_id_locked(self) -> int:
+        next_id = self._state["meta"].get("nextMutationId", 1)
+        if not isinstance(next_id, int) or next_id <= 0:
+            next_id = 1
+        self._state["meta"]["nextMutationId"] = next_id + 1
+        return next_id
+
+    def normalize_node_id(self, raw_node_id: Any) -> str | None:
+        if raw_node_id is None:
+            return None
+        if not isinstance(raw_node_id, str):
+            raise ValueError("nodeId must be a string when provided")
+        node_id = raw_node_id.strip()
+        if node_id == "":
+            return None
+        if any(ch.isspace() for ch in node_id):
+            raise ValueError("nodeId must not contain whitespace")
+        return node_id
+
+    def _normalize_source(self, raw_source: Any, default_source: str) -> str:
+        if raw_source is None:
+            return default_source
+        if not isinstance(raw_source, str):
+            raise ValueError("source must be a string when provided")
+        source = raw_source.strip()
+        if source == "":
+            raise ValueError("source must not be empty")
+        if any(ch.isspace() for ch in source):
+            raise ValueError("source must not contain whitespace")
+        return source
+
+    def _normalize_scope(self, raw_scope: Any, default_scope: str) -> str:
+        if raw_scope is None:
+            return default_scope
+        if not isinstance(raw_scope, str):
+            raise ValueError("scope must be a string when provided")
+        scope = raw_scope.strip().lower()
+        if scope not in ("cluster", "local"):
+            raise ValueError("scope must be one of: cluster|local")
+        return scope
+
+    def _normalize_scope_filter(self, raw_scope: Any) -> str:
+        if raw_scope is None:
+            return "any"
+        if not isinstance(raw_scope, str):
+            raise ValueError("scope must be a string when provided")
+        scope = raw_scope.strip().lower()
+        if scope not in ("cluster", "local", "any"):
+            raise ValueError("scope must be one of: cluster|local|any")
+        return scope
+
+    def _resolve_scope_node_source(
+        self,
+        *,
+        raw_scope: Any,
+        raw_node_id: Any,
+        raw_source: Any,
+        request_node_id: str | None,
+        default_scope: str,
+        default_source: str,
+    ) -> tuple[str, str | None, str]:
+        scope = self._normalize_scope(raw_scope, default_scope)
+        node_id = self.normalize_node_id(raw_node_id)
+        if node_id is None:
+            node_id = request_node_id
+        if scope == "local" and self.require_node_for_local_scope and node_id is None:
+            raise ValueError("local scope requires nodeId or X-Nix-Csf-Node")
+        source = self._normalize_source(raw_source, default_source)
+        return scope, node_id, source
+
+    def _policy_meta_for_locked(self, key: str, cidr: str) -> dict[str, Any]:
+        raw = self._state["policyMeta"][key].get(cidr, {})
+        if not isinstance(raw, dict):
+            raw = {}
+        scope = raw.get("scope", "cluster")
+        if scope not in ("cluster", "local"):
+            scope = "cluster"
+
+        origin_node = raw.get("originNode")
+        if origin_node is not None and not isinstance(origin_node, str):
+            origin_node = None
+        if isinstance(origin_node, str):
+            origin_node = origin_node.strip()
+            if origin_node == "":
+                origin_node = None
+
+        source = raw.get("source", "legacy")
+        if not isinstance(source, str) or source.strip() == "":
+            source = "legacy"
+        source = source.strip()
+
+        mutation_id = raw.get("mutationId", 0)
+        if not isinstance(mutation_id, int) or mutation_id < 0:
+            mutation_id = 0
+
+        updated_at = raw.get("updatedAt", 0)
+        if not isinstance(updated_at, int) or updated_at < 0:
+            updated_at = 0
+
+        return {
+            "scope": scope,
+            "originNode": origin_node,
+            "source": source,
+            "mutationId": mutation_id,
+            "updatedAt": updated_at,
+        }
+
+    def _is_visible_to_node(self, *, scope: str, origin_node: str | None, request_node_id: str | None) -> bool:
+        if scope == "cluster":
+            return True
+        if origin_node is None:
+            return request_node_id is None
+        if request_node_id is None:
+            return False
+        return origin_node == request_node_id
 
     def _policy_key(self, list_name: str, family: str) -> str:
         suffix = "IPv4" if family == "ipv4" else "IPv6"
@@ -230,6 +493,7 @@ class StateStore:
             return False
 
         self._state["dynamic"]["entries"] = kept
+        self._next_mutation_id_locked()
         self._state["dynamicRevision"] += 1
         self._save_locked()
         return True
@@ -247,6 +511,114 @@ class StateStore:
             return value.split(":", 1)[0]
         return value
 
+    def _policy_upsert_locked(
+        self,
+        *,
+        list_name: str,
+        cidr: str,
+        family: str,
+        scope: str,
+        origin_node: str | None,
+        source: str,
+        updated_at: int,
+    ) -> dict[str, Any]:
+        key = self._policy_key(list_name, family)
+        entries: list[str] = self._state["policy"][key]
+        meta_map: dict[str, dict[str, Any]] = self._state["policyMeta"][key]
+
+        list_changed = False
+        if cidr not in entries:
+            entries.append(cidr)
+            entries.sort()
+            list_changed = True
+
+        current_meta = self._policy_meta_for_locked(key, cidr)
+        metadata_changed = (
+            current_meta["scope"] != scope
+            or current_meta["originNode"] != origin_node
+            or current_meta["source"] != source
+            or cidr not in meta_map
+        )
+        changed = list_changed or metadata_changed
+        mutation_id = current_meta["mutationId"]
+
+        if changed:
+            mutation_id = self._next_mutation_id_locked()
+            meta_map[cidr] = {
+                "scope": scope,
+                "originNode": origin_node,
+                "source": source,
+                "mutationId": mutation_id,
+                "updatedAt": updated_at,
+            }
+            self._state["policyRevision"] += 1
+        else:
+            meta_map[cidr] = current_meta
+
+        return {
+            "changed": changed,
+            "listChanged": list_changed,
+            "metadataChanged": metadata_changed,
+            "policyRevision": self._state["policyRevision"],
+            "mutationId": mutation_id,
+        }
+
+    def _policy_remove_locked(
+        self,
+        *,
+        list_name: str,
+        cidr: str,
+        family: str,
+        scope_filter: str,
+        request_node_id: str | None,
+    ) -> dict[str, Any]:
+        key = self._policy_key(list_name, family)
+        entries: list[str] = self._state["policy"][key]
+        meta_map: dict[str, dict[str, Any]] = self._state["policyMeta"][key]
+        if cidr not in entries:
+            return {
+                "changed": False,
+                "policyRevision": self._state["policyRevision"],
+                "removedScope": None,
+                "removedOriginNode": None,
+                "mutationId": 0,
+            }
+
+        meta = self._policy_meta_for_locked(key, cidr)
+        removed_scope = meta["scope"]
+        removed_origin_node = meta["originNode"]
+
+        if scope_filter != "any" and removed_scope != scope_filter:
+            return {
+                "changed": False,
+                "policyRevision": self._state["policyRevision"],
+                "removedScope": removed_scope,
+                "removedOriginNode": removed_origin_node,
+                "mutationId": 0,
+            }
+
+        if removed_scope == "local" and request_node_id is not None and removed_origin_node is not None:
+            if request_node_id != removed_origin_node:
+                return {
+                    "changed": False,
+                    "policyRevision": self._state["policyRevision"],
+                    "removedScope": removed_scope,
+                    "removedOriginNode": removed_origin_node,
+                    "mutationId": 0,
+                }
+
+        self._state["policy"][key] = [entry for entry in entries if entry != cidr]
+        meta_map.pop(cidr, None)
+        mutation_id = self._next_mutation_id_locked()
+        self._state["policyRevision"] += 1
+        return {
+            "changed": True,
+            "policyRevision": self._state["policyRevision"],
+            "removedScope": removed_scope,
+            "removedOriginNode": removed_origin_node,
+            "mutationId": mutation_id,
+        }
+
     def _apply_escalation_locked(
         self,
         *,
@@ -254,6 +626,9 @@ class StateStore:
         family: str,
         now_epoch: int,
         reason: str | None,
+        promotion_scope: str,
+        promotion_origin_node: str | None,
+        promotion_source: str,
         enable: bool,
         threshold: int,
         window_seconds: int,
@@ -318,15 +693,20 @@ class StateStore:
         escalated = event_count >= threshold and not cooldown_active
         promotion_changed = False
         dynamic_changed = False
+        promotion_mutation_id = 0
 
         if escalated:
-            deny_key = self._policy_key("deny", family)
-            deny_entries: list[str] = self._state["policy"][deny_key]
-            if cidr not in deny_entries:
-                deny_entries.append(cidr)
-                deny_entries.sort()
-                self._state["policyRevision"] += 1
-                promotion_changed = True
+            policy_update_result = self._policy_upsert_locked(
+                list_name="deny",
+                cidr=cidr,
+                family=family,
+                scope=promotion_scope,
+                origin_node=promotion_origin_node,
+                source=promotion_source,
+                updated_at=now_epoch,
+            )
+            promotion_changed = policy_update_result["changed"]
+            promotion_mutation_id = policy_update_result["mutationId"]
 
             dynamic_entries: list[dict[str, Any]] = self._state["dynamic"]["entries"]
             kept_dynamic = [
@@ -354,7 +734,13 @@ class StateStore:
                     "reasonClass": reason_class,
                     "cooldownSeconds": cooldown_seconds,
                     "cooldownUntil": next_cooldown_until,
+                    "scope": promotion_scope,
+                    "source": promotion_source,
+                    "mutationId": promotion_mutation_id,
+                    "updatedAt": now_epoch,
                 }
+                if promotion_origin_node is not None:
+                    promotion_record["originNode"] = promotion_origin_node
                 if reason is not None:
                     promotion_record["reason"] = reason
                 promotions.append(promotion_record)
@@ -384,46 +770,89 @@ class StateStore:
             "reasonClassEligible": class_eligible,
             "reasonClasses": reason_classes,
             "promotionChanged": promotion_changed,
+            "promotionScope": promotion_scope,
+            "promotionOriginNode": promotion_origin_node,
+            "promotionMutationId": promotion_mutation_id,
             "dynamicChanged": dynamic_changed,
             "stateChanged": True,
         }
 
-    def add_policy(self, list_name: str, cidr: str) -> dict[str, Any]:
+    def add_policy(
+        self,
+        list_name: str,
+        cidr: str,
+        *,
+        scope: Any,
+        node_id: Any,
+        source: Any,
+        request_node_id: str | None,
+    ) -> dict[str, Any]:
         normalized, family = normalize_cidr(cidr)
-        key = self._policy_key(list_name, family)
+        if request_node_id is not None:
+            request_node_id = self.normalize_node_id(request_node_id)
 
         with self._lock:
-            entries = self._state["policy"][key]
-            changed = False
-            if normalized not in entries:
-                entries.append(normalized)
-                entries.sort()
-                self._state["policyRevision"] += 1
+            resolved_scope, resolved_node_id, resolved_source = self._resolve_scope_node_source(
+                raw_scope=scope,
+                raw_node_id=node_id,
+                raw_source=source,
+                request_node_id=request_node_id,
+                default_scope=self.policy_default_scope,
+                default_source="local-api",
+            )
+            update_result = self._policy_upsert_locked(
+                list_name=list_name,
+                cidr=normalized,
+                family=family,
+                scope=resolved_scope,
+                origin_node=resolved_node_id,
+                source=resolved_source,
+                updated_at=int(time.time()),
+            )
+            if update_result["changed"]:
                 self._save_locked()
-                changed = True
 
             return {
-                "changed": changed,
+                "changed": update_result["changed"],
+                "scope": resolved_scope,
+                "originNode": resolved_node_id,
+                "source": resolved_source,
+                "mutationId": update_result["mutationId"],
                 "cidr": normalized,
                 "family": family,
                 "policyRevision": self._state["policyRevision"],
             }
 
-    def remove_policy(self, list_name: str, cidr: str) -> dict[str, Any]:
+    def remove_policy(
+        self,
+        list_name: str,
+        cidr: str,
+        *,
+        scope: Any,
+        request_node_id: str | None,
+    ) -> dict[str, Any]:
         normalized, family = normalize_cidr(cidr)
-        key = self._policy_key(list_name, family)
+        if request_node_id is not None:
+            request_node_id = self.normalize_node_id(request_node_id)
+        scope_filter = self._normalize_scope_filter(scope)
 
         with self._lock:
-            entries = self._state["policy"][key]
-            changed = False
-            if normalized in entries:
-                entries.remove(normalized)
-                self._state["policyRevision"] += 1
+            remove_result = self._policy_remove_locked(
+                list_name=list_name,
+                cidr=normalized,
+                family=family,
+                scope_filter=scope_filter,
+                request_node_id=request_node_id,
+            )
+            if remove_result["changed"]:
                 self._save_locked()
-                changed = True
 
             return {
-                "changed": changed,
+                "changed": remove_result["changed"],
+                "scope": scope_filter,
+                "removedScope": remove_result["removedScope"],
+                "removedOriginNode": remove_result["removedOriginNode"],
+                "mutationId": remove_result["mutationId"],
                 "cidr": normalized,
                 "family": family,
                 "policyRevision": self._state["policyRevision"],
@@ -435,6 +864,10 @@ class StateStore:
         ttl_seconds: int,
         reason: str | None,
         *,
+        scope: Any,
+        node_id: Any,
+        source: Any,
+        request_node_id: str | None,
         escalation_enable: bool,
         escalation_threshold: int,
         escalation_window_seconds: int,
@@ -443,39 +876,79 @@ class StateStore:
         escalation_max_audit_entries: int,
     ) -> dict[str, Any]:
         normalized, family = normalize_cidr(cidr)
+        if request_node_id is not None:
+            request_node_id = self.normalize_node_id(request_node_id)
         now_epoch = int(time.time())
         expires_at = now_epoch + ttl_seconds
 
         with self._lock:
+            resolved_scope, resolved_node_id, resolved_source = self._resolve_scope_node_source(
+                raw_scope=scope,
+                raw_node_id=node_id,
+                raw_source=source,
+                request_node_id=request_node_id,
+                default_scope=self.dynamic_default_scope,
+                default_source="local-api",
+            )
             self._prune_expired_locked(now_epoch)
 
             entries: list[dict[str, Any]] = self._state["dynamic"]["entries"]
             changed = False
+            mutation_id = 0
             for entry in entries:
-                if entry["cidr"] == normalized and entry["family"] == family:
+                entry_scope = entry.get("scope", "cluster")
+                if entry_scope not in ("cluster", "local"):
+                    entry_scope = "cluster"
+                entry_origin_node = entry.get("originNode")
+                if entry_origin_node is not None and not isinstance(entry_origin_node, str):
+                    entry_origin_node = None
+                if isinstance(entry_origin_node, str):
+                    entry_origin_node = entry_origin_node.strip()
+                    if entry_origin_node == "":
+                        entry_origin_node = None
+                if entry["cidr"] == normalized and entry["family"] == family and entry_scope == resolved_scope:
+                    if resolved_scope == "local" and entry_origin_node != resolved_node_id:
+                        continue
                     if expires_at > entry["expiresAt"]:
                         entry["expiresAt"] = expires_at
                         changed = True
                     if reason is not None and reason != entry.get("reason"):
                         entry["reason"] = reason
                         changed = True
+                    if entry.get("source") != resolved_source:
+                        entry["source"] = resolved_source
+                        changed = True
+                    if changed:
+                        mutation_id = self._next_mutation_id_locked()
+                        entry["mutationId"] = mutation_id
+                        entry["updatedAt"] = now_epoch
                     break
             else:
+                mutation_id = self._next_mutation_id_locked()
                 entries.append(
                     {
                         "cidr": normalized,
                         "family": family,
                         "expiresAt": expires_at,
                         "reason": reason,
+                        "scope": resolved_scope,
+                        "originNode": resolved_node_id,
+                        "source": resolved_source,
+                        "mutationId": mutation_id,
+                        "updatedAt": now_epoch,
                     }
                 )
                 changed = True
 
+            promotion_origin_node = resolved_node_id if self.escalation_promotion_scope == "local" else None
             escalation_result = self._apply_escalation_locked(
                 cidr=normalized,
                 family=family,
                 now_epoch=now_epoch,
                 reason=reason,
+                promotion_scope=self.escalation_promotion_scope,
+                promotion_origin_node=promotion_origin_node,
+                promotion_source="auto-escalation",
                 enable=escalation_enable,
                 threshold=escalation_threshold,
                 window_seconds=escalation_window_seconds,
@@ -489,12 +962,21 @@ class StateStore:
                 if changed or escalation_result["dynamicChanged"]:
                     self._state["dynamicRevision"] += 1
                 self._state["dynamic"]["entries"].sort(
-                    key=lambda item: (item["family"], item["cidr"])
+                    key=lambda item: (
+                        item["family"],
+                        item["cidr"],
+                        item.get("scope", "cluster"),
+                        item.get("originNode") or "",
+                    )
                 )
                 self._save_locked()
 
             return {
                 "changed": changed,
+                "scope": resolved_scope,
+                "originNode": resolved_node_id,
+                "source": resolved_source,
+                "mutationId": mutation_id,
                 "cidr": normalized,
                 "family": family,
                 "expiresAt": expires_at,
@@ -502,51 +984,170 @@ class StateStore:
                 "escalation": escalation_result,
             }
 
-    def unban(self, cidr: str) -> dict[str, Any]:
+    def unban(
+        self,
+        cidr: str,
+        *,
+        scope: Any,
+        node_id: Any,
+        request_node_id: str | None,
+    ) -> dict[str, Any]:
         normalized, family = normalize_cidr(cidr)
+        if request_node_id is not None:
+            request_node_id = self.normalize_node_id(request_node_id)
+        scope_filter = self._normalize_scope_filter(scope)
+        node_filter = self.normalize_node_id(node_id)
+        if node_filter is None:
+            node_filter = request_node_id
+
         with self._lock:
             entries: list[dict[str, Any]] = self._state["dynamic"]["entries"]
-            kept = [entry for entry in entries if not (entry["cidr"] == normalized and entry["family"] == family)]
+            removed_count = 0
+            kept: list[dict[str, Any]] = []
+            for entry in entries:
+                if not (entry["cidr"] == normalized and entry["family"] == family):
+                    kept.append(entry)
+                    continue
+                entry_scope = entry.get("scope", "cluster")
+                if entry_scope not in ("cluster", "local"):
+                    entry_scope = "cluster"
+                entry_origin_node = entry.get("originNode")
+                if entry_origin_node is not None and not isinstance(entry_origin_node, str):
+                    entry_origin_node = None
+                if isinstance(entry_origin_node, str):
+                    entry_origin_node = entry_origin_node.strip()
+                    if entry_origin_node == "":
+                        entry_origin_node = None
+
+                remove_match = False
+                if scope_filter == "any":
+                    remove_match = True
+                elif scope_filter == "cluster":
+                    remove_match = entry_scope == "cluster"
+                elif scope_filter == "local":
+                    if entry_scope == "local":
+                        if node_filter is None:
+                            remove_match = True
+                        elif entry_origin_node is not None and node_filter == entry_origin_node:
+                            remove_match = True
+
+                if remove_match:
+                    removed_count += 1
+                else:
+                    kept.append(entry)
+
             changed = len(kept) != len(entries)
+            mutation_id = 0
             if changed:
                 self._state["dynamic"]["entries"] = kept
+                mutation_id = self._next_mutation_id_locked()
                 self._state["dynamicRevision"] += 1
                 self._save_locked()
 
             return {
                 "changed": changed,
+                "scope": scope_filter,
+                "originNode": node_filter,
+                "removedCount": removed_count,
+                "mutationId": mutation_id,
                 "cidr": normalized,
                 "family": family,
                 "dynamicRevision": self._state["dynamicRevision"],
             }
 
-    def snapshots(self, env_name: str, cluster_ttl: int, dynamic_ttl: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    def snapshots(
+        self,
+        env_name: str,
+        cluster_ttl: int,
+        dynamic_ttl: int,
+        *,
+        request_node_id: str | None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        if request_node_id is not None:
+            request_node_id = self.normalize_node_id(request_node_id)
         now_epoch = int(time.time())
         with self._lock:
             self._prune_expired_locked(now_epoch)
+            last_mutation_id = self._state["meta"].get("nextMutationId", 1)
+            if not isinstance(last_mutation_id, int) or last_mutation_id <= 0:
+                last_mutation_id = 1
+            last_mutation_id -= 1
 
             policy = self._state["policy"]
             policy_snapshot = {
                 "schemaVersion": 2,
                 "revision": f"{env_name}-policy-r{self._state['policyRevision']}",
                 "ttlSeconds": cluster_ttl,
-                "allowIPv4": sorted(set(policy["allowIPv4"])),
-                "allowIPv6": sorted(set(policy["allowIPv6"])),
-                "denyIPv4": sorted(set(policy["denyIPv4"])),
-                "denyIPv6": sorted(set(policy["denyIPv6"])),
-                "ignoreIPv4": sorted(set(policy["ignoreIPv4"])),
-                "ignoreIPv6": sorted(set(policy["ignoreIPv6"])),
+                "lastMutationId": last_mutation_id,
             }
+            for key in ("allowIPv4", "allowIPv6", "denyIPv4", "denyIPv6", "ignoreIPv4", "ignoreIPv6"):
+                visible_cidrs: list[str] = []
+                visible_meta: list[dict[str, Any]] = []
+                for cidr in sorted(set(policy[key])):
+                    meta = self._policy_meta_for_locked(key, cidr)
+                    if not self._is_visible_to_node(
+                        scope=meta["scope"],
+                        origin_node=meta["originNode"],
+                        request_node_id=request_node_id,
+                    ):
+                        continue
+                    visible_cidrs.append(cidr)
+                    if self.include_provenance_metadata:
+                        rendered_meta: dict[str, Any] = {
+                            "cidr": cidr,
+                            "scope": meta["scope"],
+                            "source": meta["source"],
+                            "mutationId": meta["mutationId"],
+                            "updatedAt": meta["updatedAt"],
+                        }
+                        if meta["originNode"] is not None:
+                            rendered_meta["originNode"] = meta["originNode"]
+                        visible_meta.append(rendered_meta)
+
+                policy_snapshot[key] = visible_cidrs
+                if self.include_provenance_metadata:
+                    policy_snapshot[f"{key}Meta"] = visible_meta
 
             ban_ipv4: list[dict[str, Any]] = []
             ban_ipv6: list[dict[str, Any]] = []
-            for entry in sorted(self._state["dynamic"]["entries"], key=lambda item: (item["family"], item["cidr"])):
+            for entry in sorted(
+                self._state["dynamic"]["entries"],
+                key=lambda item: (
+                    item["family"],
+                    item["cidr"],
+                    item.get("scope", "cluster"),
+                    item.get("originNode") or "",
+                ),
+            ):
+                scope = entry.get("scope", "cluster")
+                if scope not in ("cluster", "local"):
+                    scope = "cluster"
+                origin_node = entry.get("originNode")
+                if origin_node is not None and not isinstance(origin_node, str):
+                    origin_node = None
+                if isinstance(origin_node, str):
+                    origin_node = origin_node.strip()
+                    if origin_node == "":
+                        origin_node = None
+                if not self._is_visible_to_node(
+                    scope=scope,
+                    origin_node=origin_node,
+                    request_node_id=request_node_id,
+                ):
+                    continue
                 rendered_entry: dict[str, Any] = {
                     "cidr": entry["cidr"],
                     "expiresAt": entry["expiresAt"],
                 }
                 if entry.get("reason"):
                     rendered_entry["reason"] = entry["reason"]
+                if self.include_provenance_metadata:
+                    rendered_entry["scope"] = scope
+                    rendered_entry["source"] = entry.get("source", "legacy")
+                    rendered_entry["mutationId"] = entry.get("mutationId", 0)
+                    rendered_entry["updatedAt"] = entry.get("updatedAt", 0)
+                    if origin_node is not None:
+                        rendered_entry["originNode"] = origin_node
                 if entry["family"] == "ipv4":
                     ban_ipv4.append(rendered_entry)
                 else:
@@ -556,6 +1157,7 @@ class StateStore:
                 "schemaVersion": 1,
                 "revision": f"{env_name}-dyn-r{self._state['dynamicRevision']}",
                 "ttlSeconds": dynamic_ttl,
+                "lastMutationId": last_mutation_id,
                 "banIPv4": ban_ipv4,
                 "banIPv6": ban_ipv6,
             }
@@ -590,6 +1192,11 @@ class ControlPlaneServer(ThreadingHTTPServer):
         escalation_max_audit_entries: int,
         require_auth: bool,
         auth_token_file: str | None,
+        policy_default_scope: str,
+        dynamic_default_scope: str,
+        escalation_promotion_scope: str,
+        require_node_for_local_scope: bool,
+        include_provenance_metadata: bool,
     ) -> None:
         super().__init__(bind, handler_cls)
         self.store = store
@@ -605,6 +1212,11 @@ class ControlPlaneServer(ThreadingHTTPServer):
         self.escalation_max_audit_entries = escalation_max_audit_entries
         self.require_auth = require_auth
         self.auth_token_file = auth_token_file
+        self.policy_default_scope = policy_default_scope
+        self.dynamic_default_scope = dynamic_default_scope
+        self.escalation_promotion_scope = escalation_promotion_scope
+        self.require_node_for_local_scope = require_node_for_local_scope
+        self.include_provenance_metadata = include_provenance_metadata
 
     def read_token(self) -> str | None:
         if self.auth_token_file is None:
@@ -670,6 +1282,12 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         return [part for part in path.split("/") if part]
 
+    def _request_node_id(self) -> str | None:
+        raw_node_id = self.headers.get("X-Nix-Csf-Node")
+        if raw_node_id is None:
+            return None
+        return self.server.store.normalize_node_id(raw_node_id)
+
     def do_GET(self) -> None:  # noqa: N802
         parts = self._route_parts()
 
@@ -686,11 +1304,17 @@ class Handler(BaseHTTPRequestHandler):
             if env_name != self.server.env_name:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "unknown environment"})
                 return
+            try:
+                request_node_id = self._request_node_id()
+            except ValueError as err:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(err)})
+                return
 
             policy_snapshot, dynamic_snapshot = self.server.store.snapshots(
                 env_name=env_name,
                 cluster_ttl=self.server.cluster_snapshot_ttl,
                 dynamic_ttl=self.server.dynamic_snapshot_ttl,
+                request_node_id=request_node_id,
             )
             if filename == "cluster-policy.json":
                 self._send_json(HTTPStatus.OK, policy_snapshot)
@@ -728,6 +1352,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorized():
             return
 
+        try:
+            request_node_id = self._request_node_id()
+        except ValueError as err:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(err)})
+            return
+
         parts = self._route_parts()
         try:
             payload = self._read_json_body()
@@ -747,7 +1377,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             try:
-                result = self.server.store.add_policy(action, cidr)
+                result = self.server.store.add_policy(
+                    action,
+                    cidr,
+                    scope=payload.get("scope"),
+                    node_id=payload.get("nodeId"),
+                    source=payload.get("source"),
+                    request_node_id=request_node_id,
+                )
             except ValueError as err:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(err)})
                 return
@@ -775,6 +1412,10 @@ class Handler(BaseHTTPRequestHandler):
                     cidr,
                     ttl_seconds,
                     reason,
+                    scope=payload.get("scope"),
+                    node_id=payload.get("nodeId"),
+                    source=payload.get("source"),
+                    request_node_id=request_node_id,
                     escalation_enable=self.server.escalation_enable,
                     escalation_threshold=self.server.escalation_threshold,
                     escalation_window_seconds=self.server.escalation_window_seconds,
@@ -796,7 +1437,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             try:
-                result = self.server.store.unban(cidr)
+                result = self.server.store.unban(
+                    cidr,
+                    scope=payload.get("scope"),
+                    node_id=payload.get("nodeId"),
+                    request_node_id=request_node_id,
+                )
             except ValueError as err:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(err)})
                 return
@@ -808,6 +1454,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:  # noqa: N802
         if not self._authorized():
+            return
+
+        try:
+            request_node_id = self._request_node_id()
+        except ValueError as err:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(err)})
             return
 
         parts = self._route_parts()
@@ -829,7 +1481,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             try:
-                result = self.server.store.remove_policy(action, cidr)
+                result = self.server.store.remove_policy(
+                    action,
+                    cidr,
+                    scope=payload.get("scope"),
+                    request_node_id=request_node_id,
+                )
             except ValueError as err:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(err)})
                 return
@@ -860,6 +1517,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--escalation-cooldown-seconds", default=0, type=int)
     parser.add_argument("--escalation-reason-class", action="append", default=[])
     parser.add_argument("--escalation-max-audit-entries", default=5000, type=int)
+    parser.add_argument("--policy-default-scope", choices=["cluster", "local"], default="cluster")
+    parser.add_argument("--dynamic-default-scope", choices=["cluster", "local"], default="cluster")
+    parser.add_argument("--escalation-promotion-scope", choices=["cluster", "local"], default="cluster")
+    parser.add_argument("--allow-local-scope-without-node", action="store_true")
+    parser.add_argument("--disable-provenance-metadata", action="store_true")
     parser.add_argument("--require-auth", action="store_true")
     parser.add_argument("--auth-token-file")
     return parser.parse_args()
@@ -930,7 +1592,17 @@ def main() -> int:
         print("--environment must not be empty", file=sys.stderr)
         return 2
 
-    store = StateStore(data_dir)
+    require_node_for_local_scope = not args.allow_local_scope_without_node
+    include_provenance_metadata = not args.disable_provenance_metadata
+
+    store = StateStore(
+        data_dir,
+        policy_default_scope=args.policy_default_scope,
+        dynamic_default_scope=args.dynamic_default_scope,
+        escalation_promotion_scope=args.escalation_promotion_scope,
+        require_node_for_local_scope=require_node_for_local_scope,
+        include_provenance_metadata=include_provenance_metadata,
+    )
 
     server = ControlPlaneServer(
         (args.bind_address, args.port),
@@ -948,6 +1620,11 @@ def main() -> int:
         escalation_max_audit_entries=args.escalation_max_audit_entries,
         require_auth=args.require_auth,
         auth_token_file=auth_token_file,
+        policy_default_scope=args.policy_default_scope,
+        dynamic_default_scope=args.dynamic_default_scope,
+        escalation_promotion_scope=args.escalation_promotion_scope,
+        require_node_for_local_scope=require_node_for_local_scope,
+        include_provenance_metadata=include_provenance_metadata,
     )
 
     print(
@@ -960,6 +1637,11 @@ def main() -> int:
         f"escalation_window_seconds={args.escalation_window_seconds} "
         f"escalation_cooldown_seconds={args.escalation_cooldown_seconds} "
         f"escalation_reason_classes={','.join(escalation_reason_classes)} "
+        f"policy_default_scope={args.policy_default_scope} "
+        f"dynamic_default_scope={args.dynamic_default_scope} "
+        f"escalation_promotion_scope={args.escalation_promotion_scope} "
+        f"require_node_for_local_scope={'true' if require_node_for_local_scope else 'false'} "
+        f"provenance_metadata={'true' if include_provenance_metadata else 'false'} "
         f"require_auth={'true' if args.require_auth else 'false'}"
     )
     sys.stdout.flush()

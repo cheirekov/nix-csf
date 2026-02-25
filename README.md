@@ -43,6 +43,7 @@ Current module version source of truth: `VERSION`.
 - Cluster policy + dynamic offender snapshots (TTL-aware)
 - Optional local control-plane + `nix-csfctl` mutation workflow
 - Escalation engine v2 for temp->perm promotion (`controlPlane.escalation.*`: threshold/window/cooldown/reasonClasses + audit IDs)
+- Cluster propagation semantics v2 (`controlPlane.propagation.*`: local vs cluster scope defaults, provenance metadata, replay marker)
 - Nix-native LFD-like detector framework v2 (explicit `lfdDetector.detectors` or curated `lfdDetector.detectorPack`) and fail2ban adapter
 - Auth token rotation (`*.authTokenFiles`) for remote snapshots
 - Docker coexistence profile (`coexistence.profile = "docker-coexist"`)
@@ -198,6 +199,13 @@ services.nixCsf = {
     port = 18081;
     environment = "lab";
     requireAuth = false; # lab only
+    propagation = {
+      policyDefaultScope = "cluster";
+      dynamicDefaultScope = "cluster";
+      escalationPromotionScope = "cluster";
+      requireNodeForLocalScope = true;
+      includeProvenanceMetadata = true;
+    };
   };
 
   lfdDetector = {
@@ -308,7 +316,9 @@ nix-csf-import-csf \
 
 ```bash
 nix-csfctl policy add deny 203.0.119.9/32
+nix-csfctl --node-id edge-us-01 policy add deny 203.0.119.140/32 --scope local --source lfd
 nix-csfctl ban-temp 203.0.119.10/32 --ttl 900 --reason syn_flood
+nix-csfctl ban-temp 203.0.119.142/32 --ttl 600 --reason lfd:ssh_auth --scope local --node-id edge-us-01 --source lfd
 nix-csfctl promotions --limit 20
 sudo systemctl start nix-csf-refresh.service
 ```

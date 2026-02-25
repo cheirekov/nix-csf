@@ -330,6 +330,9 @@ let
         "--escalation-window-seconds" (toString cfg.controlPlane.escalation.windowSeconds)
         "--escalation-cooldown-seconds" (toString cfg.controlPlane.escalation.cooldownSeconds)
         "--escalation-max-audit-entries" (toString cfg.controlPlane.escalation.maxAuditEntries)
+        "--policy-default-scope" cfg.controlPlane.propagation.policyDefaultScope
+        "--dynamic-default-scope" cfg.controlPlane.propagation.dynamicDefaultScope
+        "--escalation-promotion-scope" cfg.controlPlane.propagation.escalationPromotionScope
       ];
       reasonClassArgs =
         builtins.concatLists
@@ -337,7 +340,9 @@ let
             (reasonClass: [ "--escalation-reason-class" reasonClass ])
             cfg.controlPlane.escalation.reasonClasses);
       modeArgs =
-        (if cfg.controlPlane.escalation.enable then [ "--escalation-enable" ] else [ ]);
+        (if cfg.controlPlane.escalation.enable then [ "--escalation-enable" ] else [ ])
+        ++ (if cfg.controlPlane.propagation.requireNodeForLocalScope then [ ] else [ "--allow-local-scope-without-node" ])
+        ++ (if cfg.controlPlane.propagation.includeProvenanceMetadata then [ ] else [ "--disable-provenance-metadata" ]);
       authArgs =
         (if cfg.controlPlane.requireAuth then [ "--require-auth" ] else [ ])
         ++ (if cfg.controlPlane.authTokenFile != null then [ "--auth-token-file" cfg.controlPlane.authTokenFile ] else [ ]);
@@ -1810,6 +1815,50 @@ in
           Absolute path to bearer token used by control-plane API auth.
           Required when controlPlane.requireAuth = true.
         '';
+      };
+
+      propagation = {
+        policyDefaultScope = mkOption {
+          type = types.enum [ "cluster" "local" ];
+          default = "cluster";
+          description = ''
+            Default scope for `/v1/policy/*` mutations when request payload omits `scope`.
+          '';
+        };
+
+        dynamicDefaultScope = mkOption {
+          type = types.enum [ "cluster" "local" ];
+          default = "cluster";
+          description = ''
+            Default scope for `/v1/offenders/ban-temp` mutations when request payload omits `scope`.
+          '';
+        };
+
+        escalationPromotionScope = mkOption {
+          type = types.enum [ "cluster" "local" ];
+          default = "cluster";
+          description = ''
+            Scope used when escalation promotes a temporary offender into permanent deny policy.
+          '';
+        };
+
+        requireNodeForLocalScope = mkOption {
+          type = types.bool;
+          default = true;
+          description = ''
+            Require node identity for local-scoped mutations.
+            Node may be provided by request payload `nodeId` or request header `X-Nix-Csf-Node`.
+          '';
+        };
+
+        includeProvenanceMetadata = mkOption {
+          type = types.bool;
+          default = true;
+          description = ''
+            Include provenance metadata fields (`scope`, `originNode`, `source`, `mutationId`, `updatedAt`)
+            in snapshot responses.
+          '';
+        };
       };
 
       escalation = {
