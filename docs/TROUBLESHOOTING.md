@@ -33,6 +33,7 @@ sudo systemctl status nix-csf-refresh.timer --no-pager
 sudo journalctl -u nix-csf-apply.service -n 120 --no-pager
 sudo journalctl -u nix-csf-refresh.service -n 120 --no-pager
 sudo nft list table inet nix_csf
+sudo nft list table ip nix_csf_nat
 sudo ls -lah /var/lib/nix-csf /var/lib/nix-csf/cache
 sudo cat /var/lib/nix-csf/metrics.prom
 ```
@@ -111,7 +112,48 @@ Required profile contract:
 - `services.nixCsf.coexistence.profile = "docker-coexist"`
 - `services.nixCsf.forwardPolicy = "accept"`
 
-## 5) Expected IP not blocked/allowed
+## 5) NAT/port-forward rules not active
+
+Check:
+
+```bash
+sudo nft list table ip nix_csf_nat
+sudo nft list table inet nix_csf | sed -n '/chain forward {/,/}/p'
+sudo grep -nE 'nix_csf_nat|dnat to|masquerade' /var/lib/nix-csf/generated-ruleset.nft
+```
+
+Frequent signatures and fixes:
+
+- `nat.enable=true is not supported with coexistence.profile=docker-coexist`
+  - use exclusive firewall ownership for NAT stage-1.
+- no `table ip nix_csf_nat` rendered
+  - verify `services.nixCsf.nat.enable = true`,
+  - verify `nat.externalInterface` is set.
+- DNAT rule exists but traffic still blocked
+  - confirm corresponding forward-allow line exists in `chain forward`,
+  - verify source CIDR restrictions in `nat.portForwards.*.sourceIPv4`.
+
+## 6) Forwarding matrix rules not active
+
+Check:
+
+```bash
+sudo systemctl show -P Result nix-csf-apply.service
+sudo nft list table inet nix_csf | sed -n '/chain forward {/,/}/p'
+sudo grep -nE 'iifname|oifname|forwarding' /var/lib/nix-csf/generated-ruleset.nft
+```
+
+Frequent signatures and fixes:
+
+- `forwarding.rules requires forwardPolicy=drop`
+  - set `services.nixCsf.forwardPolicy = "drop"` when using forwarding matrix.
+- `forwarding.rules is not supported with coexistence.profile=docker-coexist`
+  - remove forwarding matrix rules for coexistence profile, or switch to exclusive firewall ownership.
+- no explicit forward-accept lines rendered
+  - verify `forwarding.zones` and `forwarding.rules` are both configured,
+  - verify rule `fromZone`/`toZone` names match existing zone keys.
+
+## 7) Expected IP not blocked/allowed
 
 Check membership directly:
 

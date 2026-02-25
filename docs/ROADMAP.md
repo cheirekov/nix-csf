@@ -60,11 +60,12 @@
 ## Phase 5 — Firewall ownership expansion (new epic / Stage 1)
 
 - Epic kickoff and staged acceptance plan (`T-039`). [done 2026-02-25]
-- NAT datapath foundation (`T-040`):
+- NAT datapath foundation (`T-040`). [done 2026-02-25]
+  - scope:
   - declarative SNAT/masquerade for routed networks,
   - declarative DNAT/port-forward path,
   - explicit safety defaults (off unless enabled).
-- Forwarding policy matrix (`T-041`):
+- Forwarding policy matrix (`T-041`). [in progress 2026-02-25]
   - interface/zone-aware forward allow model for gateway hosts.
 - Optional egress controls (`T-042`):
   - output allowlist/denylist for hardened hosts.

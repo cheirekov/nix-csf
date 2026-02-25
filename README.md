@@ -45,6 +45,8 @@ Current module version source of truth: `VERSION`.
 - Nix-native LFD-like detector (`lfdDetector`) and fail2ban adapter
 - Auth token rotation (`*.authTokenFiles`) for remote snapshots
 - Docker coexistence profile (`coexistence.profile = "docker-coexist"`)
+- NAT datapath foundation (`nat.*`: IPv4 masquerade + explicit port forwards)
+- Forwarding policy matrix (`forwarding.zones` + `forwarding.rules`)
 - Structured logs + Prometheus textfile metrics + Netdata integration
 - Validation lanes split for agent/operator workflows
 
@@ -216,6 +218,59 @@ services.nixCsf = {
 };
 ```
 
+### NAT gateway foundation (Stage 1, IPv4)
+
+```nix
+services.nixCsf = {
+  nat = {
+    enable = true;
+    externalInterface = "eth0";
+    masquerade = {
+      enable = true;
+      sourceIPv4 = [ "10.42.0.0/16" ];
+    };
+    portForwards = [
+      {
+        protocol = "tcp";
+        externalPort = 8080;
+        destinationAddress = "10.42.0.10";
+        destinationPort = 80;
+        sourceIPv4 = [ "198.51.100.0/24" ];
+      }
+    ];
+  };
+};
+```
+
+### Forwarding policy matrix (Stage 1)
+
+```nix
+services.nixCsf = {
+  forwardPolicy = "drop";
+
+  forwarding = {
+    zones = {
+      lan = {
+        interfaces = [ "br-lan" ];
+        cidrIPv4 = [ "10.42.0.0/16" ];
+      };
+      wan = {
+        interfaces = [ "eth0" ];
+      };
+    };
+
+    rules = [
+      {
+        fromZone = "lan";
+        toZone = "wan";
+        protocol = "tcp";
+        destinationPorts = [ 80 443 ];
+      }
+    ];
+  };
+};
+```
+
 ## Operator commands
 
 ### Legacy CSF import
@@ -277,6 +332,8 @@ With captured summary/log handoff:
 - Refresh service runs after network is online.
 - `failOpen = false` for feeds/snapshots requires valid cache and can fail closed.
 - Dynamic bans are evaluated after explicit allow/ignore overlays.
+- Stage-1 NAT is IPv4-focused and not combined with `coexistence.profile = "docker-coexist"`.
+- `forwarding.rules` requires `forwardPolicy = "drop"` and is not combined with `coexistence.profile = "docker-coexist"` in Stage 1.
 - Local list conflict audit artifacts are written to:
   - `/var/lib/nix-csf/local-list-audit-summary.tsv`
   - `/var/lib/nix-csf/local-list-conflicts.tsv`

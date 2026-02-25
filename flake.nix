@@ -81,6 +81,51 @@
               };
             };
           });
+          natEval = mkEvalSystem ({ ... }: {
+            services.nixCsf = {
+              nat = {
+                enable = true;
+                externalInterface = "eth0";
+                masquerade = {
+                  enable = true;
+                  sourceIPv4 = [ "10.42.0.0/16" ];
+                };
+                portForwards = [
+                  {
+                    protocol = "tcp";
+                    externalPort = 8080;
+                    destinationAddress = "10.42.0.10";
+                    destinationPort = 80;
+                    sourceIPv4 = [ "198.51.100.0/24" ];
+                  }
+                ];
+              };
+            };
+          });
+          forwardingEval = mkEvalSystem ({ ... }: {
+            services.nixCsf = {
+              forwardPolicy = "drop";
+              forwarding = {
+                zones = {
+                  lan = {
+                    interfaces = [ "br-lan" ];
+                    cidrIPv4 = [ "10.42.0.0/16" ];
+                  };
+                  wan = {
+                    interfaces = [ "eth0" ];
+                  };
+                };
+                rules = [
+                  {
+                    fromZone = "lan";
+                    toZone = "wan";
+                    protocol = "tcp";
+                    destinationPorts = [ 80 443 ];
+                  }
+                ];
+              };
+            };
+          });
           controlPlaneEval = mkEvalSystem ({ ... }: {
             services.nixCsf.controlPlane = {
               enable = true;
@@ -208,6 +253,34 @@
             grep -Fq 'alarm: nix_csf_dynamic_snapshot_expired' "$healthConfig"
             printf '%s\n' "$tmpfilesRules" | grep -Fq 'd /var/lib/nix-csf 0751 root root -'
             printf '%s\n' "$servicePathEntries" | grep -Fqx "$netdataPackagePath"
+            touch "$out"
+          '';
+          eval-nat = pkgs.runCommand "nix-csf-eval-nat" {
+            natEnabled = boolText natEval.config.services.nixCsf.nat.enable;
+            natExternalInterface = natEval.config.services.nixCsf.nat.externalInterface;
+            natMasqueradeEnabled = boolText natEval.config.services.nixCsf.nat.masquerade.enable;
+            natMasqueradeSources = builtins.concatStringsSep "," natEval.config.services.nixCsf.nat.masquerade.sourceIPv4;
+            natForwardCount = toString (builtins.length natEval.config.services.nixCsf.nat.portForwards);
+          } ''
+            test "$natEnabled" = "true"
+            test "$natExternalInterface" = "eth0"
+            test "$natMasqueradeEnabled" = "true"
+            test "$natMasqueradeSources" = "10.42.0.0/16"
+            test "$natForwardCount" = "1"
+            touch "$out"
+          '';
+          eval-forwarding = pkgs.runCommand "nix-csf-eval-forwarding" {
+            forwardPolicy = forwardingEval.config.services.nixCsf.forwardPolicy;
+            forwardingZoneCount = toString (builtins.length (builtins.attrNames forwardingEval.config.services.nixCsf.forwarding.zones));
+            forwardingRuleCount = toString (builtins.length forwardingEval.config.services.nixCsf.forwarding.rules);
+            forwardingFirstFromZone = (builtins.elemAt forwardingEval.config.services.nixCsf.forwarding.rules 0).fromZone;
+            forwardingFirstProtocol = (builtins.elemAt forwardingEval.config.services.nixCsf.forwarding.rules 0).protocol;
+          } ''
+            test "$forwardPolicy" = "drop"
+            test "$forwardingZoneCount" = "2"
+            test "$forwardingRuleCount" = "1"
+            test "$forwardingFirstFromZone" = "lan"
+            test "$forwardingFirstProtocol" = "tcp"
             touch "$out"
           '';
           eval-control-plane = pkgs.runCommand "nix-csf-eval-control-plane" {

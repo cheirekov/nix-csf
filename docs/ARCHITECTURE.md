@@ -14,6 +14,8 @@
 - Clear separation between declarative policy state and runtime dynamic offender state.
 - Secret-managed auth lifecycle for remote cluster and dynamic endpoints.
 - Coexistence strategy for hosts that run additional firewall mutators (for example Docker).
+- Optional NAT datapath foundation for gateway hosts (`nat.*`).
+- Optional forwarding matrix for zone/interface-routed traffic (`forwarding.*`).
 - Operator-ready monitoring pack (Prometheus alerts + Grafana dashboards + runbook).
 - Repeatable SemVer-based release lifecycle.
 
@@ -65,10 +67,15 @@
 8. Coexistence profile determines forward-hook ownership:
    - `exclusive-firewall`: forward policy is fully module-driven,
    - `docker-coexist`: keep forward policy `accept` and enforce deny-style overlays only.
-9. Optional control-plane mode stores mutable policy/dynamic state in `controlPlane.dataDir`
+9. Optional NAT mode renders an additional `table ip nix_csf_nat` with:
+   - `prerouting` DNAT/port-forward rules,
+   - `postrouting` masquerade rules for configured source CIDRs.
+10. Optional forwarding matrix expands `forwarding.zones` + `forwarding.rules` into explicit
+    `chain forward` accept clauses under deny-by-default (`forwardPolicy = drop`) posture.
+11. Optional control-plane mode stores mutable policy/dynamic state in `controlPlane.dataDir`
    and serves snapshots consumed by standard `clusterPolicy`/`dynamicOffenders` client flow.
-10. Rules are regenerated and atomically re-applied.
-11. Optional observability export writes:
+12. Rules are regenerated and atomically re-applied.
+13. Optional observability export writes:
    - structured event logs to journald,
    - snapshot metrics in Prometheus textfile format (including build/version metadata and auth-slot telemetry).
 
@@ -87,6 +94,10 @@
 - Optional control-plane mutation endpoints can require bearer auth via `controlPlane.requireAuth` + `controlPlane.authTokenFile`.
 - `nix-csfctl` supports the same bearer-token model via `--auth-token-file`.
 - Docker coexistence mode is explicit (`coexistence.profile = "docker-coexist"`) and guarded by `forwardPolicy = "accept"` to reduce forwarding regressions.
+- Stage-1 NAT guardrail: `nat.enable = true` is currently blocked with `coexistence.profile = "docker-coexist"` to avoid mixed NAT ownership.
+- Stage-1 forwarding guardrails:
+  - `forwarding.rules` requires `forwardPolicy = "drop"`,
+  - `forwarding.rules` is blocked with `coexistence.profile = "docker-coexist"` to avoid ambiguous forward ownership.
 
 ## Centralized dynamic model
 

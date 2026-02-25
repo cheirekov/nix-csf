@@ -68,6 +68,23 @@ cluster_policy_auth_token_selected_slot="0"
 dynamic_offenders_auth_token_candidate_count="0"
 dynamic_offenders_auth_token_selected_slot="0"
 auth_selected_slot_result="0"
+nat_enabled="false"
+nat_external_interface=""
+nat_masquerade_enabled="false"
+nat_masquerade_source_count="0"
+nat_port_forward_count="0"
+nat_port_forward_rule_count="0"
+nat_port_forward_source_match_count="0"
+forwarding_zone_count="0"
+forwarding_rule_count="0"
+forwarding_rule_expanded_count="0"
+declare -a forwarding_rule_ports=()
+declare -a forwarding_rule_in_ifaces=()
+declare -a forwarding_rule_out_ifaces=()
+declare -a forwarding_rule_source_v4=()
+declare -a forwarding_rule_source_v6=()
+declare -a forwarding_rule_destination_v4=()
+declare -a forwarding_rule_destination_v6=()
 
 log_event() {
   local sink="$1"
@@ -948,12 +965,123 @@ append_unique_value() {
   ref+=("${candidate}")
 }
 
+parse_csv_tokens() {
+  local csv="$1"
+  local -n out_ref="$2"
+  local -a raw_tokens
+  local token
+
+  # shellcheck disable=SC2034
+  out_ref=()
+  if [[ -z "${csv}" ]]; then
+    return 0
+  fi
+
+  IFS=',' read -r -a raw_tokens <<< "${csv}"
+  for token in "${raw_tokens[@]}"; do
+    [[ -z "${token}" ]] && continue
+    append_unique_value out_ref "${token}"
+  done
+}
+
+render_scalar_or_set() {
+  # shellcheck disable=SC2178
+  local -n tokens_ref="$1"
+  local idx
+
+  if [[ "${#tokens_ref[@]}" -eq 1 ]]; then
+    printf '%s' "${tokens_ref[0]}"
+    return 0
+  fi
+
+  printf '{ '
+  for idx in "${!tokens_ref[@]}"; do
+    if [[ "${idx}" -gt 0 ]]; then
+      printf ', '
+    fi
+    printf '%s' "${tokens_ref[idx]}"
+  done
+  printf ' }'
+}
+
+render_string_match_set() {
+  # shellcheck disable=SC2178
+  local -n tokens_ref="$1"
+  local idx
+
+  if [[ "${#tokens_ref[@]}" -eq 1 ]]; then
+    printf '"%s"' "${tokens_ref[0]}"
+    return 0
+  fi
+
+  printf '{ '
+  for idx in "${!tokens_ref[@]}"; do
+    if [[ "${idx}" -gt 0 ]]; then
+      printf ', '
+    fi
+    printf '"%s"' "${tokens_ref[idx]}"
+  done
+  printf ' }'
+}
+
 validate_icmp_type_name() {
   local family="$1"
   local value="$2"
 
   if [[ ! "${value}" =~ ^[a-z0-9_-]+$ ]]; then
     fail "icmp.${family} contains invalid nft type token: ${value}"
+  fi
+}
+
+validate_interface_name() {
+  local option_name="$1"
+  local iface="$2"
+
+  if [[ -z "${iface}" ]]; then
+    fail "${option_name} must not be empty"
+  fi
+
+  if [[ ! "${iface}" =~ ^[A-Za-z0-9_.:-]+$ ]]; then
+    fail "${option_name} contains invalid interface token: ${iface}"
+  fi
+}
+
+validate_ipv4_token() {
+  local option_name="$1"
+  local value="$2"
+
+  if [[ ! "${value}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    fail "${option_name} must be an IPv4 address: ${value}"
+  fi
+}
+
+validate_ipv4_or_cidr_token() {
+  local option_name="$1"
+  local value="$2"
+
+  if [[ ! "${value}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$ ]]; then
+    fail "${option_name} must be an IPv4 address or CIDR: ${value}"
+  fi
+}
+
+validate_ipv6_or_cidr_token() {
+  local option_name="$1"
+  local value="$2"
+
+  if [[ ! "${value}" =~ ^[0-9A-Fa-f:]+(/[0-9]{1,3})?$ ]] || [[ "${value}" != *:* ]]; then
+    fail "${option_name} must be an IPv6 address or CIDR: ${value}"
+  fi
+}
+
+validate_port_number_token() {
+  local option_name="$1"
+  local value="$2"
+
+  if [[ ! "${value}" =~ ^[0-9]+$ ]]; then
+    fail "${option_name} must be a numeric port: ${value}"
+  fi
+  if (( value < 1 || value > 65535 )); then
+    fail "${option_name} must be in range 1..65535: ${value}"
   fi
 }
 
@@ -993,6 +1121,18 @@ write_metrics() {
     printf 'nix_csf_feature_enabled{feature="local_allow_port_rules"} %s\n' "$(bool_to_num "${local_allow_port_rules_enabled}")"
     printf 'nix_csf_feature_enabled{feature="cluster_policy"} %s\n' "$(bool_to_num "${cluster_policy_enabled}")"
     printf 'nix_csf_feature_enabled{feature="dynamic_offenders"} %s\n' "$(bool_to_num "${dynamic_offenders_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="nat"} %s\n' "$(bool_to_num "${nat_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="nat_masquerade"} %s\n' "$(bool_to_num "${nat_masquerade_enabled}")"
+    if [[ "${nat_port_forward_count}" != "0" ]]; then
+      echo 'nix_csf_feature_enabled{feature="nat_port_forward"} 1'
+    else
+      echo 'nix_csf_feature_enabled{feature="nat_port_forward"} 0'
+    fi
+    if [[ "${forwarding_rule_count}" != "0" ]]; then
+      echo 'nix_csf_feature_enabled{feature="forwarding_matrix"} 1'
+    else
+      echo 'nix_csf_feature_enabled{feature="forwarding_matrix"} 0'
+    fi
     printf 'nix_csf_feature_enabled{feature="coexist_docker"} %s\n' "$(bool_to_num "${coexistence_docker_enabled}")"
     printf 'nix_csf_feature_enabled{feature="log_drops"} %s\n' "$(bool_to_num "${log_drops}")"
     printf 'nix_csf_feature_enabled{feature="legacy_syn_rate_limit"} %s\n' "$(bool_to_num "${legacy_syn_rate_limit_enabled}")"
@@ -1099,6 +1239,12 @@ write_metrics() {
     printf 'nix_csf_source_count{source="local_ignore_files"} %s\n' "${local_ignore_source_count}"
     printf 'nix_csf_source_count{source="cluster_policy_urls"} %s\n' "${cluster_policy_source_count}"
     printf 'nix_csf_source_count{source="dynamic_offender_urls"} %s\n' "${dynamic_offenders_source_count}"
+    printf 'nix_csf_source_count{source="nat_masquerade_sources"} %s\n' "${nat_masquerade_source_count}"
+    printf 'nix_csf_source_count{source="nat_port_forwards"} %s\n' "${nat_port_forward_count}"
+    printf 'nix_csf_source_count{source="nat_port_forward_source_matches"} %s\n' "${nat_port_forward_source_match_count}"
+    printf 'nix_csf_source_count{source="forwarding_zones"} %s\n' "${forwarding_zone_count}"
+    printf 'nix_csf_source_count{source="forwarding_rules"} %s\n' "${forwarding_rule_count}"
+    printf 'nix_csf_source_count{source="forwarding_rules_expanded"} %s\n' "${forwarding_rule_expanded_count}"
     echo "# HELP nix_csf_auth_token_candidates Number of configured auth token candidates per remote source."
     echo "# TYPE nix_csf_auth_token_candidates gauge"
     printf 'nix_csf_auth_token_candidates{source="cluster_policy"} %s\n' "${cluster_policy_auth_token_candidate_count}"
@@ -1172,6 +1318,13 @@ metrics_output_file="$(jq -r '.observability.metrics.outputFile // "/var/lib/nix
 dynamic_offenders_enabled="$(jq -r '.dynamicOffenders.enable // false' "${CONFIG_FILE}")"
 dynamic_offenders_default_entry_ttl_seconds="$(jq -r '.dynamicOffenders.defaultEntryTTLSeconds // 900' "${CONFIG_FILE}")"
 dynamic_offenders_max_entries="$(jq -r '.dynamicOffenders.maxEntries // 20000' "${CONFIG_FILE}")"
+nat_enabled="$(jq -r '.nat.enable // false' "${CONFIG_FILE}")"
+nat_external_interface="$(jq -r '.nat.externalInterface // ""' "${CONFIG_FILE}")"
+nat_masquerade_enabled="$(jq -r '.nat.masquerade.enable // false' "${CONFIG_FILE}")"
+nat_port_forward_declared_count="$(jq -r '(.nat.portForwards // []) | length' "${CONFIG_FILE}")"
+mapfile -t nat_masquerade_source_ipv4 < <(jq -r '.nat.masquerade.sourceIPv4[]?' "${CONFIG_FILE}")
+forwarding_zone_declared_count="$(jq -r '(.forwarding.zones // {}) | keys | length' "${CONFIG_FILE}")"
+forwarding_rule_declared_count="$(jq -r '(.forwarding.rules // []) | length' "${CONFIG_FILE}")"
 coexistence_docker_enabled="false"
 icmp_rate_limit_effective="false"
 icmp_rate_limit_clause=""
@@ -1187,6 +1340,50 @@ fi
 
 if [[ "${coexistence_profile}" == "docker-coexist" ]]; then
   coexistence_docker_enabled="true"
+fi
+
+if [[ "${nat_enabled}" == "true" ]]; then
+  validate_interface_name "nat.externalInterface" "${nat_external_interface}"
+
+  if [[ "${nat_masquerade_enabled}" == "true" ]] && [[ "${#nat_masquerade_source_ipv4[@]}" -eq 0 ]]; then
+    fail "nat.masquerade.enable=true requires nat.masquerade.sourceIPv4 entries"
+  fi
+else
+  if [[ "${nat_masquerade_enabled}" == "true" || "${#nat_masquerade_source_ipv4[@]}" -gt 0 || "${nat_port_forward_declared_count}" != "0" ]]; then
+    fail "nat configuration requires nat.enable=true"
+  fi
+fi
+
+if [[ "${nat_enabled}" == "true" && "${coexistence_profile}" == "docker-coexist" ]]; then
+  fail "nat.enable=true is not supported with coexistence.profile=docker-coexist in Stage-1 NAT foundation"
+fi
+
+if [[ "${forwarding_rule_declared_count}" != "0" && "${forward_policy}" != "drop" ]]; then
+  fail "forwarding.rules requires forwardPolicy=drop"
+fi
+
+if [[ "${coexistence_profile}" == "docker-coexist" && "${forwarding_rule_declared_count}" != "0" ]]; then
+  fail "forwarding.rules is not supported with coexistence.profile=docker-coexist"
+fi
+
+if [[ "${forwarding_rule_declared_count}" != "0" && "${forwarding_zone_declared_count}" == "0" ]]; then
+  fail "forwarding.rules requires forwarding.zones definitions"
+fi
+
+if ! jq -e '
+  (.forwarding.rules // []) as $rules
+  | (.forwarding.zones // {}) as $zones
+  | all(
+      $rules[];
+      ($zones[.fromZone] != null)
+      and ($zones[.toZone] != null)
+      and (
+        (.protocol // "any") != "any"
+        or ((.destinationPorts // []) | length == 0)
+      )
+    )
+' "${CONFIG_FILE}" >/dev/null 2>&1; then
+  fail "forwarding rules reference unknown zones or invalid protocol/port combinations"
 fi
 
 if [[ "${metrics_enabled}" == "true" && "${metrics_output_file}" != /* ]]; then
@@ -1272,6 +1469,8 @@ log_event "stdout" "info" "run_start" \
   "version=${module_version}" \
   "metrics_enabled=${metrics_enabled}" \
   "coexistence_profile=${coexistence_profile}" \
+  "nat_enabled=${nat_enabled}" \
+  "forwarding_rules_declared=${forwarding_rule_declared_count}" \
   "icmp_profile=${icmp_profile}" \
   "icmp_rate_limit=${icmp_rate_limit_effective}"
 
@@ -1841,6 +2040,217 @@ if [[ "${dynamic_offenders_enabled}" == "true" ]]; then
   fi
 fi
 
+: > "${TMP_DIR}/nat-masquerade-v4.raw"
+: > "${TMP_DIR}/nat-port-forwards.raw"
+: > "${TMP_DIR}/nat-port-forwards.expanded.raw"
+: > "${TMP_DIR}/nat-port-forwards.txt"
+
+if [[ "${nat_enabled}" == "true" ]]; then
+  for cidr in "${nat_masquerade_source_ipv4[@]}"; do
+    validate_ipv4_or_cidr_token "nat.masquerade.sourceIPv4" "${cidr}"
+    printf '%s\n' "${cidr}" >> "${TMP_DIR}/nat-masquerade-v4.raw"
+  done
+
+  normalize_cidrs "${TMP_DIR}/nat-masquerade-v4.raw" "${TMP_DIR}/nat-masquerade-v4.norm" "${TMP_DIR}/nat-masquerade-v6.norm"
+  sort_unique "${TMP_DIR}/nat-masquerade-v4.norm" "${TMP_DIR}/nat-masquerade-v4.txt"
+
+  if [[ -s "${TMP_DIR}/nat-masquerade-v6.norm" ]]; then
+    fail "nat.masquerade.sourceIPv4 must not contain IPv6 values"
+  fi
+
+  jq -r \
+    --arg default_iface "${nat_external_interface}" '
+      .nat.portForwards[]?
+      | [
+          (.protocol // "tcp"),
+          (if (.inInterface // "") == "" then $default_iface else .inInterface end),
+          (.externalPort | tostring),
+          (.destinationAddress // ""),
+          (if .destinationPort == null then (.externalPort | tostring) else (.destinationPort | tostring) end),
+          ((.sourceIPv4 // []) | join(","))
+        ]
+      | @tsv
+    ' "${CONFIG_FILE}" > "${TMP_DIR}/nat-port-forwards.raw"
+
+  while IFS=$'\t' read -r protocol in_iface external_port destination_address destination_port source_csv; do
+    if [[ -z "${protocol}${in_iface}${external_port}${destination_address}${destination_port}${source_csv}" ]]; then
+      continue
+    fi
+
+    if [[ "${protocol}" != "tcp" && "${protocol}" != "udp" ]]; then
+      fail "nat.portForwards.protocol must be tcp or udp"
+    fi
+
+    validate_interface_name "nat.portForwards.inInterface" "${in_iface}"
+    validate_port_number_token "nat.portForwards.externalPort" "${external_port}"
+    validate_ipv4_token "nat.portForwards.destinationAddress" "${destination_address}"
+    validate_port_number_token "nat.portForwards.destinationPort" "${destination_port}"
+
+    if [[ -n "${source_csv}" ]]; then
+      IFS=',' read -r -a source_entries <<< "${source_csv}"
+      for source_cidr in "${source_entries[@]}"; do
+        validate_ipv4_or_cidr_token "nat.portForwards.sourceIPv4" "${source_cidr}"
+        printf '%s|%s|%s|%s|%s|%s\n' \
+          "${protocol}" \
+          "${in_iface}" \
+          "${external_port}" \
+          "${destination_address}" \
+          "${destination_port}" \
+          "${source_cidr}" >> "${TMP_DIR}/nat-port-forwards.expanded.raw"
+      done
+    else
+      printf '%s|%s|%s|%s|%s|\n' \
+        "${protocol}" \
+        "${in_iface}" \
+        "${external_port}" \
+        "${destination_address}" \
+        "${destination_port}" >> "${TMP_DIR}/nat-port-forwards.expanded.raw"
+    fi
+  done < "${TMP_DIR}/nat-port-forwards.raw"
+
+  sort_unique "${TMP_DIR}/nat-port-forwards.expanded.raw" "${TMP_DIR}/nat-port-forwards.txt"
+fi
+
+: > "${TMP_DIR}/forward-matrix.raw"
+: > "${TMP_DIR}/forward-matrix.expanded.raw"
+: > "${TMP_DIR}/forward-matrix.txt"
+
+if [[ "${forwarding_rule_declared_count}" != "0" ]]; then
+  jq -r '
+    (.forwarding.zones // {}) as $zones
+    | (.forwarding.rules // [])[]
+    | . as $rule
+    | ($zones[$rule.fromZone]) as $from
+    | ($zones[$rule.toZone]) as $to
+    | [
+        ($rule.name // ""),
+        ($rule.protocol // "any"),
+        (($rule.destinationPorts // []) | map(tostring) | unique | join(",")),
+        (((($from.interfaces // []) + ($rule.inInterfaces // [])) | unique) | join(",")),
+        (((($to.interfaces // []) + ($rule.outInterfaces // [])) | unique) | join(",")),
+        (((($from.cidrIPv4 // []) + ($rule.sourceIPv4 // [])) | unique) | join(",")),
+        (((($from.cidrIPv6 // []) + ($rule.sourceIPv6 // [])) | unique) | join(",")),
+        (((($to.cidrIPv4 // []) + ($rule.destinationIPv4 // [])) | unique) | join(",")),
+        (((($to.cidrIPv6 // []) + ($rule.destinationIPv6 // [])) | unique) | join(","))
+      ]
+    | join("\u001f")
+  ' "${CONFIG_FILE}" > "${TMP_DIR}/forward-matrix.raw"
+
+  while IFS=$'\x1f' read -r rule_name protocol ports_csv in_ifaces_csv out_ifaces_csv source_v4_csv source_v6_csv destination_v4_csv destination_v6_csv; do
+    if [[ -z "${rule_name}${protocol}${ports_csv}${in_ifaces_csv}${out_ifaces_csv}${source_v4_csv}${source_v6_csv}${destination_v4_csv}${destination_v6_csv}" ]]; then
+      continue
+    fi
+
+    if [[ "${protocol}" != "any" && "${protocol}" != "tcp" && "${protocol}" != "udp" ]]; then
+      fail "forwarding.rules.protocol must be one of: any, tcp, udp"
+    fi
+
+    parse_csv_tokens "${ports_csv}" forwarding_rule_ports
+    parse_csv_tokens "${in_ifaces_csv}" forwarding_rule_in_ifaces
+    parse_csv_tokens "${out_ifaces_csv}" forwarding_rule_out_ifaces
+    parse_csv_tokens "${source_v4_csv}" forwarding_rule_source_v4
+    parse_csv_tokens "${source_v6_csv}" forwarding_rule_source_v6
+    parse_csv_tokens "${destination_v4_csv}" forwarding_rule_destination_v4
+    parse_csv_tokens "${destination_v6_csv}" forwarding_rule_destination_v6
+
+    for candidate_iface in "${forwarding_rule_in_ifaces[@]}"; do
+      validate_interface_name "forwarding.rules.inInterfaces" "${candidate_iface}"
+    done
+    for candidate_iface in "${forwarding_rule_out_ifaces[@]}"; do
+      validate_interface_name "forwarding.rules.outInterfaces" "${candidate_iface}"
+    done
+    for candidate_cidr in "${forwarding_rule_source_v4[@]}"; do
+      validate_ipv4_or_cidr_token "forwarding.rules.sourceIPv4" "${candidate_cidr}"
+    done
+    for candidate_cidr in "${forwarding_rule_source_v6[@]}"; do
+      validate_ipv6_or_cidr_token "forwarding.rules.sourceIPv6" "${candidate_cidr}"
+    done
+    for candidate_cidr in "${forwarding_rule_destination_v4[@]}"; do
+      validate_ipv4_or_cidr_token "forwarding.rules.destinationIPv4" "${candidate_cidr}"
+    done
+    for candidate_cidr in "${forwarding_rule_destination_v6[@]}"; do
+      validate_ipv6_or_cidr_token "forwarding.rules.destinationIPv6" "${candidate_cidr}"
+    done
+
+    if [[ "${#forwarding_rule_ports[@]}" -gt 0 ]]; then
+      if [[ "${protocol}" == "any" ]]; then
+        fail "forwarding.rules.destinationPorts requires protocol=tcp or protocol=udp"
+      fi
+      for candidate_port in "${forwarding_rule_ports[@]}"; do
+        validate_port_number_token "forwarding.rules.destinationPorts" "${candidate_port}"
+      done
+    fi
+
+    if [[ "${#forwarding_rule_in_ifaces[@]}" -eq 0 \
+      && "${#forwarding_rule_out_ifaces[@]}" -eq 0 \
+      && "${#forwarding_rule_source_v4[@]}" -eq 0 \
+      && "${#forwarding_rule_source_v6[@]}" -eq 0 \
+      && "${#forwarding_rule_destination_v4[@]}" -eq 0 \
+      && "${#forwarding_rule_destination_v6[@]}" -eq 0 \
+      && "${protocol}" == "any" ]]; then
+      if [[ -n "${rule_name}" ]]; then
+        fail "forwarding rule '${rule_name}' resolves to unconstrained accept; add selectors"
+      fi
+      fail "forwarding rule resolves to unconstrained accept; add selectors"
+    fi
+
+    forwarding_rule_parts=()
+    if [[ "${#forwarding_rule_in_ifaces[@]}" -gt 0 ]]; then
+      forwarding_rule_parts+=("iifname $(render_string_match_set forwarding_rule_in_ifaces)")
+    fi
+    if [[ "${#forwarding_rule_out_ifaces[@]}" -gt 0 ]]; then
+      forwarding_rule_parts+=("oifname $(render_string_match_set forwarding_rule_out_ifaces)")
+    fi
+    if [[ "${protocol}" == "tcp" || "${protocol}" == "udp" ]]; then
+      forwarding_rule_parts+=("${protocol}")
+      if [[ "${#forwarding_rule_ports[@]}" -gt 0 ]]; then
+        forwarding_rule_parts+=("dport $(render_scalar_or_set forwarding_rule_ports)")
+      fi
+    fi
+
+    forwarding_has_v4="false"
+    forwarding_has_v6="false"
+    if [[ "${#forwarding_rule_source_v4[@]}" -gt 0 || "${#forwarding_rule_destination_v4[@]}" -gt 0 ]]; then
+      forwarding_has_v4="true"
+    fi
+    if [[ "${#forwarding_rule_source_v6[@]}" -gt 0 || "${#forwarding_rule_destination_v6[@]}" -gt 0 ]]; then
+      forwarding_has_v6="true"
+    fi
+
+    if [[ "${forwarding_has_v4}" == "true" ]]; then
+      forwarding_line_parts=("${forwarding_rule_parts[@]}")
+      if [[ "${#forwarding_rule_source_v4[@]}" -gt 0 ]]; then
+        forwarding_line_parts+=("ip saddr $(render_scalar_or_set forwarding_rule_source_v4)")
+      fi
+      if [[ "${#forwarding_rule_destination_v4[@]}" -gt 0 ]]; then
+        forwarding_line_parts+=("ip daddr $(render_scalar_or_set forwarding_rule_destination_v4)")
+      fi
+      forwarding_line_parts+=("accept")
+      printf '%s\n' "${forwarding_line_parts[*]}" >> "${TMP_DIR}/forward-matrix.expanded.raw"
+    fi
+
+    if [[ "${forwarding_has_v6}" == "true" ]]; then
+      forwarding_line_parts=("${forwarding_rule_parts[@]}")
+      if [[ "${#forwarding_rule_source_v6[@]}" -gt 0 ]]; then
+        forwarding_line_parts+=("ip6 saddr $(render_scalar_or_set forwarding_rule_source_v6)")
+      fi
+      if [[ "${#forwarding_rule_destination_v6[@]}" -gt 0 ]]; then
+        forwarding_line_parts+=("ip6 daddr $(render_scalar_or_set forwarding_rule_destination_v6)")
+      fi
+      forwarding_line_parts+=("accept")
+      printf '%s\n' "${forwarding_line_parts[*]}" >> "${TMP_DIR}/forward-matrix.expanded.raw"
+    fi
+
+    if [[ "${forwarding_has_v4}" == "false" && "${forwarding_has_v6}" == "false" ]]; then
+      forwarding_line_parts=("${forwarding_rule_parts[@]}")
+      forwarding_line_parts+=("accept")
+      printf '%s\n' "${forwarding_line_parts[*]}" >> "${TMP_DIR}/forward-matrix.expanded.raw"
+    fi
+  done < "${TMP_DIR}/forward-matrix.raw"
+
+  sort_unique "${TMP_DIR}/forward-matrix.expanded.raw" "${TMP_DIR}/forward-matrix.txt"
+fi
+
 mapfile -t trusted_interfaces < <(jq -r '.trustedInterfaces[]?' "${CONFIG_FILE}")
 mapfile -t open_tcp_ports < <(jq -r '.openTCPPorts[]?' "${CONFIG_FILE}")
 mapfile -t open_udp_ports < <(jq -r '.openUDPPorts[]?' "${CONFIG_FILE}")
@@ -1874,6 +2284,16 @@ cluster_ignore_v4_count="$(count_file_lines "${TMP_DIR}/cluster-ignore-v4.txt")"
 cluster_ignore_v6_count="$(count_file_lines "${TMP_DIR}/cluster-ignore-v6.txt")"
 dynamic_ban_v4_count="$(count_file_lines "${TMP_DIR}/dynamic-ban-v4.txt")"
 dynamic_ban_v6_count="$(count_file_lines "${TMP_DIR}/dynamic-ban-v6.txt")"
+nat_masquerade_source_count="$(count_file_lines "${TMP_DIR}/nat-masquerade-v4.txt")"
+nat_port_forward_rule_count="$(count_file_lines "${TMP_DIR}/nat-port-forwards.txt")"
+nat_port_forward_count="$(count_file_lines "${TMP_DIR}/nat-port-forwards.raw")"
+nat_port_forward_source_match_count="$(( nat_port_forward_rule_count - nat_port_forward_count ))"
+if (( nat_port_forward_source_match_count < 0 )); then
+  nat_port_forward_source_match_count="0"
+fi
+forwarding_zone_count="${forwarding_zone_declared_count}"
+forwarding_rule_count="$(count_file_lines "${TMP_DIR}/forward-matrix.raw")"
+forwarding_rule_expanded_count="$(count_file_lines "${TMP_DIR}/forward-matrix.txt")"
 local_allow_port_rules_enabled="false"
 if [[ "${local_allow_port_rule_count}" != "0" ]]; then
   local_allow_port_rules_enabled="true"
@@ -1909,6 +2329,13 @@ log_event "stdout" "info" "set_counts" \
   "cluster_deny_v6=${cluster_deny_v6_count}" \
   "cluster_ignore_v4=${cluster_ignore_v4_count}" \
   "cluster_ignore_v6=${cluster_ignore_v6_count}" \
+  "nat_masquerade_v4=${nat_masquerade_source_count}" \
+  "nat_port_forwards=${nat_port_forward_count}" \
+  "nat_port_forward_rules=${nat_port_forward_rule_count}" \
+  "nat_port_forward_source_matches=${nat_port_forward_source_match_count}" \
+  "forwarding_zones=${forwarding_zone_count}" \
+  "forwarding_rules=${forwarding_rule_count}" \
+  "forwarding_rules_expanded=${forwarding_rule_expanded_count}" \
   "dynamic_ban_v4=${dynamic_ban_v4_count}" \
   "dynamic_ban_v6=${dynamic_ban_v6_count}"
 
@@ -1953,6 +2380,49 @@ render_token_set() {
 tmp_rules="${TMP_DIR}/ruleset.nft"
 
 {
+  if [[ "${nat_enabled}" == "true" ]]; then
+    echo "table ip nix_csf_nat {"
+    echo "  chain prerouting {"
+    echo "    type nat hook prerouting priority dstnat; policy accept;"
+
+    if [[ -s "${TMP_DIR}/nat-port-forwards.txt" ]]; then
+      while IFS='|' read -r protocol in_iface external_port destination_address destination_port source_cidr; do
+        if [[ -z "${protocol}" || -z "${in_iface}" || -z "${external_port}" || -z "${destination_address}" || -z "${destination_port}" ]]; then
+          continue
+        fi
+
+        if [[ -n "${source_cidr}" ]]; then
+          printf '    ip saddr %s iifname "%s" %s dport %s dnat to %s:%s\n' \
+            "${source_cidr}" \
+            "${in_iface}" \
+            "${protocol}" \
+            "${external_port}" \
+            "${destination_address}" \
+            "${destination_port}"
+        else
+          printf '    iifname "%s" %s dport %s dnat to %s:%s\n' \
+            "${in_iface}" \
+            "${protocol}" \
+            "${external_port}" \
+            "${destination_address}" \
+            "${destination_port}"
+        fi
+      done < "${TMP_DIR}/nat-port-forwards.txt"
+    fi
+
+    echo "  }"
+    echo "  chain postrouting {"
+    echo "    type nat hook postrouting priority srcnat; policy accept;"
+    if [[ "${nat_masquerade_enabled}" == "true" ]]; then
+      while IFS= read -r source_cidr; do
+        [[ -z "${source_cidr}" ]] && continue
+        printf '    ip saddr %s oifname "%s" masquerade\n' "${source_cidr}" "${nat_external_interface}"
+      done < "${TMP_DIR}/nat-masquerade-v4.txt"
+    fi
+    echo "  }"
+    echo "}"
+  fi
+
   echo "table inet nix_csf {"
   emit_set "allow_ipv4" "ipv4_addr" "${TMP_DIR}/allow-v4.txt"
   emit_set "allow_ipv6" "ipv6_addr" "${TMP_DIR}/allow-v6.txt"
@@ -2108,6 +2578,50 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
   echo "  chain forward {"
   echo "    type filter hook forward priority filter; policy ${forward_policy};"
 
+  if [[ "${nat_enabled}" == "true" || -s "${TMP_DIR}/forward-matrix.txt" ]]; then
+    echo "    ct state invalid drop"
+    echo "    ct state established,related accept"
+  fi
+
+  if [[ "${nat_enabled}" == "true" ]]; then
+    if [[ "${nat_masquerade_enabled}" == "true" ]]; then
+      while IFS= read -r source_cidr; do
+        [[ -z "${source_cidr}" ]] && continue
+        printf '    ip saddr %s oifname "%s" accept\n' "${source_cidr}" "${nat_external_interface}"
+      done < "${TMP_DIR}/nat-masquerade-v4.txt"
+    fi
+
+    if [[ -s "${TMP_DIR}/nat-port-forwards.txt" ]]; then
+      while IFS='|' read -r protocol in_iface _external_port destination_address destination_port source_cidr; do
+        if [[ -z "${protocol}" || -z "${in_iface}" || -z "${destination_address}" || -z "${destination_port}" ]]; then
+          continue
+        fi
+
+        if [[ -n "${source_cidr}" ]]; then
+          printf '    ip saddr %s iifname "%s" ip daddr %s %s dport %s accept\n' \
+            "${source_cidr}" \
+            "${in_iface}" \
+            "${destination_address}" \
+            "${protocol}" \
+            "${destination_port}"
+        else
+          printf '    iifname "%s" ip daddr %s %s dport %s accept\n' \
+            "${in_iface}" \
+            "${destination_address}" \
+            "${protocol}" \
+            "${destination_port}"
+        fi
+      done < "${TMP_DIR}/nat-port-forwards.txt"
+    fi
+  fi
+
+  if [[ -s "${TMP_DIR}/forward-matrix.txt" ]]; then
+    while IFS= read -r forward_rule; do
+      [[ -z "${forward_rule}" ]] && continue
+      printf '    %s\n' "${forward_rule}"
+    done < "${TMP_DIR}/forward-matrix.txt"
+  fi
+
   if [[ "${coexistence_profile}" == "docker-coexist" ]]; then
     # In coexistence mode keep default forward acceptance for Docker/dynamic daemons,
     # but still enforce nix-csf deny-style overlays.
@@ -2179,6 +2693,7 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
 } > "${tmp_rules}"
 
 nft -c -f "${tmp_rules}"
+nft delete table ip nix_csf_nat >/dev/null 2>&1 || true
 nft delete table inet nix_csf >/dev/null 2>&1 || true
 nft -f "${tmp_rules}"
 install -m 0640 "${tmp_rules}" "${RULESET_FILE}"

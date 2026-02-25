@@ -364,3 +364,75 @@ Owner: PM/BA + Codex
   - `./scripts/validate-agent.sh`
 - Next:
   - start implementation with `T-040` (NAT datapath foundation).
+
+## 23) Batch NAT-FOUNDATION-040 (implementation)
+
+- Trigger:
+  - user approved immediate start of Stage-1 firewall ownership implementation.
+- Scope delivered in this batch:
+  - added NAT module API (`services.nixCsf.nat.*`) with:
+    - `nat.enable`,
+    - `nat.externalInterface`,
+    - `nat.masquerade.enable/sourceIPv4`,
+    - `nat.portForwards` (protocol/in-interface/external-port/destination/source restrictions),
+  - wired NAT runtime config export into apply pipeline JSON,
+  - implemented NAT rules in runtime compiler:
+    - `table ip nix_csf_nat`,
+    - `prerouting` DNAT and `postrouting` masquerade chains,
+    - NAT-related forward accept rules in `chain forward`,
+  - added Stage-1 guardrails/assertions:
+    - NAT is opt-in and interface-scoped,
+    - IPv4 validation for Stage-1 NAT fields,
+    - NAT disallowed with `coexistence.profile = "docker-coexist"` in this stage,
+  - expanded quality coverage:
+    - new eval check: `checks.<system>.eval-nat`,
+    - smoke scenario updated with NAT rules and metrics assertions,
+  - updated docs:
+    - `README.md`,
+    - `docs/USE_CASES.md`,
+    - `docs/TROUBLESHOOTING.md`,
+    - `docs/ARCHITECTURE.md`.
+- Validation evidence (agent lane):
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `bash -n scripts/nix-csf-triage.sh`
+  - `bash -n scripts/validate.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-nat" --print-build-logs`
+  - `./scripts/validate-agent.sh`
+- Status:
+  - `DONE` for current branch baseline (epic lane advanced to `T-041`).
+- Next:
+  - implement forwarding policy matrix (`T-041`).
+
+## 24) Batch FORWARD-MATRIX-041 (implementation in progress)
+
+- Trigger:
+  - continue Stage-1 epic with interface/zone-aware forwarding controls.
+- Scope delivered in this batch:
+  - added forwarding module API:
+    - `services.nixCsf.forwarding.zones`,
+    - `services.nixCsf.forwarding.rules`,
+  - wired forwarding runtime config export and compiler support:
+    - zone/rule parsing,
+    - selector validation (interfaces, CIDRs, protocol/ports, zone references),
+    - generated explicit `chain forward` accept rules from matrix entries,
+  - added Stage-1 forwarding guardrails/assertions:
+    - forwarding rules require `forwardPolicy = "drop"`,
+    - forwarding rules blocked with `coexistence.profile = "docker-coexist"`,
+  - expanded quality coverage:
+    - new eval check: `checks.<system>.eval-forwarding`,
+    - smoke scenario includes forwarding zone/rule rendering and forwarding metrics,
+  - updated docs:
+    - `README.md`,
+    - `docs/USE_CASES.md`,
+    - `docs/TROUBLESHOOTING.md`,
+    - `docs/ARCHITECTURE.md`.
+- Validation evidence (agent lane):
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `bash -n scripts/nix-csf-triage.sh`
+  - `bash -n scripts/validate.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-forwarding" --print-build-logs`
+  - `./scripts/validate-agent.sh`
+- Status:
+  - `IN_PROGRESS` (awaiting operator full-validation evidence).
+- Next:
+  - operator runs `./scripts/validate-capture.sh` and shares summary/result to close `T-041`.

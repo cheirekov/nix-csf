@@ -1,5 +1,83 @@
 # PM/BA Changelog
 
+## 2026-02-25 — Batch FORWARD-MATRIX-041 (implementation lane)
+
+- Ticket(s): `T-041` (`IN_PROGRESS`)
+- Summary:
+  - implemented Stage-1 forwarding matrix model for routed traffic:
+    - new module API:
+      - `services.nixCsf.forwarding.zones`,
+      - `services.nixCsf.forwarding.rules`,
+    - zone-to-zone rule semantics with optional interface/CIDR/port selectors,
+  - runtime compiler changes:
+    - parses forwarding zones/rules from runtime JSON,
+    - validates forwarding selectors (zone references, interface tokens, CIDR family, protocol/port contract),
+    - renders explicit forward-chain accept clauses from forwarding matrix,
+    - adds forwarding feature/source metrics:
+      - `nix_csf_feature_enabled{feature="forwarding_matrix"}`,
+      - `nix_csf_source_count{source="forwarding_*"}`,
+    - adds triage keyword coverage for forwarding lines,
+  - safety guardrails:
+    - forwarding rules require `forwardPolicy = "drop"` for explicit allow posture,
+    - forwarding matrix is blocked with `coexistence.profile = "docker-coexist"` in Stage 1,
+  - quality coverage:
+    - new eval check `checks.<system>.eval-forwarding`,
+    - smoke scenario includes zone-based forwarding rules and forwarding metrics assertions,
+  - updated docs/runbooks:
+    - `README.md`, `docs/USE_CASES.md`, `docs/TROUBLESHOOTING.md`, `docs/ARCHITECTURE.md`.
+- BA requirement mapping:
+  - delivers requested interface/zone-aware forwarding allow model in declarative Nix API.
+- PM milestone mapping:
+  - executes second Stage-1 ticket from epic plan (`T-041`).
+- Risk impact:
+  - `medium` (new forward datapath behavior; constrained by explicit opt-in and guardrails).
+- Validation evidence (agent lane):
+  - `./scripts/validate-agent.sh`
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `bash -n scripts/nix-csf-triage.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-forwarding" --print-build-logs`
+- Open follow-ups:
+  - operator full-validation evidence required (`./scripts/validate-capture.sh`) before moving `T-041` to `DONE`.
+
+## 2026-02-25 — Batch NAT-FOUNDATION-040 (implementation lane)
+
+- Ticket(s): `T-040` (`DONE`)
+- Summary:
+  - implemented Stage-1 NAT foundation in module + runtime pipeline:
+    - new module API: `services.nixCsf.nat.*`,
+    - IPv4 masquerade support (`nat.masquerade`),
+    - explicit IPv4 port-forward DNAT rules (`nat.portForwards`),
+  - runtime compiler changes:
+    - renders additional `table ip nix_csf_nat` (`prerouting` + `postrouting`),
+    - emits NAT-linked forward accept rules in `chain forward`,
+    - adds NAT feature/source metrics (`nix_csf_feature_enabled{feature="nat_*"}`, `nix_csf_source_count{source="nat_*"}`),
+    - extends triage signal extraction for NAT lines (`dnat/masquerade`),
+  - added safety boundaries/assertions:
+    - NAT is opt-in and requires `nat.externalInterface`,
+    - IPv4-only validation for Stage-1 sources/destinations,
+    - guardrail: NAT blocked with `coexistence.profile = "docker-coexist"` in this stage,
+  - added quality coverage:
+    - new check `checks.<system>.eval-nat`,
+    - smoke scenario now includes NAT rules and metric assertions,
+  - updated docs/runbooks:
+    - `README.md`, `docs/USE_CASES.md`, `docs/TROUBLESHOOTING.md`, `docs/ARCHITECTURE.md`.
+- BA requirement mapping:
+  - starts requested epic direction where nix-csf is primary firewall owner for gateway-style traffic flows.
+- PM milestone mapping:
+  - executes first implementation ticket from epic plan (`T-040`).
+- Risk impact:
+  - `medium` (new datapath behavior; constrained by explicit opt-in and assertions).
+- Validation evidence (agent lane):
+  - `bash -n scripts/nix-csf-apply.sh`
+  - `bash -n scripts/nix-csf-triage.sh`
+  - `bash -n scripts/validate.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-nat" --print-build-logs`
+  - `./scripts/validate-agent.sh`
+- Closure note:
+  - epic lane advanced to `T-041` after operator handoff/commit baseline, treating `T-040` implementation batch as complete for current branch state.
+- Open follow-ups:
+  - continue Stage-1 epic with `T-041`/`T-042`.
+
 ## 2026-02-25 — Batch EPIC-KICKOFF-039
 
 - Ticket(s): `T-039`

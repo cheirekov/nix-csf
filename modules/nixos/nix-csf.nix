@@ -43,6 +43,7 @@ let
 
   resolvedBlocklistURLs = unique (selectedCatalogBlocklistURLs ++ cfg.blocklists.urls);
   allLocalPolicyFiles = cfg.localFiles.allow ++ cfg.localFiles.deny ++ cfg.localFiles.ignore;
+  forwardingZoneNames = builtins.attrNames cfg.forwarding.zones;
 
   isHttpsUrl = url: builtins.match "^https://[^[:space:]]+$" url != null;
   catalogBlocklistURLs = map (entry: entry.url) (builtins.attrValues cfg.blocklists.catalog);
@@ -258,6 +259,43 @@ let
     coexistence = {
       profile = cfg.coexistence.profile;
     };
+    nat = {
+      enable = cfg.nat.enable;
+      externalInterface = cfg.nat.externalInterface;
+      masquerade = {
+        enable = cfg.nat.masquerade.enable;
+        sourceIPv4 = cfg.nat.masquerade.sourceIPv4;
+      };
+      portForwards = map (rule: {
+        name = rule.name;
+        protocol = rule.protocol;
+        inInterface = rule.inInterface;
+        externalPort = rule.externalPort;
+        destinationAddress = rule.destinationAddress;
+        destinationPort = rule.destinationPort;
+        sourceIPv4 = rule.sourceIPv4;
+      }) cfg.nat.portForwards;
+    };
+    forwarding = {
+      zones = builtins.mapAttrs (_name: zone: {
+        interfaces = zone.interfaces;
+        cidrIPv4 = zone.cidrIPv4;
+        cidrIPv6 = zone.cidrIPv6;
+      }) cfg.forwarding.zones;
+      rules = map (rule: {
+        name = rule.name;
+        fromZone = rule.fromZone;
+        toZone = rule.toZone;
+        protocol = rule.protocol;
+        destinationPorts = rule.destinationPorts;
+        inInterfaces = rule.inInterfaces;
+        outInterfaces = rule.outInterfaces;
+        sourceIPv4 = rule.sourceIPv4;
+        sourceIPv6 = rule.sourceIPv6;
+        destinationIPv4 = rule.destinationIPv4;
+        destinationIPv6 = rule.destinationIPv6;
+      }) cfg.forwarding.rules;
+    };
     observability = {
       structuredLogging = cfg.observability.structuredLogging;
       metrics = {
@@ -467,6 +505,9 @@ component: Firewall
   '';
 
   validCountryCode = cc: builtins.match "^[A-Z]{2}$" (toUpper cc) != null;
+  validIPv4Address = value: builtins.match "^([0-9]{1,3}\\.){3}[0-9]{1,3}$" value != null;
+  validIPv4OrCIDR = value: builtins.match "^([0-9]{1,3}\\.){3}[0-9]{1,3}(/[0-9]{1,2})?$" value != null;
+  validIPv6OrCIDR = value: builtins.match "^[0-9A-Fa-f:]+(/[0-9]{1,3})?$" value != null;
 
   threatProfileDefaults = {
     custom = { };
@@ -576,6 +617,277 @@ in
       default = [ ];
       example = [ 53 51820 ];
       description = "UDP ports allowed from non-blocked sources.";
+    };
+
+    nat = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Enable IPv4 NAT datapath support for gateway-style deployments.
+          This is opt-in and does nothing unless sub-features are configured.
+        '';
+      };
+
+      externalInterface = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "eth0";
+        description = ''
+          External egress/ingress interface used by NAT rules.
+          Required when NAT is enabled.
+        '';
+      };
+
+      masquerade = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Enable source NAT (masquerade) for selected internal IPv4 CIDRs.
+          '';
+        };
+
+        sourceIPv4 = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "10.42.0.0/16" "192.168.50.0/24" ];
+          description = ''
+            Internal IPv4 source CIDRs that should be masqueraded when egressing
+            through nat.externalInterface.
+          '';
+        };
+      };
+
+      portForwards = mkOption {
+        type = types.listOf (types.submodule ({ ... }: {
+          options = {
+            name = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              example = "web-8080";
+              description = "Optional human-readable identifier for this port-forward rule.";
+            };
+
+            protocol = mkOption {
+              type = types.enum [ "tcp" "udp" ];
+              default = "tcp";
+              description = "Transport protocol for this DNAT rule.";
+            };
+
+            inInterface = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              example = "eth0";
+              description = ''
+                Ingress interface for this DNAT rule.
+                When null, nat.externalInterface is used.
+              '';
+            };
+
+            externalPort = mkOption {
+              type = types.port;
+              example = 8080;
+              description = "Externally exposed destination port.";
+            };
+
+            destinationAddress = mkOption {
+              type = types.str;
+              example = "10.42.0.10";
+              description = "Internal IPv4 destination host for DNAT.";
+            };
+
+            destinationPort = mkOption {
+              type = types.nullOr types.port;
+              default = null;
+              example = 80;
+              description = ''
+                Internal destination port after DNAT.
+                When null, externalPort is used.
+              '';
+            };
+
+            sourceIPv4 = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "198.51.100.0/24" ];
+              description = ''
+                Optional IPv4 source restrictions for this DNAT rule.
+                Empty means any source.
+              '';
+            };
+          };
+        }));
+        default = [ ];
+        description = ''
+          Declarative IPv4 port-forward (DNAT) rules.
+          Stage-1 NAT foundation intentionally keeps this model explicit and interface-scoped.
+        '';
+      };
+    };
+
+    forwarding = {
+      zones = mkOption {
+        type = types.attrsOf (types.submodule ({ ... }: {
+          options = {
+            interfaces = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "br-lan" ];
+              description = ''
+                Interface names associated with this forwarding zone.
+              '';
+            };
+
+            cidrIPv4 = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "10.42.0.0/16" ];
+              description = ''
+                Optional IPv4 CIDRs associated with this zone.
+                When a rule references the zone, these CIDRs are matched as:
+                - source selectors for `fromZone`
+                - destination selectors for `toZone`.
+              '';
+            };
+
+            cidrIPv6 = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "2001:db8:42::/64" ];
+              description = ''
+                Optional IPv6 CIDRs associated with this zone.
+                When a rule references the zone, these CIDRs are matched as:
+                - source selectors for `fromZone`
+                - destination selectors for `toZone`.
+              '';
+            };
+          };
+        }));
+        default = { };
+        example = {
+          lan = {
+            interfaces = [ "br-lan" ];
+            cidrIPv4 = [ "10.42.0.0/16" ];
+          };
+          wan = {
+            interfaces = [ "eth0" ];
+          };
+        };
+        description = ''
+          Named forwarding zones used by `forwarding.rules`.
+          Zones provide reusable interface and CIDR selectors for routed traffic policies.
+        '';
+      };
+
+      rules = mkOption {
+        type = types.listOf (types.submodule ({ ... }: {
+          options = {
+            name = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              example = "lan-to-wan-web";
+              description = "Optional human-readable identifier for the forwarding rule.";
+            };
+
+            fromZone = mkOption {
+              type = types.str;
+              example = "lan";
+              description = "Source zone name from forwarding.zones.";
+            };
+
+            toZone = mkOption {
+              type = types.str;
+              example = "wan";
+              description = "Destination zone name from forwarding.zones.";
+            };
+
+            protocol = mkOption {
+              type = types.enum [ "any" "tcp" "udp" ];
+              default = "any";
+              description = "Protocol selector for this forwarding rule.";
+            };
+
+            destinationPorts = mkOption {
+              type = types.listOf types.port;
+              default = [ ];
+              example = [ 80 443 ];
+              description = ''
+                Optional destination ports for this forwarding rule.
+                Allowed only with protocol `tcp` or `udp`.
+              '';
+            };
+
+            inInterfaces = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "br-lan" ];
+              description = ''
+                Additional ingress interfaces for this rule.
+                Combined with `forwarding.zones.<fromZone>.interfaces`.
+              '';
+            };
+
+            outInterfaces = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "eth0" ];
+              description = ''
+                Additional egress interfaces for this rule.
+                Combined with `forwarding.zones.<toZone>.interfaces`.
+              '';
+            };
+
+            sourceIPv4 = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "10.42.10.0/24" ];
+              description = ''
+                Additional IPv4 source CIDRs for this rule.
+                Combined with `forwarding.zones.<fromZone>.cidrIPv4`.
+              '';
+            };
+
+            sourceIPv6 = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "2001:db8:42:10::/64" ];
+              description = ''
+                Additional IPv6 source CIDRs for this rule.
+                Combined with `forwarding.zones.<fromZone>.cidrIPv6`.
+              '';
+            };
+
+            destinationIPv4 = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "0.0.0.0/0" ];
+              description = ''
+                Additional IPv4 destination CIDRs for this rule.
+                Combined with `forwarding.zones.<toZone>.cidrIPv4`.
+              '';
+            };
+
+            destinationIPv6 = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              example = [ "::/0" ];
+              description = ''
+                Additional IPv6 destination CIDRs for this rule.
+                Combined with `forwarding.zones.<toZone>.cidrIPv6`.
+              '';
+            };
+          };
+        }));
+        default = [ ];
+        description = ''
+          Explicit forwarding allow-matrix rules for routed traffic.
+          Recommended posture:
+          - keep `forwardPolicy = "drop"`,
+          - define named zones,
+          - add only required zone-to-zone flows.
+        '';
+      };
     };
 
     allowICMP = mkOption {
@@ -1928,10 +2240,159 @@ in
         '';
       }
       {
+        assertion = !cfg.nat.enable || cfg.nat.externalInterface != null;
+        message = "services.nixCsf.nat.enable requires services.nixCsf.nat.externalInterface.";
+      }
+      {
+        assertion = cfg.nat.externalInterface == null || cfg.nat.externalInterface != "";
+        message = "services.nixCsf.nat.externalInterface must be non-empty when set.";
+      }
+      {
+        assertion = cfg.nat.enable || (!cfg.nat.masquerade.enable && cfg.nat.portForwards == [ ]);
+        message = ''
+          services.nixCsf.nat.masquerade and services.nixCsf.nat.portForwards require
+          services.nixCsf.nat.enable = true.
+        '';
+      }
+      {
+        assertion = !cfg.nat.enable
+          || cfg.nat.masquerade.enable
+          || cfg.nat.portForwards != [ ];
+        message = ''
+          services.nixCsf.nat.enable requires at least one NAT feature:
+          services.nixCsf.nat.masquerade.enable or services.nixCsf.nat.portForwards.
+        '';
+      }
+      {
+        assertion = !cfg.nat.masquerade.enable || cfg.nat.enable;
+        message = "services.nixCsf.nat.masquerade.enable requires services.nixCsf.nat.enable = true.";
+      }
+      {
+        assertion = !cfg.nat.masquerade.enable || cfg.nat.masquerade.sourceIPv4 != [ ];
+        message = "services.nixCsf.nat.masquerade.enable requires services.nixCsf.nat.masquerade.sourceIPv4.";
+      }
+      {
+        assertion = all validIPv4OrCIDR cfg.nat.masquerade.sourceIPv4;
+        message = "services.nixCsf.nat.masquerade.sourceIPv4 entries must be IPv4 addresses or CIDRs.";
+      }
+      {
+        assertion = all (rule: rule.destinationAddress != "" && validIPv4Address rule.destinationAddress) cfg.nat.portForwards;
+        message = "services.nixCsf.nat.portForwards.*.destinationAddress must be an IPv4 address.";
+      }
+      {
+        assertion = all (rule: rule.inInterface == null || rule.inInterface != "") cfg.nat.portForwards;
+        message = "services.nixCsf.nat.portForwards.*.inInterface must be non-empty when set.";
+      }
+      {
+        assertion = all (rule: all validIPv4OrCIDR rule.sourceIPv4) cfg.nat.portForwards;
+        message = "services.nixCsf.nat.portForwards.*.sourceIPv4 entries must be IPv4 addresses or CIDRs.";
+      }
+      {
+        assertion = !(cfg.nat.enable && cfg.coexistence.profile == "docker-coexist");
+        message = ''
+          services.nixCsf.nat.enable is not supported with
+          services.nixCsf.coexistence.profile = "docker-coexist" in Stage-1 NAT foundation.
+        '';
+      }
+      {
         assertion = cfg.coexistence.profile != "docker-coexist" || cfg.forwardPolicy == "accept";
         message = ''
           services.nixCsf.coexistence.profile = "docker-coexist" requires
           services.nixCsf.forwardPolicy = "accept" to avoid breaking container forwarding.
+        '';
+      }
+      {
+        assertion = all (name: builtins.match "^[A-Za-z0-9_.-]+$" name != null) forwardingZoneNames;
+        message = "services.nixCsf.forwarding.zones keys must match [A-Za-z0-9_.-]+.";
+      }
+      {
+        assertion = all (zone:
+          zone.interfaces != [ ]
+          || zone.cidrIPv4 != [ ]
+          || zone.cidrIPv6 != [ ]
+        ) (builtins.attrValues cfg.forwarding.zones);
+        message = ''
+          services.nixCsf.forwarding.zones.<name> requires at least one selector:
+          interfaces, cidrIPv4, or cidrIPv6.
+        '';
+      }
+      {
+        assertion = all (zone: all (iface: iface != "") zone.interfaces) (builtins.attrValues cfg.forwarding.zones);
+        message = "services.nixCsf.forwarding.zones.<name>.interfaces entries must be non-empty.";
+      }
+      {
+        assertion = all (zone: all (iface: builtins.match "^[A-Za-z0-9_.:-]+$" iface != null) zone.interfaces)
+          (builtins.attrValues cfg.forwarding.zones);
+        message = "services.nixCsf.forwarding.zones.<name>.interfaces entries contain invalid interface tokens.";
+      }
+      {
+        assertion = all (zone: all validIPv4OrCIDR zone.cidrIPv4) (builtins.attrValues cfg.forwarding.zones);
+        message = "services.nixCsf.forwarding.zones.<name>.cidrIPv4 entries must be IPv4 addresses or CIDRs.";
+      }
+      {
+        assertion = all (zone: all validIPv6OrCIDR zone.cidrIPv6) (builtins.attrValues cfg.forwarding.zones);
+        message = "services.nixCsf.forwarding.zones.<name>.cidrIPv6 entries must be IPv6 addresses or CIDRs.";
+      }
+      {
+        assertion = cfg.forwarding.rules == [ ] || cfg.forwarding.zones != { };
+        message = "services.nixCsf.forwarding.rules requires services.nixCsf.forwarding.zones.";
+      }
+      {
+        assertion = all (rule: builtins.hasAttr rule.fromZone cfg.forwarding.zones) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.fromZone must reference an existing forwarding.zones key.";
+      }
+      {
+        assertion = all (rule: builtins.hasAttr rule.toZone cfg.forwarding.zones) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.toZone must reference an existing forwarding.zones key.";
+      }
+      {
+        assertion = all (rule: rule.protocol != "any" || rule.destinationPorts == [ ]) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.destinationPorts requires protocol = tcp or udp.";
+      }
+      {
+        assertion = all (rule: all (iface: iface != "") rule.inInterfaces) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.inInterfaces entries must be non-empty.";
+      }
+      {
+        assertion = all (rule: all (iface: iface != "") rule.outInterfaces) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.outInterfaces entries must be non-empty.";
+      }
+      {
+        assertion = all (rule: all (iface: builtins.match "^[A-Za-z0-9_.:-]+$" iface != null) rule.inInterfaces) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.inInterfaces entries contain invalid interface tokens.";
+      }
+      {
+        assertion = all (rule: all (iface: builtins.match "^[A-Za-z0-9_.:-]+$" iface != null) rule.outInterfaces) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.outInterfaces entries contain invalid interface tokens.";
+      }
+      {
+        assertion = all (rule: all validIPv4OrCIDR rule.sourceIPv4) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.sourceIPv4 entries must be IPv4 addresses or CIDRs.";
+      }
+      {
+        assertion = all (rule: all validIPv6OrCIDR rule.sourceIPv6) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.sourceIPv6 entries must be IPv6 addresses or CIDRs.";
+      }
+      {
+        assertion = all (rule: all validIPv4OrCIDR rule.destinationIPv4) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.destinationIPv4 entries must be IPv4 addresses or CIDRs.";
+      }
+      {
+        assertion = all (rule: all validIPv6OrCIDR rule.destinationIPv6) cfg.forwarding.rules;
+        message = "services.nixCsf.forwarding.rules.*.destinationIPv6 entries must be IPv6 addresses or CIDRs.";
+      }
+      {
+        assertion = cfg.forwarding.rules == [ ] || cfg.forwardPolicy == "drop";
+        message = ''
+          services.nixCsf.forwarding.rules requires services.nixCsf.forwardPolicy = "drop"
+          so only explicit matrix rules allow routed traffic.
+        '';
+      }
+      {
+        assertion = !(cfg.coexistence.profile == "docker-coexist" && cfg.forwarding.rules != [ ]);
+        message = ''
+          services.nixCsf.forwarding.rules is not supported with
+          services.nixCsf.coexistence.profile = "docker-coexist".
         '';
       }
       {

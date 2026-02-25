@@ -734,3 +734,121 @@ This example adds:
 - `controlPlane.escalation.enable = true` for promotion from repeated temp bans to permanent deny,
 - `lfdDetector.enable = true` to monitor sshd journal failures and emit temp bans,
 - local `clusterPolicy` + `dynamicOffenders` URLs so both permanent and temporary ban sets are rendered.
+
+## 19) NAT gateway foundation (`nat.*`, Stage 1)
+
+Use this when the host should act as a routed gateway and `nix-csf` is the firewall owner
+for basic IPv4 SNAT/masquerade and explicit port-forward rules.
+
+```nix
+services.nixCsf = {
+  enable = true;
+
+  # Keep explicit forward posture; NAT-related forward accepts are generated from nat.*.
+  forwardPolicy = "drop";
+
+  nat = {
+    enable = true;
+    externalInterface = "eth0";
+
+    masquerade = {
+      enable = true;
+      sourceIPv4 = [ "10.42.0.0/16" ];
+    };
+
+    portForwards = [
+      {
+        name = "web-8080";
+        protocol = "tcp";
+        externalPort = 8080;
+        destinationAddress = "10.42.0.10";
+        destinationPort = 80;
+        sourceIPv4 = [ "198.51.100.0/24" ];
+      }
+      {
+        name = "dns-5353";
+        protocol = "udp";
+        externalPort = 5353;
+        destinationAddress = "10.42.0.53";
+      }
+    ];
+  };
+};
+```
+
+Operational checks:
+
+```bash
+sudo systemctl show -P Result nix-csf-apply.service
+sudo nft list table ip nix_csf_nat
+sudo nft list table inet nix_csf | sed -n '/chain forward {/,/}/p'
+grep -F 'table ip nix_csf_nat {' /var/lib/nix-csf/generated-ruleset.nft
+grep -F 'dnat to 10.42.0.10:80' /var/lib/nix-csf/generated-ruleset.nft
+grep -F 'masquerade' /var/lib/nix-csf/generated-ruleset.nft
+```
+
+Current Stage-1 boundary:
+
+- NAT support is IPv4-focused.
+- NAT cannot be combined with `coexistence.profile = "docker-coexist"` in this stage.
+
+## 20) Forwarding matrix (`forwarding.zones` + `forwarding.rules`, Stage 1)
+
+Use this when the host routes traffic between interfaces/zones and you want
+explicit allow rules with `forwardPolicy = "drop"`.
+
+```nix
+services.nixCsf = {
+  enable = true;
+  forwardPolicy = "drop";
+
+  forwarding = {
+    zones = {
+      lan = {
+        interfaces = [ "br-lan" ];
+        cidrIPv4 = [ "10.42.0.0/16" ];
+      };
+      wan = {
+        interfaces = [ "eth0" ];
+      };
+      dmz = {
+        interfaces = [ "br-dmz" ];
+        cidrIPv4 = [ "10.43.0.0/16" ];
+      };
+    };
+
+    rules = [
+      {
+        name = "lan-web-egress";
+        fromZone = "lan";
+        toZone = "wan";
+        protocol = "tcp";
+        destinationPorts = [ 80 443 ];
+      }
+      {
+        name = "wan-admin-to-dmz";
+        fromZone = "wan";
+        toZone = "dmz";
+        protocol = "tcp";
+        destinationPorts = [ 8443 ];
+        sourceIPv4 = [ "198.51.100.0/24" ];
+        destinationIPv4 = [ "10.43.0.10/32" ];
+      }
+    ];
+  };
+};
+```
+
+Operational checks:
+
+```bash
+sudo systemctl show -P Result nix-csf-apply.service
+sudo nft list table inet nix_csf | sed -n '/chain forward {/,/}/p'
+grep -F 'iifname "br-lan" oifname "eth0" tcp dport { 80, 443 } ip saddr 10.42.0.0/16 accept' /var/lib/nix-csf/generated-ruleset.nft
+grep -F 'nix_csf_feature_enabled{feature="forwarding_matrix"} 1' /var/lib/nix-csf/metrics.prom
+```
+
+Current Stage-1 boundary:
+
+- `forwarding.rules` requires `forwardPolicy = "drop"` for explicit allow semantics.
+- `forwarding.rules` is not combined with `coexistence.profile = "docker-coexist"` in this stage.
