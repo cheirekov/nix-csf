@@ -4,7 +4,7 @@ CSF-inspired firewall module for NixOS, built around `nftables` with declarative
 
 Works in both modes:
 
-- flake input (`inputs.nix-csf.url = "github:<org>/nix-csf"`)
+- flake input (`inputs.nix-csf.url = "github:cheirekov/nix-csf"`)
 - non-flake import (`imports = [ /path/to/nix-csf ];`)
 
 Current module version source of truth: `VERSION`.
