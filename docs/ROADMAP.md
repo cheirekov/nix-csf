@@ -56,3 +56,32 @@
 - SemVer and compatibility policy. [baseline done 2026-02-19]
 - Release automation and module versioning. [baseline done 2026-02-19]
 - Publish first stable release.
+
+## Phase 5 — Firewall ownership expansion (new epic / Stage 1)
+
+- Epic kickoff and staged acceptance plan (`T-039`). [done 2026-02-25]
+- NAT datapath foundation (`T-040`):
+  - declarative SNAT/masquerade for routed networks,
+  - declarative DNAT/port-forward path,
+  - explicit safety defaults (off unless enabled).
+- Forwarding policy matrix (`T-041`):
+  - interface/zone-aware forward allow model for gateway hosts.
+- Optional egress controls (`T-042`):
+  - output allowlist/denylist for hardened hosts.
+- Gateway-grade test coverage (`T-047`, Stage 1 subset):
+  - VM validation for NAT + forward + egress combinations.
+
+## Phase 6 — Detector/escalation expansion (new epic / Stage 2)
+
+- LFD detector framework v2 (`T-043`):
+  - reusable multi-source signal model (not SSH-only).
+- Built-in detector pack v2 (`T-044`):
+  - SSH plus additional service-level detectors (auth/flood patterns).
+- Escalation engine v2 (`T-045`):
+  - normalized temp-ban and permanent-promotion path across sources.
+- Cluster propagation semantics v2 (`T-046`):
+  - controlled sharing for temporary and permanent actions.
+- Documentation blueprints and examples (`T-048`):
+  - deployment patterns for standalone and clustered nodes.
+- Gateway/detector integration coverage (`T-047`, Stage 2 subset):
+  - regression checks for detector->ban->propagation pipeline.

@@ -1,5 +1,35 @@
 # PM/BA Changelog
 
+## 2026-02-25 — Batch EPIC-KICKOFF-039
+
+- Ticket(s): `T-039`
+- Summary:
+  - initiated new epic focused on:
+    - Stage 1: `nix-csf` as primary firewall datapath owner (NAT/forward/egress),
+    - Stage 2: LFD detector/escalation expansion beyond SSH-only coverage,
+  - created staged ticket sequence:
+    - `T-040` NAT datapath foundation,
+    - `T-041` forwarding policy matrix,
+    - `T-042` optional egress controls,
+    - `T-043` detector framework v2,
+    - `T-044` built-in detector pack v2,
+    - `T-045` escalation engine v2,
+    - `T-046` cluster propagation semantics v2,
+    - `T-047` integration-test expansion,
+    - `T-048` documentation/deployment blueprints,
+  - added epic charter doc with cross-role architecture guardrails:
+    - `docs/EPIC_FIREWALL_LFD_EXPANSION.md`.
+- BA requirement mapping:
+  - aligns next delivery cycle to user-requested CSF-style firewall ownership plus broader LFD behavior in Nix style.
+- PM milestone mapping:
+  - creates executable staged backlog and acceptance sequencing for next implementation sessions.
+- Risk impact:
+  - `none` (planning/documentation only in this batch).
+- Validation evidence:
+  - `./scripts/validate-agent.sh`
+- Open follow-ups:
+  - start implementation with `T-040` in next batch.
+
 ## 2026-02-25 — Batch README-IA-038
 
 - Ticket(s): `T-038`

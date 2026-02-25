@@ -30,13 +30,23 @@ No active `IN_PROGRESS` ticket (WIP slot available).
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
+| 1 | T-040 | TODO | NAT datapath foundation (nix-csf as gateway firewall) | Declarative SNAT/masquerade + DNAT/port-forward rules with safe defaults and integration checks |
+| 2 | T-041 | TODO | Forwarding policy matrix (interface/zone aware) | Explicit forward allow rules for routed traffic with coexistence-safe behavior |
+| 3 | T-042 | TODO | Optional egress policy controls | Output policy allowlist/denylist model with lockout-safe defaults |
+| 4 | T-043 | TODO | LFD detector framework v2 | Multi-source detector pipeline (not SSH-only) with reusable signal model |
+| 5 | T-044 | TODO | Built-in detector pack v2 | SSH + web/auth + service detectors with per-detector thresholds |
+| 6 | T-045 | TODO | Escalation engine v2 | Unified temp->perm promotion policy across detector sources |
+| 7 | T-046 | TODO | Cluster propagation semantics v2 | Controlled sharing rules for dynamic/permanent actions across nodes |
+| 8 | T-047 | TODO | Integration test expansion for gateway + detector flows | VM scenarios for NAT/forward/egress and detector/escalation paths |
+| 9 | T-048 | TODO | Documentation and deployment blueprints for Stage 1/2 | End-to-end examples (gateway, bastion, app, clustered nodes) |
+| 10 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
 | 1 | TBD | TODO | Optional Netdata plugin-noise cleanup (`otel/freeipmi/logs-management` tuning profile) |
+| 2 | TBD | TODO | Optional policy-as-code authoring helper (`nix-csfctl policy compile`) |
 
 ## Completed baseline
 
@@ -81,6 +91,7 @@ No active `IN_PROGRESS` ticket (WIP slot available).
 | T-036 | DONE | Script/runbook completeness pass |
 | T-037 | DONE | Validation lane split (`validate-agent` no-build + operator-manual full `nix build`) |
 | T-038 | DONE | README information architecture and documentation index refresh |
+| T-039 | DONE | Epic kickoff: firewall-ownership + LFD expansion staged plan |
 
 ## Triage protocol
 

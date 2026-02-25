@@ -346,3 +346,21 @@ Owner: PM/BA + Codex
   - `./scripts/validate-agent.sh`
 - Next:
   - continue release-candidate hardening lane.
+
+## 22) Batch EPIC-KICKOFF-039 (Firewall ownership + LFD expansion)
+
+- Trigger:
+  - operator requested new epic where `nix-csf` is treated as the primary firewall with NAT/forwarding capabilities, followed by broader LFD detector/escalation coverage.
+- Scope delivered:
+  - defined staged epic plan and acceptance boundaries:
+    - Stage 1 (firewall ownership): `T-040`, `T-041`, `T-042`,
+    - Stage 2 (detector/escalation): `T-043`, `T-044`, `T-045`, `T-046`,
+    - cross-cutting quality/docs: `T-047`, `T-048`,
+  - updated delivery board priorities to reflect this sequence,
+  - updated roadmap with new Phase 5 and Phase 6 tracks,
+  - added epic charter doc:
+    - `docs/EPIC_FIREWALL_LFD_EXPANSION.md`.
+- Validation evidence:
+  - `./scripts/validate-agent.sh`
+- Next:
+  - start implementation with `T-040` (NAT datapath foundation).

@@ -310,6 +310,7 @@ Release commands:
 ### Security and policy evolution
 
 - `docs/LFD_NIX_WAY_POC.md`
+- `docs/EPIC_FIREWALL_LFD_EXPANSION.md`
 - `docs/DYNAMIC_CLUSTER_POC.md`
 - `docs/CLUSTER_CONTROL_PLANE_POC.md`
 
