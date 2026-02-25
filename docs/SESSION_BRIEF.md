@@ -1,6 +1,6 @@
 # Session Brief
 
-Last updated: 2026-02-24  
+Last updated: 2026-02-25  
 Owner: PM/BA + Codex
 
 ## 1) Batch contract
@@ -295,7 +295,7 @@ Owner: PM/BA + Codex
   - next priority ticket `T-035` activated.
 - Scope delivered:
   - `T-034` closed (advanced CSF allow-rule parity confirmed with manual/full validation),
-  - `T-035` implementation in progress:
+  - `T-035` completed:
     - deterministic local list audit outputs:
       - `/var/lib/nix-csf/local-list-audit-summary.tsv`,
       - `/var/lib/nix-csf/local-list-conflicts.tsv`,
@@ -307,5 +307,42 @@ Owner: PM/BA + Codex
 - Validation evidence (agent lane):
   - `./scripts/validate-agent.sh`
   - `bash -n scripts/nix-csf-apply.sh`
+- Validation evidence (operator lane):
+  - `./scripts/validate-capture.sh`
+  - result: `[nix-csf] validation succeeded`.
 - Next:
-  - collect operator full-validation evidence for `T-035` via `./scripts/validate-capture.sh`.
+  - completed in section 20.
+
+## 20) Batch SCRIPT-RUNBOOK-COMPLETENESS-036
+
+- Trigger:
+  - next priority after closing `T-035`.
+- Scope delivered:
+  - added script/runbook index page: `docs/SCRIPTS_RUNBOOK.md`,
+  - documented full script matrix with lane ownership (agent/operator/internal),
+  - added per-script usage examples for all repository scripts,
+  - added concrete operator workflows:
+    - validation lane split,
+    - legacy CSF import,
+    - control-plane mutations,
+    - incident triage,
+    - release flow,
+  - linked runbook in README docs index.
+- Validation evidence:
+  - `./scripts/validate-agent.sh`
+- Next:
+  - release-candidate hardening ticket.
+
+## 21) Batch README-IA-038
+
+- Trigger:
+  - operator request to improve main README visibility and doc linking quality.
+- Scope delivered:
+  - restructured `README.md` as a concise entrypoint instead of a long mixed reference,
+  - added quick-link navigation for install/examples/operations/monitoring/migration,
+  - added grouped documentation map by domain (core, security/policy, integrations, migration, governance),
+  - preserved executable install and validation commands while moving deep guidance to dedicated docs.
+- Validation evidence:
+  - `./scripts/validate-agent.sh`
+- Next:
+  - continue release-candidate hardening lane.

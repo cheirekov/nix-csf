@@ -1,6 +1,6 @@
 # DELIVERY BOARD — nix-csf
 
-Last updated: 2026-02-24  
+Last updated: 2026-02-25  
 Owner: PM/BA + Security Architect + Nix Module Engineer
 
 ## North Star
@@ -24,16 +24,13 @@ Ship a production-usable NixOS firewall module that is:
 
 ### NOW
 
-| ID | Status | Title | Focus |
-|---|---|---|---|
-| T-035 | IN_PROGRESS | Local list overlap audit and conflict reporting | Implement deterministic dedupe/overlap artifacts + metrics/logging + operator docs |
+No active `IN_PROGRESS` ticket (WIP slot available).
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-036 | TODO | Script/runbook completeness pass | One-page index + per-script usage examples + operator workflows |
-| 2 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
+| 1 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
 
 ### LATER
 
@@ -80,7 +77,10 @@ Ship a production-usable NixOS firewall module that is:
 | T-032 | DONE | Netdata charts.d execution hotfix (`systemd-cat-native` PATH wiring) |
 | T-033 | DONE | Netdata charts.d discovery fix + process hard-rule hardening |
 | T-034 | DONE | CSF advanced rule import parity (`tcp|in|...`) |
+| T-035 | DONE | Local list overlap audit and conflict reporting |
+| T-036 | DONE | Script/runbook completeness pass |
 | T-037 | DONE | Validation lane split (`validate-agent` no-build + operator-manual full `nix build`) |
+| T-038 | DONE | README information architecture and documentation index refresh |
 
 ## Triage protocol
 

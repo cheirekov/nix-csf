@@ -1,56 +1,65 @@
 # nix-csf
 
-CSF-inspired firewall module for NixOS, built around `nftables` with a declarative interface.
+CSF-inspired firewall module for NixOS, built around `nftables` with declarative policy, mutable runtime overlays, and operator-focused tooling.
 
-This project is designed to work in both modes:
+Works in both modes:
 
-- as a flake input (`inputs.nix-csf.url = "github:<org>/nix-csf";`)
-- as a classic module import (`imports = [ /path/to/nix-csf ];`)
+- flake input (`inputs.nix-csf.url = "github:<org>/nix-csf"`)
+- non-flake import (`imports = [ /path/to/nix-csf ];`)
 
-## Status
+Current module version source of truth: `VERSION`.
 
-Kickoff baseline is implemented:
+## Quick links
 
-- NixOS module: `services.nixCsf`
-- Static allow/deny rules (IPv4 + IPv6)
-- Port policy (`openTCPPorts`, `openUDPPorts`, ICMP toggle)
-- ICMP policy profiles (`icmp.profile = legacy|off|safe|diagnostic|open`) with optional rate limit
-- Stateful rate-limit presets (`rateLimits.synFlood`, `rateLimits.connFlood`)
-- Preset threat profiles (`threatProfile = "server"|"workstation"|"edge"`)
-- Country policy modes (`deny` and `allow`)
-- Per-port country deny policy (`country.portDeny`, CSF `CC_DENY_PORTS` style)
-- Per-port country allow policy (`country.portAllow`, CSF `CC_ALLOW_PORTS` style)
-- Trusted blocklist source catalog + schema (`blocklists.catalog` + `blocklists.sources`)
+- Start here:
+  - Flake example: `examples/flake/test-server-bg-netdata-lfd/flake.nix`
+  - Non-flake example: `examples/non-flake/test-server-bg-netdata-import.nix`
+- Day-2 operations:
+  - Scripts/runbook index: `docs/SCRIPTS_RUNBOOK.md`
+  - Troubleshooting: `docs/TROUBLESHOOTING.md`
+  - Use-case catalog: `docs/USE_CASES.md`
+- Security and architecture:
+  - Architecture: `docs/ARCHITECTURE.md`
+  - Cluster control-plane POC: `docs/CLUSTER_CONTROL_PLANE_POC.md`
+  - Dynamic/cluster recommendation: `docs/DYNAMIC_CLUSTER_POC.md`
+- Monitoring:
+  - Prometheus/Grafana: `docs/MONITORING.md`
+  - Netdata integration: `docs/NETDATA.md`
+- Migration:
+  - Legacy CSF import: `docs/CSF_IMPORT.md`
+
+## What is implemented
+
+- Core module: `services.nixCsf`
+- Stateful baseline firewall (`nftables`) with strict apply/refresh pipeline
+- Static local policy sets: `allow*`, `deny*`, open ports, ICMP profiles
+- Country controls:
+  - full-country deny/allow modes,
+  - per-port country deny (`CC_DENY_PORTS` style),
+  - per-port country allow (`CC_ALLOW_PORTS` style)
+- Feed-backed deny overlays (catalog + source governance)
 - Hybrid local file overlays (`localFiles.allow|deny|ignore`)
-- Legacy CSF list import bridge (`nix-csf-import-csf`)
-- Cluster policy propagation overlay (`clusterPolicy.*`)
-- Cluster policy schema v2 support (`ignore*`, `schemaVersion`, `revision`, `ttlSeconds`)
-- Dynamic offender snapshot propagation with timeout sets (`dynamicOffenders.*`)
-- Optional local control-plane snapshot publisher and mutation API (`controlPlane.*`)
-- Operator mutation CLI (`nix-csfctl`) for control-plane workflows
-- Dynamic escalation (`N` temporary bans => permanent deny via control-plane)
-- LFD-like SSH detector pipeline (`lfdDetector.*` -> `ban-temp` write path)
-- fail2ban adapter flow (`fail2banAdapter.*` -> `ban-temp`/`unban` write path)
-- Auth token lifecycle with ordered rotation fallback (`*.authTokenFiles`)
-- Firewall coexistence profiles (`coexistence.profile`, including Docker coexist mode)
-- Monitoring pack assets (`docs/MONITORING.md`, Grafana dashboard, Prometheus alert rules)
-- Optional Netdata integration (`netdata.*` + generated charts/alarms)
-- Troubleshooting command bundle (`nix-csf-triage` + `docs/TROUBLESHOOTING.md`)
-- Structured run logs + optional Prometheus textfile metrics (`observability.*`)
-- Early boot apply + scheduled refresh via systemd
-- Module/release version source via `VERSION` (SemVer)
+- Legacy CSF import tool (`nix-csf-import-csf`)
+- Cluster policy + dynamic offender snapshots (TTL-aware)
+- Optional local control-plane + `nix-csfctl` mutation workflow
+- Nix-native LFD-like detector (`lfdDetector`) and fail2ban adapter
+- Auth token rotation (`*.authTokenFiles`) for remote snapshots
+- Docker coexistence profile (`coexistence.profile = "docker-coexist"`)
+- Structured logs + Prometheus textfile metrics + Netdata integration
+- Validation lanes split for agent/operator workflows
 
-## Install (flake)
+## Install
+
+### Flake
 
 ```nix
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    # Prefer pinning a release tag in production:
     nix-csf.url = "github:<org>/nix-csf?ref=vX.Y.Z";
   };
 
-  outputs = { self, nixpkgs, nix-csf, ... }: {
+  outputs = { nixpkgs, nix-csf, ... }: {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
@@ -59,9 +68,6 @@ Kickoff baseline is implemented:
           services.nixCsf = {
             enable = true;
             openTCPPorts = [ 22 80 443 ];
-            openUDPPorts = [ 53 ];
-            country.enable = true;
-            country.countries = [ "RU" "CN" ];
           };
         })
       ];
@@ -70,7 +76,7 @@ Kickoff baseline is implemented:
 }
 ```
 
-## Install (non-flake)
+### Non-flake
 
 ```nix
 { ... }:
@@ -82,21 +88,11 @@ Kickoff baseline is implemented:
   services.nixCsf = {
     enable = true;
     openTCPPorts = [ 22 443 ];
-    country.enable = true;
-    country.countries = [ "RU" "CN" ];
   };
 }
 ```
 
-For a concrete migration-oriented server profile (global `80/443`, SSH `112` restricted to `BG`,
-Netdata integration, and imported legacy CSF local files), see:
-`examples/non-flake/test-server-bg-netdata-import.nix`.
-
-For the flake equivalent (same policy plus Nix-native LFD temporary bans with escalation to
-permanent deny), see:
-`examples/flake/test-server-bg-netdata-lfd/flake.nix`.
-
-For remote tarball usage:
+### Remote tarball import (non-flake)
 
 ```nix
 imports = [
@@ -104,16 +100,16 @@ imports = [
 ];
 ```
 
-## Example configuration
+## Minimal configuration
 
 ```nix
 services.nixCsf = {
   enable = true;
-  threatProfile = "custom"; # custom | server | workstation | edge
+  threatProfile = "server"; # custom | server | workstation | edge
 
-  trustedInterfaces = [ "tailscale0" "wg0" ];
   openTCPPorts = [ 22 80 443 ];
-  openUDPPorts = [ 53 51820 ];
+  openUDPPorts = [ 53 ];
+
   icmp = {
     profile = "safe"; # legacy | off | safe | diagnostic | open
     rateLimit = {
@@ -123,69 +119,50 @@ services.nixCsf = {
     };
   };
 
-  allowIPv4 = [ "10.0.0.0/8" ];
-  denyIPv4 = [ "198.51.100.0/24" ];
-
-  rateLimits = {
-    synFlood = {
-      enable = true;
-      preset = "balanced"; # relaxed | balanced | strict
-    };
-    connFlood = {
-      enable = true;
-      preset = "balanced"; # relaxed | balanced | strict
-    };
+  observability.metrics = {
+    enable = true;
+    outputFile = "/var/lib/node_exporter/textfile_collector/nix-csf.prom";
   };
 
-  # Legacy one-line SYN limiter (do not combine with rateLimits.synFlood.enable):
-  # synRateLimit = "50/second";
-  logDrops = true;
+  autoRefresh.onCalendar = "hourly";
+};
+```
 
-  country = {
+For production-style complete examples (global ports + country-restricted SSH + imported legacy lists + local control-plane + LFD detector), use:
+
+- `examples/flake/test-server-bg-netdata-lfd/flake.nix`
+- `examples/non-flake/test-server-bg-netdata-import.nix`
+
+## Feature quick reference
+
+### Country policy
+
+```nix
+services.nixCsf.country = {
+  enable = true;
+  mode = "deny"; # deny | allow
+  countries = [ "RU" "CN" ];
+
+  portDeny = {
     enable = true;
-    mode = "deny"; # or "allow"
     countries = [ "RU" "CN" ];
-    # Defaults to ipdeny template:
-    # ipv4URLTemplate = "https://www.ipdeny.com/ipblocks/data/countries/%s.zone";
-
-    # Optional: deny specific ports only for selected countries.
-    # Ports should remain present in openTCPPorts/openUDPPorts.
-    portDeny = {
-      enable = true;
-      countries = [ "RU" "CN" ];
-      tcpPorts = [ 21 443 ];
-      udpPorts = [ ];
-    };
-
-    # Optional: allow selected ports only for selected countries.
-    # Ports should remain present in openTCPPorts/openUDPPorts.
-    portAllow = {
-      enable = true;
-      countries = [ "US" "CA" ];
-      tcpPorts = [ 22 443 ];
-      udpPorts = [ 53 ];
-    };
+    tcpPorts = [ 443 ];
   };
 
-  blocklists = {
+  portAllow = {
     enable = true;
-    # Enable trusted catalog entries:
-    sources = [ "spamhaus-drop-v4" "spamhaus-drop-v6" ];
-    # Parser accepts plain CIDR/IP lines and ipset-style lines:
-    #   add <set_name> <cidr_or_ip>
-    # Optional governance hardening:
-    enforceCatalog = true;
-
-    # Optional legacy path (prefer sources/catalog):
-    urls = [
-      # "https://example.invalid/custom-feed.txt"
-    ];
+    countries = [ "BG" ];
+    tcpPorts = [ 112 ];
   };
+};
+```
 
-  # Optional local operator-managed files merged at runtime.
+### Local + cluster + dynamic overlays
+
+```nix
+services.nixCsf = {
   localFiles = {
     enable = true;
-    failOnMissing = true;
     allow = [ "/var/lib/nix-csf/lists/allow.local" ];
     deny = [ "/var/lib/nix-csf/lists/deny.local" ];
     ignore = [ "/var/lib/nix-csf/lists/ignore.local" ];
@@ -193,336 +170,32 @@ services.nixCsf = {
 
   clusterPolicy = {
     enable = true;
-    url = "https://policy.example.org/nix-csf/prod-edge.json";
+    url = "https://policy.example.org/nix-csf/prod.json";
     failOpen = true;
-    # Optional node identity and auth:
-    # nodeId = "edge-eu-01";
-    # authTokenFile = "/run/secrets/nix-csf-cluster-token";
-    # authTokenFiles = [
-    #   "/run/secrets/nix-csf-cluster-token-current"
-    #   "/run/secrets/nix-csf-cluster-token-next"
-    # ];
   };
 
   dynamicOffenders = {
     enable = true;
     url = "https://policy.example.org/nix-csf/dynamic-offenders.json";
-    failOpen = true;
     defaultEntryTTLSeconds = 900;
     maxEntries = 20000;
-    # Optional node identity and auth:
-    # nodeId = "edge-eu-01";
-    # authTokenFile = "/run/secrets/nix-csf-dynamic-token";
-    # authTokenFiles = [
-    #   "/run/secrets/nix-csf-dynamic-token-current"
-    #   "/run/secrets/nix-csf-dynamic-token-next"
-    # ];
-  };
-
-  # Optional: local mutable control-plane (single-node or master-node mode).
-  # Keeps runtime mutable state under /var/lib/nix-csf-control-plane.
-  # controlPlane = {
-  #   enable = true;
-  #   bindAddress = "127.0.0.1";
-  #   port = 18081;
-  #   environment = "lab";
-  #   requireAuth = false; # set true in production and provide authTokenFile
-  # };
-
-  # Optional: LFD-like SSH detector (journal signal -> control-plane temp ban).
-  # lfdDetector = {
-  #   enable = true;
-  #   journalIdentifier = "sshd";
-  #   # sshdUnit = "sshd.service";
-  #   windowSeconds = 300;
-  #   threshold = 5;
-  #   banTTLSeconds = 900;
-  #   refreshAfterBan = true;
-  # };
-
-  # Optional: fail2ban adapter (fail2ban detector -> control-plane mutations).
-  # fail2banAdapter = {
-  #   enable = true;
-  #   actionName = "nix-csf"; # installs /etc/fail2ban/action.d/nix-csf.local
-  #   banTTLSeconds = 900;
-  #   reasonPrefix = "fail2ban";
-  #   refreshAfterBan = true;
-  #   refreshAfterUnban = true;
-  # };
-
-  coexistence.profile = "exclusive-firewall"; # or "docker-coexist" for container hosts
-
-  observability = {
-    structuredLogging = true;
-    metrics = {
-      enable = true;
-      outputFile = "/var/lib/node_exporter/textfile_collector/nix-csf.prom";
-    };
-  };
-
-  # Optional: Netdata mapping for nix-csf metrics.
-  # Requires services.netdata.enable = true and observability.metrics.enable = true.
-  # If you want the local Netdata dashboard UI, use services.netdata.package = pkgs.netdataCloud.
-  # netdata = {
-  #   enable = true;
-  #   updateEvery = 15;
-  #   installHealthAlarms = true;
-  # };
-
-  autoRefresh = {
-    enable = true;
-    onCalendar = "hourly";
-  };
-};
-```
-
-Import helper for legacy CSF lists (`csf.allow/csf.deny/csf.ignore`):
-
-```bash
-nix-csf-import-csf \
-  --allow-file /etc/csf/csf.allow \
-  --deny-file /etc/csf/csf.deny \
-  --ignore-file /etc/csf/csf.ignore \
-  --output-dir /var/lib/nix-csf/imported \
-  --prefix legacy-csf
-```
-
-## Use Cases
-
-For a full operator-oriented catalog (including strict/fail-closed and offline patterns), see `docs/USE_CASES.md`.
-
-### Threat profile quick-starts
-
-```nix
-# Server baseline: enables balanced flood controls + logDrops + hourly refresh.
-services.nixCsf.threatProfile = "server";
-
-# Workstation baseline: no inbound open TCP/UDP ports by default.
-services.nixCsf.threatProfile = "workstation";
-
-# Edge baseline: opens 22/443 TCP + 53/51820 UDP and enables stricter flood controls.
-services.nixCsf.threatProfile = "edge";
-```
-
-### 1) Public web server with conservative DDoS posture
-
-```nix
-services.nixCsf = {
-  enable = true;
-  openTCPPorts = [ 22 80 443 ];
-  rateLimits.synFlood = { enable = true; preset = "strict"; };
-  rateLimits.connFlood = { enable = true; preset = "balanced"; };
-};
-```
-
-### 2) Country allow-list for inbound traffic
-
-```nix
-services.nixCsf = {
-  enable = true;
-  openTCPPorts = [ 22 443 ];
-  country = {
-    enable = true;
-    mode = "allow";
-    countries = [ "US" "CA" ];
-  };
-};
-```
-
-### 3) Port-scoped country deny (CSF `CC_DENY_PORTS` style)
-
-```nix
-services.nixCsf = {
-  enable = true;
-  openTCPPorts = [ 22 443 ];
-  country = {
-    enable = true;
-    countries = [ "RU" "CN" ];
-    portDeny = {
-      enable = true;
-      countries = [ "RU" "CN" ];
-      tcpPorts = [ 443 ];
-    };
-  };
-};
-```
-
-### 4) Port-scoped country allow (CSF `CC_ALLOW_PORTS` style)
-
-```nix
-services.nixCsf = {
-  enable = true;
-  openTCPPorts = [ 22 443 ];
-  openUDPPorts = [ 53 ];
-  country = {
-    enable = true;
-    countries = [ "US" "CA" ];
-    portAllow = {
-      enable = true;
-      countries = [ "US" "CA" ];
-      tcpPorts = [ 22 443 ];
-      udpPorts = [ 53 ];
-    };
-  };
-};
-```
-
-### 5) Enable Prometheus textfile metrics
-
-```nix
-services.nixCsf = {
-  enable = true;
-  observability.metrics = {
-    enable = true;
-    outputFile = "/var/lib/node_exporter/textfile_collector/nix-csf.prom";
-  };
-};
-```
-
-### 6) Centralized cluster allow/deny propagation
-
-```nix
-services.nixCsf = {
-  enable = true;
-  clusterPolicy = {
-    enable = true;
-    url = "https://policy.example.org/nix-csf/prod-edge.json";
-    failOpen = false; # fail refresh if policy is unreachable and no cache exists
-    authTokenFiles = [
-      "/run/secrets/nix-csf-cluster-token-current"
-      "/run/secrets/nix-csf-cluster-token-next"
-    ];
-    nodeId = "edge-eu-01";
-  };
-};
-```
-
-Expected remote JSON structure:
-
-```json
-{
-  "schemaVersion": 2,
-  "revision": "prod-2026-02-20-01",
-  "ttlSeconds": 3600,
-  "allowIPv4": ["172.20.0.0/16"],
-  "allowIPv6": ["2001:db8:66::/48"],
-  "denyIPv4": ["203.0.114.0/24"],
-  "denyIPv6": ["2001:db8:bad::/48"],
-  "ignoreIPv4": ["203.0.114.7/32"],
-  "ignoreIPv6": []
-}
-```
-
-### 7) Dynamic temporary offender propagation (TTL)
-
-```nix
-services.nixCsf = {
-  enable = true;
-  dynamicOffenders = {
-    enable = true;
-    url = "https://policy.example.org/nix-csf/dynamic-offenders.json";
-    failOpen = false;
-    defaultEntryTTLSeconds = 900;
-    maxEntries = 20000;
-    authTokenFiles = [
-      "/run/secrets/nix-csf-dynamic-token-current"
-      "/run/secrets/nix-csf-dynamic-token-next"
-    ];
-    nodeId = "edge-eu-01";
-  };
-};
-```
-
-Expected dynamic snapshot JSON structure:
-
-```json
-{
-  "schemaVersion": 1,
-  "revision": "dyn-2026-02-20-01",
-  "ttlSeconds": 300,
-  "banIPv4": [
-    "203.0.116.8/32",
-    { "cidr": "203.0.116.9/32", "ttlSeconds": 600 },
-    { "cidr": "203.0.116.10/32", "expiresAt": 1771593600, "reason": "syn_flood" }
-  ],
-  "banIPv6": []
-}
-```
-
-### 8) Docker host coexistence profile
-
-```nix
-services.nixCsf = {
-  enable = true;
-  coexistence.profile = "docker-coexist";
-  forwardPolicy = "accept"; # required by docker-coexist profile
-  denyIPv4 = [ "198.51.100.0/24" ];
-};
-```
-
-### 9) Local mutable deny/temp-ban workflow (no external cluster required)
-
-```nix
-services.nixCsf = {
-  enable = true;
-  clusterPolicy = {
-    enable = true;
-    url = "http://127.0.0.1:18081/snapshots/lab/cluster-policy.json";
-    requireHTTPS = false;
     failOpen = true;
   };
-  dynamicOffenders = {
-    enable = true;
-    url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
-    requireHTTPS = false;
-    failOpen = true;
-  };
+};
+```
+
+### Local mutable control-plane and LFD-like detector
+
+```nix
+services.nixCsf = {
   controlPlane = {
     enable = true;
     bindAddress = "127.0.0.1";
     port = 18081;
     environment = "lab";
-    requireAuth = false;
+    requireAuth = false; # lab only
   };
-};
-```
 
-Example runtime mutations:
-
-```bash
-nix-csfctl policy add deny 203.0.119.9/32
-
-nix-csfctl ban-temp 203.0.119.10/32 --ttl 900 --reason syn_flood
-
-nix-csfctl promotions --limit 20
-
-sudo systemctl start nix-csf-refresh.service
-```
-
-When control-plane auth is enabled:
-
-```bash
-nix-csfctl --auth-token-file /run/secrets/nix-csf-control-plane-token \
-  policy add deny 203.0.120.4/32
-```
-
-### 10) LFD-like SSH detector (Nix-native)
-
-```nix
-services.nixCsf = {
-  enable = true;
-  controlPlane = {
-    enable = true;
-    port = 18081;
-    environment = "lab";
-    requireAuth = false;
-  };
-  dynamicOffenders = {
-    enable = true;
-    url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
-    requireHTTPS = false;
-    failOpen = true;
-  };
   lfdDetector = {
     enable = true;
     journalIdentifier = "sshd";
@@ -534,198 +207,131 @@ services.nixCsf = {
 };
 ```
 
-Operator checks:
-
-```bash
-sudo systemctl start nix-csf-lfd-detector.service
-sudo journalctl -u nix-csf-lfd-detector.service -n 80 --no-pager
-sudo cat /var/lib/nix-csf/lfd-detector.prom
-```
-
-Detailed runbook: `docs/LFD_DETECTOR.md`.
-
-### 11) fail2ban adapter (single-writer model)
+### Docker coexistence
 
 ```nix
 services.nixCsf = {
-  enable = true;
-  controlPlane = {
-    enable = true;
-    port = 18081;
-    environment = "lab";
-    requireAuth = false;
-  };
-  dynamicOffenders = {
-    enable = true;
-    url = "http://127.0.0.1:18081/snapshots/lab/dynamic-offenders.json";
-    requireHTTPS = false;
-    failOpen = true;
-  };
-  fail2banAdapter = {
-    enable = true;
-    actionName = "nix-csf";
-    banTTLSeconds = 900;
-    reasonPrefix = "fail2ban";
-  };
+  coexistence.profile = "docker-coexist";
+  forwardPolicy = "accept";
 };
 ```
 
-Operator checks:
+## Operator commands
+
+### Legacy CSF import
 
 ```bash
-sudo test -s /etc/fail2ban/action.d/nix-csf.local
-sudo nix-csf-fail2ban-action ban --ip 203.0.113.77 --jail sshd
-sudo nix-csf-fail2ban-action unban --ip 203.0.113.77 --jail sshd
+nix-csf-import-csf \
+  --allow-file /etc/csf/csf.allow \
+  --deny-file /etc/csf/csf.deny \
+  --ignore-file /etc/csf/csf.ignore \
+  --output-dir /var/lib/nix-csf/imported \
+  --prefix legacy-csf
 ```
 
-Detailed runbook: `docs/FAIL2BAN_ADAPTER.md`.
-
-## Operational notes
-
-- This module expects `networking.firewall.enable = false` (asserted by the module).
-- Rule apply service runs before network stack comes up (`network-pre.target`).
-- Refresh service runs after network is online and can be periodic via timer.
-- With `blocklists.failOpen = false` or `clusterPolicy.failOpen = false`, `apply` requires cached data.
-- With `dynamicOffenders.failOpen = false`, `apply` also requires cached dynamic snapshot data.
-  Run `sudo systemctl start nix-csf-refresh.service` at least once after network is available.
-- Cluster policy cache can be guarded by `ttlSeconds` from the snapshot payload.
-  In strict mode (`clusterPolicy.failOpen = false`), expired cached policy fails closed.
-- Dynamic snapshots are also guarded by `ttlSeconds`.
-  In strict mode (`dynamicOffenders.failOpen = false`), expired cached snapshot fails closed.
-- Dynamic bans are evaluated after explicit allow rules, so allow/ignore overlays can override temporary bans.
-- Effective ignore precedence is hybrid-aware: `localFiles.ignore` + cluster `ignore*` are merged,
-  promoted into allow sets, and subtracted from deny-style overlays.
-- Local list overlap audit is emitted on each apply/refresh:
-  - `/var/lib/nix-csf/local-list-audit-summary.tsv` (duplicate + exact-overlap counts),
-  - `/var/lib/nix-csf/local-list-conflicts.tsv` (exact CIDR overlap entries and resolution semantics).
-- `clusterPolicy.authTokenFiles` and `dynamicOffenders.authTokenFiles` allow staged token rotation;
-  candidates are tried in order until one succeeds.
-- Auth token files are validated strictly at runtime:
-  absolute paths, readable files, no group/other permission bits, and no whitespace in token values.
-- `coexistence.profile = "docker-coexist"` keeps forward policy in accept mode so Docker/dynamic daemons can manage forwarding,
-  while nix-csf still applies deny-style overlays in the forward hook.
-- Rule evaluation is deny-first for static allow/deny CIDRs (`denyIPv4/denyIPv6` are matched before `allowIPv4/allowIPv6`).
-- Generated runtime artifacts live in `/var/lib/nix-csf`.
-- `services.nixCsf.controlPlane.dataDir` (default `/var/lib/nix-csf-control-plane`) is runtime mutable state
-  and is not overwritten by `nixos-rebuild`.
-- Enabling `services.nixCsf.controlPlane.enable = true` installs both:
-  `nix-csf-control-plane` and `nix-csfctl`.
-- Enabling `services.nixCsf.lfdDetector.enable = true` installs `nix-csf-lfd-detector`
-  and creates `nix-csf-lfd-detector.timer`.
-- Enabling `services.nixCsf.fail2banAdapter.enable = true` installs `nix-csf-fail2ban-action`
-  and (by default) writes `/etc/fail2ban/action.d/<actionName>.local`.
-- Enabling `services.nixCsf.netdata.enable = true` installs generated Netdata integration files:
-  `/etc/netdata/conf.d/charts.d.conf`,
-  `/etc/netdata/conf.d/charts.d/nix_csf.chart.sh`,
-  `/etc/netdata/conf.d/charts.d/nix_csf.conf`,
-  and (optionally) `/etc/netdata/conf.d/health.d/nix_csf.conf`.
-
-## Validation
-
-Agent-safe validation (no `nix build`; no VM tests):
+### Control-plane mutations
 
 ```bash
-./scripts/validate-agent.sh
+nix-csfctl policy add deny 203.0.119.9/32
+nix-csfctl ban-temp 203.0.119.10/32 --ttl 900 --reason syn_flood
+nix-csfctl promotions --limit 20
+sudo systemctl start nix-csf-refresh.service
 ```
 
-Compatibility alias (same behavior as `validate-agent.sh`):
-
-```bash
-./scripts/validate-fast.sh
-```
-
-Operator full validation (manual lane; includes x86_64 VM smoke + integration):
-
-```bash
-./scripts/validate.sh
-```
-
-Operator full validation with log capture (recommended):
-
-```bash
-./scripts/validate-capture.sh
-```
-
-Full validation runs:
-
-- `checks.x86_64-linux.version-semver` (VERSION SemVer gate)
-- `checks.x86_64-linux.eval-basic` (module evaluation wiring)
-- `checks.x86_64-linux.eval-profiles` (profile defaults + override precedence)
-- `checks.x86_64-linux.eval-netdata` (Netdata charts/alarm wiring evaluation)
-- `checks.x86_64-linux.eval-control-plane` (control-plane service wiring evaluation)
-- `checks.x86_64-linux.eval-lfd-detector` (LFD-like detector service/timer wiring evaluation)
-- `checks.x86_64-linux.eval-fail2ban-adapter` (fail2ban adapter action-file wiring evaluation)
-- `checks.x86_64-linux.eval-monitoring` (Prometheus/Grafana wiring evaluation)
-- `checks.x86_64-linux.csf-import-check` (legacy CSF import bridge behavior)
-- `checks.x86_64-linux.shellcheck` (script lint)
-- `checks.x86_64-linux.control-plane-lint` (control-plane script syntax)
-- `checks.x86_64-linux.monitoring-pack` (Grafana JSON + Prometheus alert rule lint)
-- `checks.x86_64-linux.nix-csf-smoke` (baseline policy/rendering)
-- `checks.x86_64-linux.nix-csf-integration` (fail-closed paths, edge-profile checks, dynamic snapshot TTL expiry, Docker coexistence, auth-token rotation fallback, LFD-like detector flow, and fail2ban adapter flow)
-
-If `/dev/kvm` is unavailable, VM checks fall back to TCG emulation and run much slower.
-
-`validate-agent.sh` intentionally does not run any `nix build`; it runs only:
-
-- shell syntax checks for `scripts/*.sh`,
-- Python syntax check for `scripts/nix-csf-control-plane.py`,
-- `nix flake check --no-build`.
-
-Suggested collaboration loop:
-
-1. Agent runs `./scripts/validate-agent.sh` after each implementation step.
-2. Operator runs `./scripts/validate-capture.sh` for `nix build`/VM/full checks.
-3. If failing, share `*.summary.log` from `.artifacts/validate` for focused triage.
-
-Quick host troubleshooting bundle:
+### Quick triage snapshot
 
 ```bash
 sudo nix-csf-triage --output /tmp/nix-csf-triage-$(date -u +%Y%m%dT%H%M%SZ).log
 ```
 
-## Versioning and releases
+## Validation model
 
-- `VERSION` is the source of truth for module/project version.
-- Release tags follow `v<semver>` (for example `v0.2.0`).
-- Compatibility policy:
-  - `MAJOR`: breaking module API/behavior changes.
-  - `MINOR`: backward-compatible features.
-  - `PATCH`: backward-compatible fixes/docs/tests.
-
-Release workflow (maintainer):
+### Agent lane (no `nix build`)
 
 ```bash
-# Preview checks only (no commit/tag):
-./scripts/release.sh --version 0.2.0 --dry-run
-
-# Create release commit + annotated tag:
-./scripts/release.sh --version 0.2.0
-
-# Create and push in one step:
-./scripts/release.sh --version 0.2.0 --push
+./scripts/validate-agent.sh
 ```
 
-Consumers can pin by tag:
+Alias:
 
-- flake: `github:<org>/nix-csf?ref=v0.2.0`
-- non-flake tarball: `.../archive/refs/tags/v0.2.0.tar.gz`
+```bash
+./scripts/validate-fast.sh
+```
 
-## Project docs
+### Operator lane (full checks + VM tests)
 
-- Architecture: `docs/ARCHITECTURE.md`
-- LFD Nix-way POC plan: `docs/LFD_NIX_WAY_POC.md`
-- Dynamic cluster POC recommendation: `docs/DYNAMIC_CLUSTER_POC.md`
-- Cluster control-plane retro/POC: `docs/CLUSTER_CONTROL_PLANE_POC.md`
-- Operator use-case catalog: `docs/USE_CASES.md`
-- CSF list migration guide: `docs/CSF_IMPORT.md`
-- Monitoring pack and runbook: `docs/MONITORING.md`
-- Netdata integration: `docs/NETDATA.md`
-- Troubleshooting command set/runbook: `docs/TROUBLESHOOTING.md`
-- Release/compatibility policy: `docs/RELEASE.md`
-- Delivery board: `docs/DELIVERY_BOARD.md`
-- Team rules: `docs/TEAM_OPERATING_RULES.md`
-- Roadmap: `docs/ROADMAP.md`
-- Blocklist catalog schema: `docs/schemas/blocklist-catalog.schema.json`
+```bash
+./scripts/validate.sh
+```
+
+With captured summary/log handoff:
+
+```bash
+./scripts/validate-capture.sh
+```
+
+## Operational notes
+
+- Module asserts `networking.firewall.enable = false`.
+- Apply service runs before network stack (`network-pre.target`).
+- Refresh service runs after network is online.
+- `failOpen = false` for feeds/snapshots requires valid cache and can fail closed.
+- Dynamic bans are evaluated after explicit allow/ignore overlays.
+- Local list conflict audit artifacts are written to:
+  - `/var/lib/nix-csf/local-list-audit-summary.tsv`
+  - `/var/lib/nix-csf/local-list-conflicts.tsv`
+- Runtime-generated state is under `/var/lib/nix-csf` and `/var/lib/nix-csf-control-plane`.
+
+## Versioning and releases
+
+- `VERSION` is source of truth.
+- Tags follow `v<semver>`.
+- `MAJOR`: breaking changes.
+- `MINOR`: backward-compatible features.
+- `PATCH`: backward-compatible fixes.
+
+Release commands:
+
+```bash
+./scripts/release.sh --version 1.0.3 --dry-run
+./scripts/release.sh --version 1.0.3
+./scripts/release.sh --version 1.0.3 --push
+```
+
+## Documentation map
+
+### Core
+
+- `docs/ARCHITECTURE.md`
+- `docs/USE_CASES.md`
+- `docs/TROUBLESHOOTING.md`
+- `docs/SCRIPTS_RUNBOOK.md`
+
+### Security and policy evolution
+
+- `docs/LFD_NIX_WAY_POC.md`
+- `docs/DYNAMIC_CLUSTER_POC.md`
+- `docs/CLUSTER_CONTROL_PLANE_POC.md`
+
+### Integrations and observability
+
+- `docs/MONITORING.md`
+- `docs/NETDATA.md`
+- `docs/FAIL2BAN_ADAPTER.md`
+- `docs/LFD_DETECTOR.md`
+
+### Migration and release
+
+- `docs/CSF_IMPORT.md`
+- `docs/RELEASE.md`
+
+### Project governance
+
+- `docs/DELIVERY_BOARD.md`
+- `docs/SESSION_BRIEF.md`
+- `docs/PM_BA_CHANGELOG.md`
+- `docs/TEAM_OPERATING_RULES.md`
+- `docs/ROADMAP.md`
 
 ## License
 

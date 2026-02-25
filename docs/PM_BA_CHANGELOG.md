@@ -1,11 +1,62 @@
 # PM/BA Changelog
 
+## 2026-02-25 — Batch README-IA-038
+
+- Ticket(s): `T-038`
+- Summary:
+  - refactored `README.md` into a docs-first entrypoint for faster operator navigation,
+  - added clearer quick links and grouped documentation map (core, security/policy, integrations, migration, governance),
+  - reduced inline README sprawl by keeping concise examples and moving deep paths to dedicated docs pages.
+- BA requirement mapping:
+  - improves first-read discoverability and lowers operator onboarding friction.
+- PM milestone mapping:
+  - release-candidate documentation hardening.
+- Risk impact:
+  - `none` (documentation-only).
+- Validation evidence:
+  - `./scripts/validate-agent.sh`
+- Open follow-ups:
+  - continue release-candidate hardening ticket.
+
+## 2026-02-24 — Batch SCRIPT-RUNBOOK-COMPLETENESS-036
+
+- Ticket(s): `T-036`
+- Summary:
+  - added a one-page script/runbook index with:
+    - complete script matrix (purpose, command mapping, lane ownership),
+    - per-script usage examples,
+    - operator workflows for validation, migration, control-plane operations, triage, and release,
+  - linked runbook from README project docs section.
+- BA requirement mapping:
+  - closes documentation completeness gap for script usage and operational handoff.
+- PM milestone mapping:
+  - release readiness hardening via explicit operator playbooks.
+- Risk impact:
+  - `none` (documentation-only).
+- Validation evidence:
+  - `./scripts/validate-agent.sh`
+- Open follow-ups:
+  - proceed to release-candidate hardening ticket.
+
+## 2026-02-24 — T-035 closure (operator full-validation confirmed)
+
+- Ticket(s): `T-035`
+- Summary:
+  - completed local list overlap/conflict audit lane and received operator full-validation evidence,
+  - closure evidence provided by operator: `[nix-csf] validation succeeded`.
+- Risk impact:
+  - `low` (reporting/metrics only; firewall enforcement unchanged).
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - proceed to release-candidate hardening ticket.
+
 ## 2026-02-24 — Batch LOCAL-LIST-AUDIT-035 (+ T-034 closure)
 
 - Ticket(s): `T-034`, `T-035`
 - Summary:
   - closed `T-034` after operator-provided full validation evidence (`[nix-csf] validation succeeded`),
-  - started `T-035` and implemented deterministic local list audit in apply pipeline:
+  - completed `T-035` by implementing deterministic local list audit in apply pipeline:
     - `/var/lib/nix-csf/local-list-audit-summary.tsv` with duplicate/overlap counts,
     - `/var/lib/nix-csf/local-list-conflicts.tsv` with exact CIDR conflicts and resolution semantics,
     - structured audit event + warning on non-zero duplicates/overlaps,
@@ -20,8 +71,9 @@
 - Validation evidence:
   - `./scripts/validate-agent.sh`
   - `bash -n scripts/nix-csf-apply.sh`
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`
 - Open follow-ups:
-  - operator full validation (`./scripts/validate-capture.sh`) before marking `T-035` done.
+  - proceed to release-candidate hardening ticket.
 
 ## 2026-02-24 — Batch VALIDATION-LANE-SPLIT-037
 
