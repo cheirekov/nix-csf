@@ -37,6 +37,8 @@ services.nixCsf = {
       enable = true;
       tempBanThreshold = 5;
       windowSeconds = 900;
+      cooldownSeconds = 1800;
+      reasonClasses = [ "lfd" "fail2ban" ];
     };
   };
 
@@ -163,5 +165,7 @@ When enabled:
 
 - Detector emits mutations only; nft rules are still rendered/applied by `nix-csf`.
 - Escalation (`N` temp bans => permanent deny) remains controlled by `services.nixCsf.controlPlane.escalation.*`.
+- Escalation audit metadata (promotion `id`, `reasonClass`, `cooldown*`) is available via
+  `nix-csfctl promotions --limit N`.
 - fail2ban adapter/coexistence is available via `services.nixCsf.fail2banAdapter.*`
   (`docs/FAIL2BAN_ADAPTER.md`).

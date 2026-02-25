@@ -76,9 +76,9 @@
 
 - LFD detector framework v2 (`T-043`). [done 2026-02-25]
   - reusable multi-source signal model (not SSH-only).
-- Built-in detector pack v2 (`T-044`). [in progress 2026-02-25]
+- Built-in detector pack v2 (`T-044`). [done 2026-02-25]
   - SSH plus additional service-level detectors (auth/flood patterns).
-- Escalation engine v2 (`T-045`):
+- Escalation engine v2 (`T-045`). [in progress 2026-02-25]
   - normalized temp-ban and permanent-promotion path across sources.
 - Cluster propagation semantics v2 (`T-046`):
   - controlled sharing for temporary and permanent actions.

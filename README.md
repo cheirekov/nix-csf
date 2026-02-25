@@ -42,6 +42,7 @@ Current module version source of truth: `VERSION`.
 - Legacy CSF import tool (`nix-csf-import-csf`)
 - Cluster policy + dynamic offender snapshots (TTL-aware)
 - Optional local control-plane + `nix-csfctl` mutation workflow
+- Escalation engine v2 for temp->perm promotion (`controlPlane.escalation.*`: threshold/window/cooldown/reasonClasses + audit IDs)
 - Nix-native LFD-like detector framework v2 (explicit `lfdDetector.detectors` or curated `lfdDetector.detectorPack`) and fail2ban adapter
 - Auth token rotation (`*.authTokenFiles`) for remote snapshots
 - Docker coexistence profile (`coexistence.profile = "docker-coexist"`)

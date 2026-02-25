@@ -328,15 +328,21 @@ let
         "--default-ban-ttl-seconds" (toString cfg.controlPlane.defaultBanTTLSeconds)
         "--escalation-threshold" (toString cfg.controlPlane.escalation.tempBanThreshold)
         "--escalation-window-seconds" (toString cfg.controlPlane.escalation.windowSeconds)
+        "--escalation-cooldown-seconds" (toString cfg.controlPlane.escalation.cooldownSeconds)
         "--escalation-max-audit-entries" (toString cfg.controlPlane.escalation.maxAuditEntries)
       ];
+      reasonClassArgs =
+        builtins.concatLists
+          (map
+            (reasonClass: [ "--escalation-reason-class" reasonClass ])
+            cfg.controlPlane.escalation.reasonClasses);
       modeArgs =
         (if cfg.controlPlane.escalation.enable then [ "--escalation-enable" ] else [ ]);
       authArgs =
         (if cfg.controlPlane.requireAuth then [ "--require-auth" ] else [ ])
         ++ (if cfg.controlPlane.authTokenFile != null then [ "--auth-token-file" cfg.controlPlane.authTokenFile ] else [ ]);
     in
-    "${controlPlaneTool}/bin/nix-csf-control-plane ${lib.escapeShellArgs (baseArgs ++ modeArgs ++ authArgs)}";
+    "${controlPlaneTool}/bin/nix-csf-control-plane ${lib.escapeShellArgs (baseArgs ++ reasonClassArgs ++ modeArgs ++ authArgs)}";
 
   lfdDetectorEndpoint =
     if cfg.lfdDetector.endpoint != null then cfg.lfdDetector.endpoint
@@ -1832,6 +1838,27 @@ in
           '';
         };
 
+        cooldownSeconds = mkOption {
+          type = types.ints.unsigned;
+          default = 0;
+          description = ''
+            Cooldown applied after promotion for the same CIDR.
+            While cooldown is active, additional temporary-ban events for that CIDR
+            do not trigger new promotions.
+          '';
+        };
+
+        reasonClasses = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "lfd" "fail2ban" "conn_flood" ];
+          description = ''
+            Optional reason classes eligible for escalation.
+            Reason class is derived from `reason` prefix before `:`.
+            When empty, all reason classes are eligible.
+          '';
+        };
+
         maxAuditEntries = mkOption {
           type = types.ints.positive;
           default = 5000;
@@ -2521,6 +2548,13 @@ in
       {
         assertion = cfg.controlPlane.authTokenFile == null || hasPrefix "/" cfg.controlPlane.authTokenFile;
         message = "services.nixCsf.controlPlane.authTokenFile must be an absolute path when set.";
+      }
+      {
+        assertion = all (reasonClass: reasonClass != "" && builtins.match "^[^[:space:]]+$" reasonClass != null) cfg.controlPlane.escalation.reasonClasses;
+        message = ''
+          services.nixCsf.controlPlane.escalation.reasonClasses entries must be non-empty
+          and must not contain whitespace.
+        '';
       }
     ];
 

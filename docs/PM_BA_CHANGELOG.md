@@ -1,5 +1,62 @@
 # PM/BA Changelog
 
+## 2026-02-25 — `T-044` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-044` (`DONE`)
+- Summary:
+  - operator reported full validation success (`[nix-csf] validation succeeded`) after built-in detector pack rollout,
+  - detector pack v2 accepted with:
+    - curated profile model (`server-basic/web/mail/hardened`),
+    - per-detector tuning and resolved-detector guardrails.
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - Stage-2 lane advanced to `T-045` (escalation engine v2).
+
+## 2026-02-25 — Batch ESCALATION-V2-045 (implementation lane)
+
+- Ticket(s): `T-045` (`IN_PROGRESS`)
+- Summary:
+  - implemented escalation engine v2 in control-plane runtime:
+    - new policy knobs:
+      - `services.nixCsf.controlPlane.escalation.cooldownSeconds`,
+      - `services.nixCsf.controlPlane.escalation.reasonClasses`,
+    - cooldown-aware promotion suppression for repeated temp-ban events,
+    - reason-class eligibility filter across detector/fail2ban/manual ban reasons,
+    - deterministic promotion audit metadata:
+      - monotonic `id`,
+      - `reasonClass`,
+      - `cooldownSeconds`,
+      - `cooldownUntil`,
+  - module and service wiring:
+    - control-plane ExecStart now emits `--escalation-cooldown-seconds` and repeated `--escalation-reason-class` flags,
+    - added assertion for `reasonClasses` token validity (non-empty, no whitespace),
+  - quality and coverage updates:
+    - `eval-control-plane` now asserts escalation v2 flags in rendered service command,
+    - integration scenario expanded to validate:
+      - reason-class exclusion path (`syn_flood`),
+      - cooldown-active suppression for repeated promotions,
+      - promotion audit metadata fields (`id`, `reasonClass`, cooldown fields),
+  - documentation updates:
+    - `README.md`,
+    - `docs/LFD_DETECTOR.md`,
+    - `docs/USE_CASES.md`.
+- BA requirement mapping:
+  - satisfies `T-045` acceptance for threshold/window/cooldown/reason-class controls and deterministic promotion audit trail.
+- PM milestone mapping:
+  - advances Stage-2 lane from detector-pack delivery to escalation-policy hardening.
+- Risk impact:
+  - `medium` (runtime promotion behavior changed; isolated to control-plane escalation path).
+- Validation evidence (agent lane):
+  - `python3 -m py_compile scripts/nix-csf-control-plane.py`
+  - `bash -n scripts/validate.sh`
+  - `bash -n scripts/nix-csfctl.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-control-plane" --print-build-logs`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector" "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector-pack" --print-build-logs`
+  - `./scripts/validate-agent.sh`
+- Open follow-ups:
+  - operator full-validation evidence (`./scripts/validate-capture.sh`) required before moving `T-045` to `DONE`.
+
 ## 2026-02-25 — `T-043` closure (operator full-validation confirmed)
 
 - Ticket(s): `T-043` (`DONE`)

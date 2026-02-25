@@ -26,17 +26,16 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Focus |
 |---|---|---|---|
-| T-044 | IN_PROGRESS | Built-in detector pack v2 | Curated SSH/nginx/dovecot detectors with profile defaults and per-detector tuning |
+| T-045 | IN_PROGRESS | Escalation engine v2 | Temp->perm promotion policy with cooldown/reason-class governance and deterministic audit metadata |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-045 | TODO | Escalation engine v2 | Unified temp->perm promotion policy across detector sources |
-| 2 | T-046 | TODO | Cluster propagation semantics v2 | Controlled sharing rules for dynamic/permanent actions across nodes |
-| 3 | T-047 | TODO | Integration test expansion for gateway + detector flows | VM scenarios for NAT/forward/egress and detector/escalation paths |
-| 4 | T-048 | TODO | Documentation and deployment blueprints for Stage 1/2 | End-to-end examples (gateway, bastion, app, clustered nodes) |
-| 5 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
+| 1 | T-046 | TODO | Cluster propagation semantics v2 | Controlled sharing rules for dynamic/permanent actions across nodes |
+| 2 | T-047 | TODO | Integration test expansion for gateway + detector flows | VM scenarios for NAT/forward/egress and detector/escalation paths |
+| 3 | T-048 | TODO | Documentation and deployment blueprints for Stage 1/2 | End-to-end examples (gateway, bastion, app, clustered nodes) |
+| 4 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
 
 ### LATER
 
@@ -93,6 +92,7 @@ Ship a production-usable NixOS firewall module that is:
 | T-041 | DONE | Forwarding policy matrix (interface/zone aware) |
 | T-042 | DONE | Optional egress policy controls |
 | T-043 | DONE | LFD detector framework v2 |
+| T-044 | DONE | Built-in detector pack v2 |
 
 ## Triage protocol
 

@@ -3,38 +3,46 @@
 Last updated: 2026-02-25  
 Owner: PM/BA + Codex
 
-## 0) Current batch snapshot (`DETECTOR-PACK-044`)
+## 0) Current batch snapshot (`ESCALATION-V2-045`)
 
 - Batch type: `IMPLEMENTATION`
-- Active ticket: `T-044` (`IN_PROGRESS`)
+- Active ticket: `T-045` (`IN_PROGRESS`)
 - Status:
-  - `T-043` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
-  - `T-044` implementation landed in agent lane; awaiting operator full-validation evidence for closure.
+  - `T-044` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
+  - `T-045` implementation landed in agent lane; awaiting operator full-validation evidence for closure.
 - Scope delivered in this batch:
-  - added built-in detector pack API:
-    - `services.nixCsf.lfdDetector.detectorPack.enable/profile`,
-    - curated detectors with tuning knobs:
-      - `sshAuth`,
-      - `nginxAuth`,
-      - `dovecotAuth`,
-  - added detector profile presets:
-    - `server-basic`,
-    - `server-web`,
-    - `server-mail`,
-    - `server-hardened`,
-  - added guardrails and resolution semantics:
-    - explicit detectors and detector-pack cannot be combined,
-    - resolved-detector assertions now validate name/source/extract across custom, pack, and legacy fallback paths,
+  - closed `T-044` delivery after operator validation handoff,
+  - implemented escalation engine v2 in control-plane/runtime path:
+    - new policy knobs:
+      - `controlPlane.escalation.cooldownSeconds`,
+      - `controlPlane.escalation.reasonClasses`,
+    - cooldown-aware promotion behavior for repeated temp-ban events,
+    - reason-class eligibility gating across detector/fail2ban/manual ban sources,
+    - deterministic promotion audit metadata:
+      - monotonic `id`,
+      - `reasonClass`,
+      - `cooldownSeconds`,
+      - `cooldownUntil`,
+  - module/service wiring updates:
+    - control-plane ExecStart now passes cooldown and reason-class flags,
+    - new assertion for `reasonClasses` token validity (non-empty, no whitespace),
   - updated quality coverage:
-    - integration scenario moved to built-in `server-web` pack path (`ssh-auth` + `nginx-auth`),
-    - new eval check `eval-lfd-detector-pack` validates generated detector definitions and tuned values,
+    - `eval-control-plane` now validates escalation v2 flags in rendered ExecStart,
+    - integration scenario extended with:
+      - reason-class exclusion (`syn_flood`),
+      - cooldown suppression of repeated promotions,
+      - audit metadata assertions (`id`, `reasonClass`, cooldown fields),
   - updated docs:
     - `README.md`,
     - `docs/LFD_DETECTOR.md`,
-    - `docs/USE_CASES.md`.
+    - `docs/USE_CASES.md`,
+    - board/roadmap/changelog state transitions.
 - Validation evidence (agent lane):
+  - `python3 -m py_compile scripts/nix-csf-control-plane.py`
   - `bash -n scripts/nix-csf-lfd-detector.sh`
+  - `bash -n scripts/nix-csfctl.sh`
   - `bash -n scripts/validate.sh`
+  - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-control-plane" --print-build-logs`
   - `nix build "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector" "path:/home/yc/work/nix-csf#checks.x86_64-linux.eval-lfd-detector-pack" --print-build-logs`
   - `./scripts/validate-agent.sh`
 - Next operator step:

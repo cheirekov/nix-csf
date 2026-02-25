@@ -37,6 +37,8 @@ def default_state() -> dict[str, Any]:
         },
         "escalation": {
             "eventHistory": {},
+            "cooldownUntil": {},
+            "nextPromotionId": 1,
             "promotions": [],
         },
     }
@@ -129,12 +131,26 @@ class StateStore:
                     sanitized_history[key] = sorted(normalized_values)
             state["escalation"]["eventHistory"] = sanitized_history
 
+        cooldown_until = escalation.get("cooldownUntil", {})
+        if isinstance(cooldown_until, dict):
+            sanitized_cooldown: dict[str, int] = {}
+            for key, value in cooldown_until.items():
+                if not isinstance(key, str) or "|" not in key:
+                    continue
+                if not isinstance(value, int):
+                    continue
+                if value > 0:
+                    sanitized_cooldown[key] = value
+            state["escalation"]["cooldownUntil"] = sanitized_cooldown
+
         promotions = escalation.get("promotions", [])
         if isinstance(promotions, list):
             sanitized_promotions: list[dict[str, Any]] = []
+            next_promotion_id = 1
             for entry in promotions:
                 if not isinstance(entry, dict):
                     continue
+                promotion_id = entry.get("id")
                 cidr = entry.get("cidr")
                 family = entry.get("family")
                 first_seen = entry.get("firstSeen")
@@ -143,6 +159,9 @@ class StateStore:
                 promoted_at = entry.get("promotedAt")
                 promoted_by = entry.get("promotedBy")
                 reason = entry.get("reason")
+                reason_class = entry.get("reasonClass")
+                cooldown_seconds = entry.get("cooldownSeconds", 0)
+                cooldown_until_value = entry.get("cooldownUntil", 0)
                 if not isinstance(cidr, str) or family not in ("ipv4", "ipv6"):
                     continue
                 if not isinstance(first_seen, int) or not isinstance(last_seen, int):
@@ -153,9 +172,20 @@ class StateStore:
                     continue
                 if not isinstance(promoted_by, str):
                     continue
+                if promotion_id is not None and (not isinstance(promotion_id, int) or promotion_id <= 0):
+                    continue
                 if reason is not None and not isinstance(reason, str):
                     reason = None
+                if reason_class is not None and not isinstance(reason_class, str):
+                    reason_class = None
+                if not isinstance(cooldown_seconds, int) or cooldown_seconds < 0:
+                    cooldown_seconds = 0
+                if not isinstance(cooldown_until_value, int) or cooldown_until_value < 0:
+                    cooldown_until_value = 0
+                if promotion_id is None:
+                    promotion_id = next_promotion_id
                 sanitized_entry: dict[str, Any] = {
+                    "id": promotion_id,
                     "cidr": cidr,
                     "family": family,
                     "firstSeen": first_seen,
@@ -163,11 +193,25 @@ class StateStore:
                     "eventCountWindow": event_count,
                     "promotedAt": promoted_at,
                     "promotedBy": promoted_by,
+                    "cooldownSeconds": cooldown_seconds,
+                    "cooldownUntil": cooldown_until_value,
                 }
                 if reason is not None:
                     sanitized_entry["reason"] = reason
+                if reason_class is not None:
+                    sanitized_entry["reasonClass"] = reason_class
                 sanitized_promotions.append(sanitized_entry)
+                if promotion_id >= next_promotion_id:
+                    next_promotion_id = promotion_id + 1
+            sanitized_promotions.sort(key=lambda item: item["id"])
             state["escalation"]["promotions"] = sanitized_promotions
+            state["escalation"]["nextPromotionId"] = next_promotion_id
+
+        next_promotion_id_loaded = escalation.get("nextPromotionId")
+        if isinstance(next_promotion_id_loaded, int) and next_promotion_id_loaded > 0:
+            state["escalation"]["nextPromotionId"] = max(
+                state["escalation"]["nextPromotionId"], next_promotion_id_loaded
+            )
 
         atomic_write_json(self.state_file, state)
         return state
@@ -193,6 +237,16 @@ class StateStore:
     def _escalation_key(self, cidr: str, family: str) -> str:
         return f"{family}|{cidr}"
 
+    def _reason_class(self, reason: str | None) -> str:
+        if reason is None:
+            return "unknown"
+        value = reason.strip()
+        if value == "":
+            return "unknown"
+        if ":" in value:
+            return value.split(":", 1)[0]
+        return value
+
     def _apply_escalation_locked(
         self,
         *,
@@ -203,8 +257,13 @@ class StateStore:
         enable: bool,
         threshold: int,
         window_seconds: int,
+        cooldown_seconds: int,
+        reason_classes: list[str],
         max_audit_entries: int,
     ) -> dict[str, Any]:
+        reason_class = self._reason_class(reason)
+        class_eligible = reason_classes == [] or reason_class in reason_classes
+
         if not enable:
             return {
                 "enabled": False,
@@ -212,6 +271,30 @@ class StateStore:
                 "eventCountWindow": 0,
                 "threshold": threshold,
                 "windowSeconds": window_seconds,
+                "cooldownSeconds": cooldown_seconds,
+                "cooldownUntil": 0,
+                "cooldownActive": False,
+                "reasonClass": reason_class,
+                "reasonClassEligible": class_eligible,
+                "reasonClasses": reason_classes,
+                "promotionChanged": False,
+                "dynamicChanged": False,
+                "stateChanged": False,
+            }
+
+        if not class_eligible:
+            return {
+                "enabled": True,
+                "escalated": False,
+                "eventCountWindow": 0,
+                "threshold": threshold,
+                "windowSeconds": window_seconds,
+                "cooldownSeconds": cooldown_seconds,
+                "cooldownUntil": 0,
+                "cooldownActive": False,
+                "reasonClass": reason_class,
+                "reasonClassEligible": False,
+                "reasonClasses": reason_classes,
                 "promotionChanged": False,
                 "dynamicChanged": False,
                 "stateChanged": False,
@@ -219,6 +302,7 @@ class StateStore:
 
         key = self._escalation_key(cidr, family)
         history = self._state["escalation"]["eventHistory"]
+        cooldown_map: dict[str, int] = self._state["escalation"]["cooldownUntil"]
         existing = history.get(key, [])
         keep_after = now_epoch - window_seconds
         filtered = [value for value in existing if value >= keep_after]
@@ -227,7 +311,11 @@ class StateStore:
         history[key] = filtered
 
         event_count = len(filtered)
-        escalated = event_count >= threshold
+        cooldown_until = cooldown_map.get(key, 0)
+        if not isinstance(cooldown_until, int) or cooldown_until < 0:
+            cooldown_until = 0
+        cooldown_active = cooldown_until > now_epoch
+        escalated = event_count >= threshold and not cooldown_active
         promotion_changed = False
         dynamic_changed = False
 
@@ -251,7 +339,11 @@ class StateStore:
 
             if promotion_changed:
                 promotions: list[dict[str, Any]] = self._state["escalation"]["promotions"]
+                promotion_id = self._state["escalation"]["nextPromotionId"]
+                self._state["escalation"]["nextPromotionId"] += 1
+                next_cooldown_until = now_epoch + cooldown_seconds if cooldown_seconds > 0 else 0
                 promotion_record: dict[str, Any] = {
+                    "id": promotion_id,
                     "cidr": cidr,
                     "family": family,
                     "firstSeen": filtered[0],
@@ -259,12 +351,21 @@ class StateStore:
                     "eventCountWindow": event_count,
                     "promotedAt": now_epoch,
                     "promotedBy": "auto-escalation",
+                    "reasonClass": reason_class,
+                    "cooldownSeconds": cooldown_seconds,
+                    "cooldownUntil": next_cooldown_until,
                 }
                 if reason is not None:
                     promotion_record["reason"] = reason
                 promotions.append(promotion_record)
                 if len(promotions) > max_audit_entries:
                     del promotions[0 : len(promotions) - max_audit_entries]
+                if cooldown_seconds > 0:
+                    cooldown_map[key] = next_cooldown_until
+                    cooldown_until = next_cooldown_until
+                elif key in cooldown_map:
+                    del cooldown_map[key]
+                    cooldown_until = 0
 
             # Reset the rolling history after promotion to avoid repeated promotions
             # from the same burst window.
@@ -276,6 +377,12 @@ class StateStore:
             "eventCountWindow": event_count,
             "threshold": threshold,
             "windowSeconds": window_seconds,
+            "cooldownSeconds": cooldown_seconds,
+            "cooldownUntil": cooldown_until,
+            "cooldownActive": cooldown_active,
+            "reasonClass": reason_class,
+            "reasonClassEligible": class_eligible,
+            "reasonClasses": reason_classes,
             "promotionChanged": promotion_changed,
             "dynamicChanged": dynamic_changed,
             "stateChanged": True,
@@ -331,6 +438,8 @@ class StateStore:
         escalation_enable: bool,
         escalation_threshold: int,
         escalation_window_seconds: int,
+        escalation_cooldown_seconds: int,
+        escalation_reason_classes: list[str],
         escalation_max_audit_entries: int,
     ) -> dict[str, Any]:
         normalized, family = normalize_cidr(cidr)
@@ -370,6 +479,8 @@ class StateStore:
                 enable=escalation_enable,
                 threshold=escalation_threshold,
                 window_seconds=escalation_window_seconds,
+                cooldown_seconds=escalation_cooldown_seconds,
+                reason_classes=escalation_reason_classes,
                 max_audit_entries=escalation_max_audit_entries,
             )
 
@@ -474,6 +585,8 @@ class ControlPlaneServer(ThreadingHTTPServer):
         escalation_enable: bool,
         escalation_threshold: int,
         escalation_window_seconds: int,
+        escalation_cooldown_seconds: int,
+        escalation_reason_classes: list[str],
         escalation_max_audit_entries: int,
         require_auth: bool,
         auth_token_file: str | None,
@@ -487,6 +600,8 @@ class ControlPlaneServer(ThreadingHTTPServer):
         self.escalation_enable = escalation_enable
         self.escalation_threshold = escalation_threshold
         self.escalation_window_seconds = escalation_window_seconds
+        self.escalation_cooldown_seconds = escalation_cooldown_seconds
+        self.escalation_reason_classes = escalation_reason_classes
         self.escalation_max_audit_entries = escalation_max_audit_entries
         self.require_auth = require_auth
         self.auth_token_file = auth_token_file
@@ -599,6 +714,8 @@ class Handler(BaseHTTPRequestHandler):
                         "enabled": self.server.escalation_enable,
                         "threshold": self.server.escalation_threshold,
                         "windowSeconds": self.server.escalation_window_seconds,
+                        "cooldownSeconds": self.server.escalation_cooldown_seconds,
+                        "reasonClasses": self.server.escalation_reason_classes,
                     },
                     "promotions": promotions,
                 },
@@ -661,6 +778,8 @@ class Handler(BaseHTTPRequestHandler):
                     escalation_enable=self.server.escalation_enable,
                     escalation_threshold=self.server.escalation_threshold,
                     escalation_window_seconds=self.server.escalation_window_seconds,
+                    escalation_cooldown_seconds=self.server.escalation_cooldown_seconds,
+                    escalation_reason_classes=self.server.escalation_reason_classes,
                     escalation_max_audit_entries=self.server.escalation_max_audit_entries,
                 )
             except ValueError as err:
@@ -738,6 +857,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--escalation-enable", action="store_true")
     parser.add_argument("--escalation-threshold", default=5, type=int)
     parser.add_argument("--escalation-window-seconds", default=900, type=int)
+    parser.add_argument("--escalation-cooldown-seconds", default=0, type=int)
+    parser.add_argument("--escalation-reason-class", action="append", default=[])
     parser.add_argument("--escalation-max-audit-entries", default=5000, type=int)
     parser.add_argument("--require-auth", action="store_true")
     parser.add_argument("--auth-token-file")
@@ -771,9 +892,25 @@ def main() -> int:
         print("--escalation-window-seconds must be positive", file=sys.stderr)
         return 2
 
+    if args.escalation_cooldown_seconds < 0:
+        print("--escalation-cooldown-seconds must be zero or positive", file=sys.stderr)
+        return 2
+
     if args.escalation_max_audit_entries <= 0:
         print("--escalation-max-audit-entries must be positive", file=sys.stderr)
         return 2
+
+    escalation_reason_classes: list[str] = []
+    for raw_value in args.escalation_reason_class:
+        value = raw_value.strip()
+        if value == "":
+            print("--escalation-reason-class values must be non-empty", file=sys.stderr)
+            return 2
+        if any(ch.isspace() for ch in value):
+            print("--escalation-reason-class values must not contain whitespace", file=sys.stderr)
+            return 2
+        if value not in escalation_reason_classes:
+            escalation_reason_classes.append(value)
 
     data_dir = Path(args.data_dir)
     if not data_dir.is_absolute():
@@ -806,6 +943,8 @@ def main() -> int:
         escalation_enable=args.escalation_enable,
         escalation_threshold=args.escalation_threshold,
         escalation_window_seconds=args.escalation_window_seconds,
+        escalation_cooldown_seconds=args.escalation_cooldown_seconds,
+        escalation_reason_classes=escalation_reason_classes,
         escalation_max_audit_entries=args.escalation_max_audit_entries,
         require_auth=args.require_auth,
         auth_token_file=auth_token_file,
@@ -819,6 +958,8 @@ def main() -> int:
         f"escalation_enabled={'true' if args.escalation_enable else 'false'} "
         f"escalation_threshold={args.escalation_threshold} "
         f"escalation_window_seconds={args.escalation_window_seconds} "
+        f"escalation_cooldown_seconds={args.escalation_cooldown_seconds} "
+        f"escalation_reason_classes={','.join(escalation_reason_classes)} "
         f"require_auth={'true' if args.require_auth else 'false'}"
     )
     sys.stdout.flush()

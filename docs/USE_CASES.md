@@ -734,7 +734,7 @@ Use:
 
 This example adds:
 
-- `controlPlane.escalation.enable = true` for promotion from repeated temp bans to permanent deny,
+- `controlPlane.escalation.*` for promotion policy (`tempBanThreshold`, `windowSeconds`, optional `cooldownSeconds`, `reasonClasses`),
 - `lfdDetector.enable = true` to monitor sshd journal failures and emit temp bans,
 - local `clusterPolicy` + `dynamicOffenders` URLs so both permanent and temporary ban sets are rendered.
 

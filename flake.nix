@@ -140,10 +140,19 @@
             };
           });
           controlPlaneEval = mkEvalSystem ({ ... }: {
-            services.nixCsf.controlPlane = {
-              enable = true;
-              requireAuth = false;
-              environment = "lab";
+            services.nixCsf = {
+              controlPlane = {
+                enable = true;
+                requireAuth = false;
+                environment = "lab";
+                escalation = {
+                  enable = true;
+                  tempBanThreshold = 3;
+                  windowSeconds = 600;
+                  cooldownSeconds = 1800;
+                  reasonClasses = [ "lfd" "fail2ban" "conn_flood" ];
+                };
+              };
             };
           });
           lfdDetectorEval = mkEvalSystem ({ ... }: {
@@ -367,9 +376,17 @@
           eval-control-plane = pkgs.runCommand "nix-csf-eval-control-plane" {
             controlPlaneEnabled = boolText controlPlaneEval.config.services.nixCsf.controlPlane.enable;
             controlPlaneExec = controlPlaneEval.config.systemd.services.nix-csf-control-plane.serviceConfig.ExecStart;
+            nativeBuildInputs = [ pkgs.gnugrep ];
           } ''
             test "$controlPlaneEnabled" = "true"
             test -n "$controlPlaneExec"
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-enable'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-threshold 3'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-window-seconds 600'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-cooldown-seconds 1800'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-reason-class lfd'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-reason-class fail2ban'
+            printf '%s\n' "$controlPlaneExec" | grep -F -- '--escalation-reason-class conn_flood'
             printf '%s\n' "$controlPlaneExec" > "$out"
           '';
           eval-lfd-detector = pkgs.runCommand "nix-csf-eval-lfd-detector" {

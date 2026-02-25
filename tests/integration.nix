@@ -338,6 +338,8 @@ pkgs.testers.runNixOSTest {
           enable = true;
           tempBanThreshold = 2;
           windowSeconds = 900;
+          cooldownSeconds = 3600;
+          reasonClasses = [ "lfd" "fail2ban" "conn_flood" ];
           maxAuditEntries = 100;
         };
       };
@@ -505,9 +507,20 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.succeed("nix-csfctl --output pretty health | jq -e '.status == \"ok\"'")
     controlplanepoc.succeed("nix-csfctl --output pretty policy add deny 203.0.119.9/32 | jq -e '.changed == true'")
     controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.10/32 --ttl 600 --reason syn_flood | jq -e '.changed == true'")
-    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.enabled == true and .escalation.escalated == false'")
-    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == true and .escalation.promotionChanged == true'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.enabled == true and .escalation.reasonClass == \"conn_flood\" and .escalation.reasonClassEligible == true and .escalation.escalated == false'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.11/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == true and .escalation.promotionChanged == true and .escalation.cooldownSeconds == 3600'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.122/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == false'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.122/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == true and .escalation.promotionChanged == true'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.122/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == false and .escalation.cooldownActive == true and .escalation.eventCountWindow == 1'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.122/32 --ttl 600 --reason conn_flood | jq -e '.escalation.escalated == false and .escalation.cooldownActive == true and .escalation.eventCountWindow == 2 and .escalation.promotionChanged == false'")
+    controlplanepoc.succeed("nix-csfctl --output pretty promotions --limit 20 | jq -e '[.promotions[] | select(.cidr == \"203.0.119.122/32\")] | length == 1'")
+    controlplanepoc.succeed("nix-csfctl --output pretty unban 203.0.119.122/32 | jq -e '.changed == true'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.123/32 --ttl 600 --reason syn_flood | jq -e '.escalation.reasonClass == \"syn_flood\" and .escalation.reasonClassEligible == false and .escalation.escalated == false and .escalation.promotionChanged == false'")
+    controlplanepoc.succeed("nix-csfctl --output pretty ban-temp 203.0.119.123/32 --ttl 600 --reason syn_flood | jq -e '.escalation.reasonClassEligible == false and .escalation.eventCountWindow == 0'")
+    controlplanepoc.succeed("nix-csfctl --output pretty promotions --limit 20 | jq -e '.escalation.cooldownSeconds == 3600 and (.escalation.reasonClasses | index(\"conn_flood\") != null)'")
     controlplanepoc.succeed("nix-csfctl --output pretty promotions --limit 20 | jq -e '.promotions | map(.cidr) | index(\"203.0.119.11/32\") != null'")
+    controlplanepoc.succeed("nix-csfctl --output pretty promotions --limit 20 | jq -e '([.promotions[] | select(.cidr == \"203.0.119.11/32\")][0].reasonClass == \"conn_flood\") and ([.promotions[] | select(.cidr == \"203.0.119.11/32\")][0].cooldownSeconds == 3600) and ([.promotions[] | select(.cidr == \"203.0.119.11/32\")][0].id >= 1)'")
+    controlplanepoc.succeed("nix-csfctl --output pretty promotions --limit 20 | jq -e '[.promotions[] | select(.cidr == \"203.0.119.123/32\")] | length == 0'")
     controlplanepoc.succeed("logger -t sshd 'Failed password for invalid user root from 203.0.119.120 port 50001 ssh2'")
     controlplanepoc.succeed("logger -t sshd 'Failed password for invalid user root from 203.0.119.120 port 50002 ssh2'")
     controlplanepoc.succeed("logger -t nginx 'user \"bob\": password mismatch, client: 203.0.119.121, server: example.com, request: \"GET /admin HTTP/1.1\", host: \"example.com\"'")
@@ -531,9 +544,13 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx success")
     controlplanepoc.succeed("grep -F '\"203.0.119.9/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.succeed("grep -F '\"203.0.119.11/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
+    controlplanepoc.succeed("grep -F '\"203.0.119.122/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
+    controlplanepoc.fail("grep -F '\"203.0.119.123/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.10/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.120/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
     controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.121/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.succeed("grep -F '\"cidr\": \"203.0.119.123/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    controlplanepoc.fail("grep -F '\"cidr\": \"203.0.119.122/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
     controlplanepoc.fail("grep -F '\"cidr\": \"203.0.119.11/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
     controlplanepoc.fail("nft get element inet nix_csf deny_ipv4 '{ 203.0.119.9 }'")
     controlplanepoc.succeed("nft get element inet nix_csf deny_ipv4 '{ 203.0.119.11 }'")
