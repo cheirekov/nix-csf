@@ -1,5 +1,43 @@
 # PM/BA Changelog
 
+## 2026-02-25 — `T-046` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-046` (`DONE`)
+- Summary:
+  - operator reported full validation success (`[nix-csf] validation succeeded`) after propagation semantics v2 rollout,
+  - propagation v2 accepted with:
+    - local vs cluster sharing boundaries,
+    - provenance metadata and replay-safe snapshot marker behavior.
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - Stage-2 lane advanced to `T-047` (integration expansion).
+
+## 2026-02-25 — Batch INTEGRATION-EXPANSION-047 (implementation lane)
+
+- Ticket(s): `T-047` (`IN_PROGRESS`)
+- Summary:
+  - expanded integration test coverage with a dedicated gateway+detector scenario:
+    - added `gatewaydetector` node in `tests/integration.nix`,
+    - validates gateway semantics:
+      - NAT table/rule generation,
+      - forwarding matrix rendering for LAN->WAN flow,
+      - egress default-drop policy rendering,
+    - validates detector/escalation/cluster chain:
+      - journal SSH failures -> LFD detector temp-ban mutation,
+      - escalation promotion into cluster deny snapshot,
+      - promoted CIDR present in nft deny set and absent from dynamic offender snapshot cache.
+- BA requirement mapping:
+  - directly advances `T-047` acceptance for combined gateway and detector/escalation coverage in VM integration flow.
+- PM milestone mapping:
+  - begins cross-cutting quality hardening before `T-048` documentation blueprint pass.
+- Risk impact:
+  - `low` (test-only expansion; runtime module behavior unchanged).
+- Validation evidence (agent lane):
+  - `./scripts/validate-agent.sh`
+- Open follow-ups:
+  - operator full-validation evidence (`./scripts/validate-capture.sh`) required before moving `T-047` to `DONE`.
+
 ## 2026-02-25 — `T-045` closure (operator full-validation confirmed)
 
 - Ticket(s): `T-045` (`DONE`)

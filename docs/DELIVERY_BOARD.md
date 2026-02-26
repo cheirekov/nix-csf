@@ -26,15 +26,14 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Focus |
 |---|---|---|---|
-| T-046 | IN_PROGRESS | Cluster propagation semantics v2 | Controlled sharing rules for dynamic/permanent actions across nodes with provenance + replay-safe markers |
+| T-047 | IN_PROGRESS | Integration test expansion for gateway + detector flows | VM scenarios for NAT/forward/egress and detector/escalation/cluster propagation paths |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-047 | TODO | Integration test expansion for gateway + detector flows | VM scenarios for NAT/forward/egress and detector/escalation paths |
-| 2 | T-048 | TODO | Documentation and deployment blueprints for Stage 1/2 | End-to-end examples (gateway, bastion, app, clustered nodes) |
-| 3 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
+| 1 | T-048 | TODO | Documentation and deployment blueprints for Stage 1/2 | End-to-end examples (gateway, bastion, app, clustered nodes) |
+| 2 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
 
 ### LATER
 
@@ -93,6 +92,7 @@ Ship a production-usable NixOS firewall module that is:
 | T-043 | DONE | LFD detector framework v2 |
 | T-044 | DONE | Built-in detector pack v2 |
 | T-045 | DONE | Escalation engine v2 |
+| T-046 | DONE | Cluster propagation semantics v2 |
 
 ## Triage protocol
 

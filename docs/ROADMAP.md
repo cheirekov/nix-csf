@@ -69,7 +69,7 @@
   - interface/zone-aware forward allow model for gateway hosts.
 - Optional egress controls (`T-042`). [done 2026-02-25]
   - output allowlist/denylist for hardened hosts.
-- Gateway-grade test coverage (`T-047`, Stage 1 subset):
+- Gateway-grade test coverage (`T-047`, Stage 1 subset). [in progress 2026-02-25]
   - VM validation for NAT + forward + egress combinations.
 
 ## Phase 6 — Detector/escalation expansion (new epic / Stage 2)
@@ -80,9 +80,9 @@
   - SSH plus additional service-level detectors (auth/flood patterns).
 - Escalation engine v2 (`T-045`). [done 2026-02-25]
   - normalized temp-ban and permanent-promotion path across sources.
-- Cluster propagation semantics v2 (`T-046`). [in progress 2026-02-25]
+- Cluster propagation semantics v2 (`T-046`). [done 2026-02-25]
   - controlled sharing for temporary and permanent actions.
 - Documentation blueprints and examples (`T-048`):
   - deployment patterns for standalone and clustered nodes.
-- Gateway/detector integration coverage (`T-047`, Stage 2 subset):
+- Gateway/detector integration coverage (`T-047`, Stage 2 subset). [in progress 2026-02-25]
   - regression checks for detector->ban->propagation pipeline.

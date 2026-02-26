@@ -3,44 +3,29 @@
 Last updated: 2026-02-25  
 Owner: PM/BA + Codex
 
-## 0) Current batch snapshot (`PROPAGATION-V2-046`)
+## 0) Current batch snapshot (`INTEGRATION-EXPANSION-047`)
 
 - Batch type: `IMPLEMENTATION`
-- Active ticket: `T-046` (`IN_PROGRESS`)
+- Active ticket: `T-047` (`IN_PROGRESS`)
 - Status:
-  - `T-045` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
-  - `T-046` implementation landed in agent lane; awaiting operator full-validation evidence for closure.
+  - `T-046` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
+  - `T-047` implementation started in agent lane.
 - Scope delivered in this batch:
-  - control-plane propagation semantics v2:
-    - mutation scope support (`cluster` / `local`) for policy and dynamic offender APIs,
-    - node-aware visibility boundaries via `X-Nix-Csf-Node` + payload `nodeId`,
-    - provenance metadata in snapshots and audit records:
-      - `scope`,
-      - `originNode`,
-      - `source`,
-      - `mutationId`,
-      - `updatedAt`,
-    - replay-safe snapshot marker `lastMutationId`,
-  - module/API wiring updates:
-    - new Nix options:
-      - `services.nixCsf.controlPlane.propagation.policyDefaultScope`,
-      - `services.nixCsf.controlPlane.propagation.dynamicDefaultScope`,
-      - `services.nixCsf.controlPlane.propagation.escalationPromotionScope`,
-      - `services.nixCsf.controlPlane.propagation.requireNodeForLocalScope`,
-      - `services.nixCsf.controlPlane.propagation.includeProvenanceMetadata`,
-    - control-plane ExecStart passes new propagation flags,
-    - `nix-csfctl` supports:
-      - global `--node-id` request header,
-      - command-level `--scope` / `--node-id` / `--source`,
-  - quality coverage updates:
-    - `eval-control-plane` asserts propagation-v2 service flags,
-    - integration scenario adds node-scoped visibility checks (node-a vs node-b),
-    - provenance + `lastMutationId` assertions added for cached snapshots.
+  - `T-046` closure bookkeeping completed:
+    - board/roadmap/changelog/session state transitions to `DONE`,
+  - `T-047` first expansion chunk implemented in integration VM suite:
+    - added new `gatewaydetector` scenario in `tests/integration.nix`,
+    - gateway datapath checks now cover:
+      - NAT table generation (`ip` nat table + prerouting/postrouting behavior),
+      - forwarding matrix allow rule rendering for LAN->WAN flow,
+      - output policy hardening (`egress.defaultPolicy = drop`),
+    - detector/escalation/cluster path checks now include:
+      - journal-driven SSH signal -> LFD detector temp-ban mutation,
+      - escalation promotion (`tempBanThreshold = 1`) into cluster deny snapshot,
+      - dynamic offender cleanup after promotion and nft deny set materialization.
 - Validation evidence (agent lane):
-  - `python3 -m py_compile scripts/nix-csf-control-plane.py`
-  - `bash -n scripts/nix-csfctl.sh`
+  - `bash -n scripts/validate-agent.sh`
   - `./scripts/validate-agent.sh`
-  - `nix build .#checks.x86_64-linux.control-plane-lint --print-build-logs`
 - Next operator step:
   - run `./scripts/validate-capture.sh` and share summary on failure (or `[nix-csf] validation succeeded` on success).
 

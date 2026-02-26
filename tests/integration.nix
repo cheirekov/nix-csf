@@ -394,6 +394,108 @@ pkgs.testers.runNixOSTest {
     system.stateVersion = "24.11";
   };
 
+  nodes.gatewaydetector = { ... }: {
+    imports = [ module ];
+
+    networking.hostName = "nix-csf-gatewaydetector";
+    networking.firewall.enable = false;
+
+    services.nixCsf = {
+      enable = true;
+      openTCPPorts = [ 22 ];
+      nat = {
+        enable = true;
+        externalInterface = "eth0";
+        masquerade = {
+          enable = true;
+          sourceIPv4 = [ "10.88.0.0/16" ];
+        };
+        portForwards = [
+          {
+            name = "gw-web";
+            protocol = "tcp";
+            externalPort = 18080;
+            destinationAddress = "10.88.0.10";
+            destinationPort = 8080;
+            sourceIPv4 = [ "198.51.100.0/24" ];
+          }
+        ];
+      };
+      forwarding = {
+        zones = {
+          lan = {
+            interfaces = [ "br-lan" ];
+            cidrIPv4 = [ "10.88.0.0/16" ];
+          };
+          wan = {
+            interfaces = [ "eth0" ];
+          };
+        };
+        rules = [
+          {
+            name = "lan-to-wan-web";
+            fromZone = "lan";
+            toZone = "wan";
+            protocol = "tcp";
+            destinationPorts = [ 80 443 ];
+          }
+        ];
+      };
+      egress = {
+        enable = true;
+        defaultPolicy = "drop";
+        trustedInterfaces = [ "wg0" ];
+        allowIPv4 = [ "198.51.100.0/24" ];
+        denyIPv4 = [ "203.0.113.0/24" ];
+        allowTCPPorts = [ 53 443 ];
+        allowUDPPorts = [ 53 ];
+      };
+      clusterPolicy = {
+        enable = true;
+        url = "http://127.0.0.1:18081/snapshots/gw/cluster-policy.json";
+        requireHTTPS = false;
+        failOpen = true;
+        nodeId = "gw-a";
+      };
+      dynamicOffenders = {
+        enable = true;
+        url = "http://127.0.0.1:18081/snapshots/gw/dynamic-offenders.json";
+        requireHTTPS = false;
+        failOpen = true;
+        nodeId = "gw-a";
+        defaultEntryTTLSeconds = 300;
+      };
+      controlPlane = {
+        enable = true;
+        bindAddress = "127.0.0.1";
+        port = 18081;
+        environment = "gw";
+        requireAuth = false;
+        escalation = {
+          enable = true;
+          tempBanThreshold = 1;
+          windowSeconds = 900;
+          cooldownSeconds = 0;
+          reasonClasses = [ "lfd" ];
+          maxAuditEntries = 100;
+        };
+      };
+      lfdDetector = {
+        enable = true;
+        journalIdentifier = "sshd";
+        threshold = 2;
+        windowSeconds = 600;
+        banTTLSeconds = 600;
+        refreshAfterBan = true;
+        schedule.onCalendar = "hourly";
+      };
+      autoRefresh.runOnBoot = false;
+    };
+
+    environment.systemPackages = [ pkgs.nftables pkgs.curl pkgs.jq ];
+    system.stateVersion = "24.11";
+  };
+
   nodes.failclosed = { ... }: {
     imports = [ module ];
 
@@ -419,7 +521,7 @@ pkgs.testers.runNixOSTest {
 
   testScript = ''
     # Start nodes lazily to reduce host-pressure boot timeouts on /dev/hvc0 and eth1.
-    blockapplyfailclosed, clusterexpired, controlplanepoc, dockercoexist, dynamicexpired, failclosed, good, profileedge, tokenrotation = machines
+    blockapplyfailclosed, clusterexpired, controlplanepoc, dockercoexist, dynamicexpired, failclosed, gatewaydetector, good, profileedge, tokenrotation = machines
 
     good.start()
     good.wait_for_unit("multi-user.target")
@@ -579,6 +681,27 @@ pkgs.testers.runNixOSTest {
     controlplanepoc.succeed("grep -F '203.0.119.10/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
     controlplanepoc.succeed("grep -F '203.0.119.120/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
     controlplanepoc.succeed("grep -F '203.0.119.121/32 timeout' /var/lib/nix-csf/generated-ruleset.nft")
+
+    gatewaydetector.start()
+    gatewaydetector.wait_for_unit("multi-user.target")
+    gatewaydetector.wait_for_unit("nix-csf-control-plane.service")
+    gatewaydetector.wait_until_succeeds("systemctl is-active --quiet nix-csf-control-plane.service")
+    gatewaydetector.succeed("systemctl show -P Result nix-csf-apply.service | grep -qx success")
+    gatewaydetector.succeed("nft list table ip nix_csf_nat")
+    gatewaydetector.succeed("grep -F 'type nat hook prerouting priority dstnat; policy accept;' /var/lib/nix-csf/generated-ruleset.nft")
+    gatewaydetector.succeed("grep -F 'ip saddr 10.88.0.0/16 oifname \"eth0\" masquerade' /var/lib/nix-csf/generated-ruleset.nft")
+    gatewaydetector.succeed("awk '/iifname \"br-lan\"/ && /oifname \"eth0\"/ && /tcp/ && /dport/ && /80/ && /443/ && /ip saddr 10.88.0.0\\/16/ && /accept/ { found = 1 } END { exit !found }' /var/lib/nix-csf/generated-ruleset.nft")
+    gatewaydetector.succeed("grep -F 'type filter hook output priority filter; policy drop;' /var/lib/nix-csf/generated-ruleset.nft")
+    gatewaydetector.succeed("logger -t sshd 'Failed password for invalid user root from 203.0.119.150 port 50001 ssh2'")
+    gatewaydetector.succeed("logger -t sshd 'Failed password for invalid user root from 203.0.119.150 port 50002 ssh2'")
+    gatewaydetector.succeed("systemctl start nix-csf-lfd-detector.service")
+    gatewaydetector.succeed("systemctl show -P Result nix-csf-lfd-detector.service | grep -qx success")
+    gatewaydetector.succeed("journalctl -u nix-csf-lfd-detector.service -n 80 | grep -F 'detector=legacy-sshd ip=203.0.119.150'")
+    gatewaydetector.succeed("systemctl start nix-csf-refresh.service")
+    gatewaydetector.succeed("systemctl show -P Result nix-csf-refresh.service | grep -qx success")
+    gatewaydetector.succeed("grep -F '\"203.0.119.150/32\"' /var/lib/nix-csf/cache/cluster-policy.json")
+    gatewaydetector.fail("grep -F '\"cidr\": \"203.0.119.150/32\"' /var/lib/nix-csf/cache/dynamic-offenders.json")
+    gatewaydetector.succeed("nft get element inet nix_csf deny_ipv4 '{ 203.0.119.150 }'")
 
     failclosed.start()
     failclosed.wait_for_unit("multi-user.target")
