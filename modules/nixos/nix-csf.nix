@@ -212,6 +212,17 @@ let
         rate = connFloodPreset.rate;
         burst = connFloodPreset.burst;
       };
+      dnsFlood = {
+        enable = cfg.rateLimits.dnsFlood.enable;
+        udpRate = cfg.rateLimits.dnsFlood.udpRate;
+        udpBurst = cfg.rateLimits.dnsFlood.udpBurst;
+        udpPorts = cfg.rateLimits.dnsFlood.udpPorts;
+        tcpRate = cfg.rateLimits.dnsFlood.tcpRate;
+        tcpBurst = cfg.rateLimits.dnsFlood.tcpBurst;
+        tcpPorts = cfg.rateLimits.dnsFlood.tcpPorts;
+        allowIPv4 = cfg.rateLimits.dnsFlood.allowIPv4;
+        allowIPv6 = cfg.rateLimits.dnsFlood.allowIPv6;
+      };
     };
     country = {
       enable = cfg.country.enable;
@@ -372,21 +383,37 @@ let
       sshAuth = true;
       nginxAuth = false;
       dovecotAuth = false;
+      caddyAuth = false;
+      postfixSasl = false;
+      controlPlaneAuth = false;
+      apiProxyAuth = false;
     };
     server-web = {
       sshAuth = true;
       nginxAuth = true;
       dovecotAuth = false;
+      caddyAuth = false;
+      postfixSasl = false;
+      controlPlaneAuth = false;
+      apiProxyAuth = false;
     };
     server-mail = {
       sshAuth = true;
       nginxAuth = false;
       dovecotAuth = true;
+      caddyAuth = false;
+      postfixSasl = false;
+      controlPlaneAuth = false;
+      apiProxyAuth = false;
     };
     server-hardened = {
       sshAuth = true;
       nginxAuth = true;
       dovecotAuth = true;
+      caddyAuth = false;
+      postfixSasl = false;
+      controlPlaneAuth = false;
+      apiProxyAuth = false;
     };
   };
 
@@ -403,6 +430,22 @@ let
   lfdDetectorPackDovecotAuthEnabled =
     if cfg.lfdDetector.detectorPack.dovecotAuth.enable == null then lfdDetectorPackProfile.dovecotAuth
     else cfg.lfdDetector.detectorPack.dovecotAuth.enable;
+
+  lfdDetectorPackCaddyAuthEnabled =
+    if cfg.lfdDetector.detectorPack.caddyAuth.enable == null then lfdDetectorPackProfile.caddyAuth
+    else cfg.lfdDetector.detectorPack.caddyAuth.enable;
+
+  lfdDetectorPackPostfixSaslEnabled =
+    if cfg.lfdDetector.detectorPack.postfixSasl.enable == null then lfdDetectorPackProfile.postfixSasl
+    else cfg.lfdDetector.detectorPack.postfixSasl.enable;
+
+  lfdDetectorPackControlPlaneAuthEnabled =
+    if cfg.lfdDetector.detectorPack.controlPlaneAuth.enable == null then lfdDetectorPackProfile.controlPlaneAuth
+    else cfg.lfdDetector.detectorPack.controlPlaneAuth.enable;
+
+  lfdDetectorPackApiProxyAuthEnabled =
+    if cfg.lfdDetector.detectorPack.apiProxyAuth.enable == null then lfdDetectorPackProfile.apiProxyAuth
+    else cfg.lfdDetector.detectorPack.apiProxyAuth.enable;
 
   lfdDetectorPackDetectors = [
     {
@@ -440,6 +483,54 @@ let
       threshold = cfg.lfdDetector.detectorPack.dovecotAuth.threshold;
       banTTLSeconds = cfg.lfdDetector.detectorPack.dovecotAuth.banTTLSeconds;
       reason = cfg.lfdDetector.detectorPack.dovecotAuth.reason;
+    }
+    {
+      name = "caddy-auth";
+      enable = lfdDetectorPackCaddyAuthEnabled;
+      journalUnit = cfg.lfdDetector.detectorPack.caddyAuth.journalUnit;
+      journalIdentifier = cfg.lfdDetector.detectorPack.caddyAuth.journalIdentifier;
+      lineContains = cfg.lfdDetector.detectorPack.caddyAuth.lineContains;
+      extractRegex = cfg.lfdDetector.detectorPack.caddyAuth.extractRegex;
+      windowSeconds = cfg.lfdDetector.detectorPack.caddyAuth.windowSeconds;
+      threshold = cfg.lfdDetector.detectorPack.caddyAuth.threshold;
+      banTTLSeconds = cfg.lfdDetector.detectorPack.caddyAuth.banTTLSeconds;
+      reason = cfg.lfdDetector.detectorPack.caddyAuth.reason;
+    }
+    {
+      name = "postfix-sasl";
+      enable = lfdDetectorPackPostfixSaslEnabled;
+      journalUnit = cfg.lfdDetector.detectorPack.postfixSasl.journalUnit;
+      journalIdentifier = cfg.lfdDetector.detectorPack.postfixSasl.journalIdentifier;
+      lineContains = cfg.lfdDetector.detectorPack.postfixSasl.lineContains;
+      extractRegex = cfg.lfdDetector.detectorPack.postfixSasl.extractRegex;
+      windowSeconds = cfg.lfdDetector.detectorPack.postfixSasl.windowSeconds;
+      threshold = cfg.lfdDetector.detectorPack.postfixSasl.threshold;
+      banTTLSeconds = cfg.lfdDetector.detectorPack.postfixSasl.banTTLSeconds;
+      reason = cfg.lfdDetector.detectorPack.postfixSasl.reason;
+    }
+    {
+      name = "control-plane-auth";
+      enable = lfdDetectorPackControlPlaneAuthEnabled;
+      journalUnit = cfg.lfdDetector.detectorPack.controlPlaneAuth.journalUnit;
+      journalIdentifier = cfg.lfdDetector.detectorPack.controlPlaneAuth.journalIdentifier;
+      lineContains = cfg.lfdDetector.detectorPack.controlPlaneAuth.lineContains;
+      extractRegex = cfg.lfdDetector.detectorPack.controlPlaneAuth.extractRegex;
+      windowSeconds = cfg.lfdDetector.detectorPack.controlPlaneAuth.windowSeconds;
+      threshold = cfg.lfdDetector.detectorPack.controlPlaneAuth.threshold;
+      banTTLSeconds = cfg.lfdDetector.detectorPack.controlPlaneAuth.banTTLSeconds;
+      reason = cfg.lfdDetector.detectorPack.controlPlaneAuth.reason;
+    }
+    {
+      name = "api-proxy-auth";
+      enable = lfdDetectorPackApiProxyAuthEnabled;
+      journalUnit = cfg.lfdDetector.detectorPack.apiProxyAuth.journalUnit;
+      journalIdentifier = cfg.lfdDetector.detectorPack.apiProxyAuth.journalIdentifier;
+      lineContains = cfg.lfdDetector.detectorPack.apiProxyAuth.lineContains;
+      extractRegex = cfg.lfdDetector.detectorPack.apiProxyAuth.extractRegex;
+      windowSeconds = cfg.lfdDetector.detectorPack.apiProxyAuth.windowSeconds;
+      threshold = cfg.lfdDetector.detectorPack.apiProxyAuth.threshold;
+      banTTLSeconds = cfg.lfdDetector.detectorPack.apiProxyAuth.banTTLSeconds;
+      reason = cfg.lfdDetector.detectorPack.apiProxyAuth.reason;
     }
   ];
 
@@ -543,6 +634,7 @@ let
     # generated by nix-csf module
     # charts.d.plugin only scans one charts directory; point it to user-managed configDir.
     chartsd=${netdataChartsDirectory}
+    ${lib.optionalString (cfg.netdata.noiseProfile == "chartsd-minimal") "enable_all_charts=\"no\""}
     nix_csf=yes
   '';
 
@@ -1290,6 +1382,81 @@ in
             - relaxed: higher threshold
             - balanced: general server default
             - strict: lower threshold
+          '';
+        };
+      };
+
+      dnsFlood = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Enable DNS-focused per-source flood controls for authoritative/recursive DNS exposure.
+            Applies protocol-specific meters on configured DNS ports.
+          '';
+        };
+
+        udpRate = mkOption {
+          type = types.str;
+          default = "400/second";
+          example = "800/second";
+          description = "nftables rate expression for DNS UDP flood meter.";
+        };
+
+        udpBurst = mkOption {
+          type = types.ints.positive;
+          default = 800;
+          description = "Packet burst threshold for DNS UDP flood meter.";
+        };
+
+        udpPorts = mkOption {
+          type = types.listOf types.port;
+          default = [ 53 ];
+          description = ''
+            UDP destination ports guarded by DNS flood controls.
+            Use empty list to disable UDP-side DNS flood meter while keeping TCP meter enabled.
+          '';
+        };
+
+        tcpRate = mkOption {
+          type = types.str;
+          default = "120/second";
+          example = "240/second";
+          description = "nftables rate expression for DNS TCP flood meter.";
+        };
+
+        tcpBurst = mkOption {
+          type = types.ints.positive;
+          default = 240;
+          description = "Packet burst threshold for DNS TCP flood meter.";
+        };
+
+        tcpPorts = mkOption {
+          type = types.listOf types.port;
+          default = [ 53 ];
+          description = ''
+            TCP destination ports guarded by DNS flood controls.
+            Use empty list to disable TCP-side DNS flood meter while keeping UDP meter enabled.
+          '';
+        };
+
+        allowIPv4 = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "198.41.0.0/16" "192.203.230.0/24" ];
+          description = ''
+            Optional IPv4 source CIDRs bypassing DNS flood meters.
+            Intended for trusted resolvers/forwarders or infrastructure peers.
+          '';
+        };
+
+        allowIPv6 = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "2001:500::/32" ];
+          description = ''
+            Optional IPv6 source CIDRs bypassing DNS flood meters.
+            Intended for trusted resolvers/forwarders or infrastructure peers.
           '';
         };
       };
@@ -2068,7 +2235,9 @@ in
           default = false;
           description = ''
             Enable curated built-in detector pack.
-            This provides service-oriented defaults (SSH, nginx auth, dovecot auth)
+            This provides service-oriented defaults (SSH, nginx auth, dovecot auth,
+            plus optional caddy auth, postfix SASL, control-plane auth, and
+            API-proxy auth templates)
             with profile-based enablement and per-detector tuning.
             Cannot be combined with explicit `lfdDetector.detectors`.
           '';
@@ -2083,6 +2252,13 @@ in
             - server-web: ssh-auth + nginx-auth
             - server-mail: ssh-auth + dovecot-auth
             - server-hardened: ssh-auth + nginx-auth + dovecot-auth
+
+            Additional built-in templates (`caddy-auth`, `postfix-sasl`,
+            `control-plane-auth`, `api-proxy-auth`) are
+            available for opt-in via `detectorPack.caddyAuth.enable = true` and
+            `detectorPack.postfixSasl.enable = true` and
+            `detectorPack.controlPlaneAuth.enable = true` and
+            `detectorPack.apiProxyAuth.enable = true`.
           '';
         };
 
@@ -2269,6 +2445,250 @@ in
             type = types.str;
             default = "lfd:dovecot_auth_failed";
             description = "Reason string for built-in dovecot-auth detector bans.";
+          };
+        };
+
+        caddyAuth = {
+          enable = mkOption {
+            type = types.nullOr types.bool;
+            default = null;
+            description = ''
+              Override profile default for built-in `caddy-auth` detector.
+              `null` means profile-controlled.
+            '';
+          };
+
+          journalUnit = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "caddy.service";
+            description = "Optional systemd unit source for built-in caddy-auth detector.";
+          };
+
+          journalIdentifier = mkOption {
+            type = types.nullOr types.str;
+            default = "caddy";
+            description = "Optional syslog identifier source for built-in caddy-auth detector.";
+          };
+
+          lineContains = mkOption {
+            type = types.nullOr types.str;
+            default = "authentication failed";
+            description = "Optional line filter for built-in caddy-auth detector.";
+          };
+
+          extractRegex = mkOption {
+            type = types.nullOr types.str;
+            default = "\"remote_ip\":\"([0-9A-Fa-f:.]+)\"";
+            example = "\"remote_ip\":\"([0-9A-Fa-f:.]+)\"";
+            description = "Bash regex (capture group 1) for source-IP extraction.";
+          };
+
+          windowSeconds = mkOption {
+            type = types.ints.positive;
+            default = 300;
+            description = "Rolling observation window for built-in caddy-auth detector.";
+          };
+
+          threshold = mkOption {
+            type = types.ints.positive;
+            default = 10;
+            description = "Failure threshold for built-in caddy-auth detector.";
+          };
+
+          banTTLSeconds = mkOption {
+            type = types.ints.positive;
+            default = 900;
+            description = "Temporary ban TTL for built-in caddy-auth detector.";
+          };
+
+          reason = mkOption {
+            type = types.str;
+            default = "lfd:caddy_auth_failed";
+            description = "Reason string for built-in caddy-auth detector bans.";
+          };
+        };
+
+        postfixSasl = {
+          enable = mkOption {
+            type = types.nullOr types.bool;
+            default = null;
+            description = ''
+              Override profile default for built-in `postfix-sasl` detector.
+              `null` means profile-controlled.
+            '';
+          };
+
+          journalUnit = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "postfix.service";
+            description = "Optional systemd unit source for built-in postfix-sasl detector.";
+          };
+
+          journalIdentifier = mkOption {
+            type = types.nullOr types.str;
+            default = "postfix/smtpd";
+            description = "Optional syslog identifier source for built-in postfix-sasl detector.";
+          };
+
+          lineContains = mkOption {
+            type = types.nullOr types.str;
+            default = "SASL";
+            description = "Optional line filter for built-in postfix-sasl detector.";
+          };
+
+          extractRegex = mkOption {
+            type = types.nullOr types.str;
+            default = "\\[([0-9A-Fa-f:.]+)\\]";
+            example = "\\[([0-9A-Fa-f:.]+)\\]";
+            description = "Bash regex (capture group 1) for source-IP extraction.";
+          };
+
+          windowSeconds = mkOption {
+            type = types.ints.positive;
+            default = 300;
+            description = "Rolling observation window for built-in postfix-sasl detector.";
+          };
+
+          threshold = mkOption {
+            type = types.ints.positive;
+            default = 8;
+            description = "Failure threshold for built-in postfix-sasl detector.";
+          };
+
+          banTTLSeconds = mkOption {
+            type = types.ints.positive;
+            default = 900;
+            description = "Temporary ban TTL for built-in postfix-sasl detector.";
+          };
+
+          reason = mkOption {
+            type = types.str;
+            default = "lfd:postfix_sasl_failed";
+            description = "Reason string for built-in postfix-sasl detector bans.";
+          };
+        };
+
+        controlPlaneAuth = {
+          enable = mkOption {
+            type = types.nullOr types.bool;
+            default = null;
+            description = ''
+              Override profile default for built-in `control-plane-auth` detector.
+              `null` means profile-controlled.
+            '';
+          };
+
+          journalUnit = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "nix-csf-control-plane.service";
+            description = "Optional systemd unit source for built-in control-plane-auth detector.";
+          };
+
+          journalIdentifier = mkOption {
+            type = types.nullOr types.str;
+            default = "nix-csf-control-plane";
+            description = "Optional syslog identifier source for built-in control-plane-auth detector.";
+          };
+
+          lineContains = mkOption {
+            type = types.nullOr types.str;
+            default = " 401 ";
+            description = "Optional line filter for built-in control-plane-auth detector.";
+          };
+
+          extractRegex = mkOption {
+            type = types.nullOr types.str;
+            default = "([0-9A-Fa-f:.]+) [A-Z]+ /";
+            example = "([0-9A-Fa-f:.]+) [A-Z]+ /";
+            description = "Bash regex (capture group 1) for source-IP extraction.";
+          };
+
+          windowSeconds = mkOption {
+            type = types.ints.positive;
+            default = 300;
+            description = "Rolling observation window for built-in control-plane-auth detector.";
+          };
+
+          threshold = mkOption {
+            type = types.ints.positive;
+            default = 8;
+            description = "Failure threshold for built-in control-plane-auth detector.";
+          };
+
+          banTTLSeconds = mkOption {
+            type = types.ints.positive;
+            default = 900;
+            description = "Temporary ban TTL for built-in control-plane-auth detector.";
+          };
+
+          reason = mkOption {
+            type = types.str;
+            default = "lfd:control_plane_auth_failed";
+            description = "Reason string for built-in control-plane-auth detector bans.";
+          };
+        };
+
+        apiProxyAuth = {
+          enable = mkOption {
+            type = types.nullOr types.bool;
+            default = null;
+            description = ''
+              Override profile default for built-in `api-proxy-auth` detector.
+              `null` means profile-controlled.
+            '';
+          };
+
+          journalUnit = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "nginx.service";
+            description = "Optional systemd unit source for built-in api-proxy-auth detector.";
+          };
+
+          journalIdentifier = mkOption {
+            type = types.nullOr types.str;
+            default = "nginx";
+            description = "Optional syslog identifier source for built-in api-proxy-auth detector.";
+          };
+
+          lineContains = mkOption {
+            type = types.nullOr types.str;
+            default = " 401 ";
+            description = "Optional line filter for built-in api-proxy-auth detector.";
+          };
+
+          extractRegex = mkOption {
+            type = types.nullOr types.str;
+            default = "client: ([0-9A-Fa-f:.]+)";
+            example = "client: ([0-9A-Fa-f:.]+)";
+            description = "Bash regex (capture group 1) for source-IP extraction.";
+          };
+
+          windowSeconds = mkOption {
+            type = types.ints.positive;
+            default = 300;
+            description = "Rolling observation window for built-in api-proxy-auth detector.";
+          };
+
+          threshold = mkOption {
+            type = types.ints.positive;
+            default = 10;
+            description = "Failure threshold for built-in api-proxy-auth detector.";
+          };
+
+          banTTLSeconds = mkOption {
+            type = types.ints.positive;
+            default = 900;
+            description = "Temporary ban TTL for built-in api-proxy-auth detector.";
+          };
+
+          reason = mkOption {
+            type = types.str;
+            default = "lfd:api_proxy_auth_failed";
+            description = "Reason string for built-in api-proxy-auth detector bans.";
           };
         };
       };
@@ -2495,6 +2915,20 @@ in
         default = "sysadmin";
         description = "Recipient group used in generated Netdata alarm definitions.";
       };
+
+      noiseProfile = mkOption {
+        type = types.enum [ "off" "chartsd-minimal" ];
+        default = "off";
+        example = "chartsd-minimal";
+        description = ''
+          Optional Netdata plugin-noise reduction profile.
+          - off: keep Netdata `charts.d` default collector behavior.
+          - chartsd-minimal: set `enable_all_charts="no"` in generated `charts.d.conf`
+            so only explicitly enabled collectors run (`nix_csf=yes`).
+
+          This is useful when host logs are noisy from unused default `charts.d` modules.
+        '';
+      };
     };
 
     coexistence = {
@@ -2672,6 +3106,15 @@ in
         message = ''
           services.nixCsf.synRateLimit cannot be combined with rateLimits.synFlood.enable.
           Use either the legacy explicit synRateLimit or the synFlood preset.
+        '';
+      }
+      {
+        assertion = !cfg.rateLimits.dnsFlood.enable
+          || cfg.rateLimits.dnsFlood.udpPorts != [ ]
+          || cfg.rateLimits.dnsFlood.tcpPorts != [ ];
+        message = ''
+          services.nixCsf.rateLimits.dnsFlood.enable requires at least one TCP or UDP
+          port selector in rateLimits.dnsFlood.tcpPorts or rateLimits.dnsFlood.udpPorts.
         '';
       }
       {

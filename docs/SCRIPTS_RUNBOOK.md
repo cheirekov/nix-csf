@@ -19,6 +19,7 @@ how they fit the agent/operator workflow.
 | `scripts/validate-fast.sh` | n/a | Compatibility alias to `validate-agent.sh` | Agent |
 | `scripts/validate.sh` | n/a | Full validation (`nix build` checks + VM tests) | Operator (manual) |
 | `scripts/validate-capture.sh` | n/a | Full validation with captured logs and summary extraction | Operator (manual) |
+| `scripts/validate-burnin.sh` | n/a | Repeated full validation runs with consolidated burn-in summary | Operator (manual) |
 | `scripts/release.sh` | n/a | SemVer release commit/tag workflow | Maintainer/operator |
 
 ## Per-Script Usage
@@ -50,6 +51,7 @@ Health, policy mutation, and offender operations:
 
 ```bash
 nix-csfctl --output pretty health
+nix-csfctl --output pretty policy compile --input ./policy-source.json --cluster-output ./cluster-policy.json --dynamic-output ./dynamic-offenders.json
 nix-csfctl policy add deny 203.0.119.9/32
 nix-csfctl policy add deny 203.0.119.140/32 --scope local --node-id edge-us-01 --source lfd
 nix-csfctl policy remove deny 203.0.119.9/32
@@ -58,6 +60,10 @@ nix-csfctl ban-temp 203.0.119.142/32 --ttl 600 --reason lfd:ssh_auth --scope loc
 nix-csfctl unban 203.0.119.142/32 --scope local --node-id edge-us-01
 nix-csfctl promotions --limit 20
 ```
+
+`policy compile` input schema:
+- `clusterPolicy.allow|deny|ignore`: arrays of CIDR strings (or top-level aliases `allow|deny|ignore`)
+- `dynamicOffenders.ban`: array of CIDR strings or objects with `cidr` and optional `ttlSeconds|expiresAt|reason`
 
 ### `nix-csf-import-csf`
 
@@ -142,6 +148,7 @@ Operator lane:
 ```bash
 ./scripts/validate.sh
 ./scripts/validate-capture.sh
+./scripts/validate-burnin.sh --runs 3
 ```
 
 ### `release.sh`
@@ -186,6 +193,7 @@ Audit outputs to review after apply/refresh:
 
 ```bash
 nix-csfctl --output pretty health
+nix-csfctl --output pretty policy compile --input ./policy-source.json --cluster-output ./cluster-policy.json --dynamic-output ./dynamic-offenders.json
 nix-csfctl policy add deny 203.0.119.9/32
 nix-csfctl policy add deny 203.0.119.140/32 --scope local --node-id edge-us-01 --source lfd
 nix-csfctl ban-temp 203.0.119.10/32 --ttl 600 --reason syn_flood
@@ -207,3 +215,29 @@ sudo nft list table inet nix_csf
 ./scripts/release.sh --version <semver> --dry-run
 ./scripts/release.sh --version <semver>
 ```
+
+### 6. Cluster auth token lifecycle
+
+```bash
+sudo install -d -m 700 /run/secrets/nix-csf
+sudo sh -c 'umask 077; openssl rand -hex 32 > /run/secrets/nix-csf/control-plane-token'
+sudo chmod 600 /run/secrets/nix-csf/control-plane-token
+
+nix-csfctl --endpoint https://fw-master.example.org --auth-token-file /run/secrets/nix-csf/control-plane-token health
+sudo systemctl start nix-csf-refresh.service
+sudo grep -E 'nix_csf_auth_token_(candidates|selected_slot)' /var/lib/nix-csf/metrics.prom
+```
+
+Full runbook:
+- `docs/CLUSTER_AUTH_TOKENS.md`
+
+### 7. Security validation and pen-test workflow
+
+Baseline command:
+
+```bash
+./scripts/validate-capture.sh
+```
+
+Full hardening and abuse-replay procedure:
+- `docs/SECURITY_VALIDATION_RUNBOOK.md`

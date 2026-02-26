@@ -1,6 +1,6 @@
 # DELIVERY BOARD — nix-csf
 
-Last updated: 2026-02-25  
+Last updated: 2026-02-26  
 Owner: PM/BA + Security Architect + Nix Module Engineer
 
 ## North Star
@@ -26,21 +26,19 @@ Ship a production-usable NixOS firewall module that is:
 
 | ID | Status | Title | Focus |
 |---|---|---|---|
-| T-047 | IN_PROGRESS | Integration test expansion for gateway + detector flows | VM scenarios for NAT/forward/egress and detector/escalation/cluster propagation paths |
+| TBD | TODO | Future release lane follow-up | GA cut ceremony and post-release stabilization checklist |
 
 ### NEXT
 
 | Priority | ID | Status | Title | Acceptance focus |
 |---|---|---|---|---|
-| 1 | T-048 | TODO | Documentation and deployment blueprints for Stage 1/2 | End-to-end examples (gateway, bastion, app, clustered nodes) |
-| 2 | TBD | TODO | Release-candidate hardening | VM burn-in stability + documentation freeze |
+| 1 | TBD | TODO | Future enhancements triage | Prioritize post-release feature and hardening backlog |
 
 ### LATER
 
 | Priority | ID | Status | Title |
 |---|---|---|---|
-| 1 | TBD | TODO | Optional Netdata plugin-noise cleanup (`otel/freeipmi/logs-management` tuning profile) |
-| 2 | TBD | TODO | Optional policy-as-code authoring helper (`nix-csfctl policy compile`) |
+| 1 | TBD | TODO | Future enhancements backlog (post-RC) |
 
 ## Completed baseline
 
@@ -93,6 +91,19 @@ Ship a production-usable NixOS firewall module that is:
 | T-044 | DONE | Built-in detector pack v2 |
 | T-045 | DONE | Escalation engine v2 |
 | T-046 | DONE | Cluster propagation semantics v2 |
+| T-047 | DONE | Integration test expansion for gateway + detector flows |
+| T-048 | DONE | Documentation and deployment blueprints for Stage 1/2 |
+| T-049 | DONE | Release-candidate hardening |
+| T-050 | DONE | Release-candidate decision package |
+| T-051 | DONE | Optional Netdata plugin-noise cleanup profile |
+| T-052 | DONE | Optional policy-as-code authoring helper |
+| T-053 | DONE | LFD detector pack template expansion |
+| T-054 | DONE | BIND production blueprint and secure cluster/CI workflow |
+| T-055 | DONE | DNS flood controls v1 (nix-csf layer) |
+| T-056 | DONE | Cluster/API auth-failure detector templates |
+| T-057 | DONE | Security validation and pen-test runbook |
+| T-058 | DONE | Control-plane TLS reverse-proxy on dedicated node port |
+| T-059 | DONE | Cluster auth token lifecycle runbook |
 
 ## Triage protocol
 

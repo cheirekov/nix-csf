@@ -100,6 +100,17 @@ Acceptance focus:
 - Application host with multi-detector profile.
 - Cluster policy sharing examples.
 
+### T-049 Release-candidate hardening
+
+- Burn-in validation guidance (KVM primary, TCG fallback notes).
+- Documentation freeze checklist.
+- Evidence packaging before release recommendation.
+
+### T-050 Release-candidate decision package
+
+- Explicit go/no-go recommendation based on hardening evidence.
+- Cut checklist and rollback framing for first production tag.
+
 ## Validation model for this epic
 
 - Agent lane: `./scripts/validate-agent.sh`

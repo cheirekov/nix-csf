@@ -69,7 +69,7 @@
   - interface/zone-aware forward allow model for gateway hosts.
 - Optional egress controls (`T-042`). [done 2026-02-25]
   - output allowlist/denylist for hardened hosts.
-- Gateway-grade test coverage (`T-047`, Stage 1 subset). [in progress 2026-02-25]
+- Gateway-grade test coverage (`T-047`, Stage 1 subset). [done 2026-02-25]
   - VM validation for NAT + forward + egress combinations.
 
 ## Phase 6 — Detector/escalation expansion (new epic / Stage 2)
@@ -82,7 +82,49 @@
   - normalized temp-ban and permanent-promotion path across sources.
 - Cluster propagation semantics v2 (`T-046`). [done 2026-02-25]
   - controlled sharing for temporary and permanent actions.
-- Documentation blueprints and examples (`T-048`):
+- Documentation blueprints and examples (`T-048`). [done 2026-02-25]
   - deployment patterns for standalone and clustered nodes.
-- Gateway/detector integration coverage (`T-047`, Stage 2 subset). [in progress 2026-02-25]
+- Gateway/detector integration coverage (`T-047`, Stage 2 subset). [done 2026-02-25]
   - regression checks for detector->ban->propagation pipeline.
+
+## Phase 7 — Release-candidate hardening
+
+- Release-candidate hardening checklist (`T-049`). [done 2026-02-26]
+  - VM burn-in guidance for KVM and TCG environments,
+  - documentation freeze checklist,
+  - pre-release validation evidence contract.
+
+## Phase 8 — RC decision and cut readiness
+
+- Release-candidate decision package (`T-050`). [done 2026-02-26]
+  - evidence-backed RC recommendation,
+  - cut checklist and rollback framing for first production tag.
+
+## Phase 9 — Post-RC operator polish
+
+- Optional Netdata plugin-noise cleanup profile (`T-051`). [done 2026-02-26]
+  - reduce non-critical plugin warnings in default Netdata deployments,
+  - preserve `nix_csf.*` chart collection behavior.
+
+## Phase 10 — Policy authoring ergonomics
+
+- Optional policy-as-code authoring helper (`T-052`). [done 2026-02-26]
+  - `nix-csfctl policy compile` workflow for authoring and validation,
+  - deterministic compile output for CI/operator review.
+
+## Phase 11 — Production hardening extensions
+
+- Detector pack template expansion (`T-053`). [done 2026-02-26]
+  - added curated templates for additional auth-facing services.
+- BIND production blueprint and secure cluster/CI workflow (`T-054`). [done 2026-02-26]
+  - authoritative DNS production pattern and CI temporary access model.
+- DNS flood controls v1 (`T-055`). [done 2026-02-26]
+  - DNS-port-specific UDP/TCP meters with trusted-source bypass selectors.
+- Cluster/API auth-failure detector templates (`T-056`). [done 2026-02-26]
+  - detector-pack templates for control-plane and API proxy auth failures.
+- Security validation and pen-test runbook (`T-057`). [done 2026-02-26]
+  - reproducible ingress/flood/auth-abuse validation workflow for operations.
+- Control-plane TLS reverse-proxy on dedicated node port (`T-058`). [done 2026-02-26]
+  - secure exposure pattern for non-80/443 API endpoints.
+- Cluster auth token lifecycle runbook (`T-059`). [done 2026-02-26]
+  - token generation/rotation/verification workflow.

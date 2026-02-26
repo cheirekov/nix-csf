@@ -49,6 +49,8 @@ The script performs:
 
 - `docs/SESSION_BRIEF.md` reflects active release ticket scope.
 - `docs/DELIVERY_BOARD.md` and `docs/PM_BA_CHANGELOG.md` are updated.
+- `docs/RELEASE_CANDIDATE_HARDENING.md` checklist is satisfied.
+- `docs/RELEASE_CANDIDATE_DECISION.md` contains explicit go/no-go recommendation.
 - `nix flake check "path:$(pwd)" --all-systems --no-build` passes.
 - `./scripts/validate.sh` passes.
 - README reflects any behavior/API changes in the release.

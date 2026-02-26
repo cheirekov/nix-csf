@@ -59,6 +59,9 @@ If the UI returns `File does not exist, or is not accessible:`, switch to `pkgs.
       updateEvery = 15;
       installHealthAlarms = true;
       alertRecipient = "sysadmin";
+      # Optional: reduce noisy default charts.d module checks (libreswan/opensips/etc.).
+      # Keeps nix_csf charts enabled.
+      noiseProfile = "chartsd-minimal"; # off | chartsd-minimal
       # metricsFile = "/custom/path/nix-csf.prom"; # optional override
     };
   };
@@ -105,6 +108,18 @@ Check recent collector/alarm logs:
 ```bash
 sudo journalctl -u netdata -n 120 --no-pager
 ```
+
+## Optional noise profile
+
+If Netdata logs are noisy with non-critical `charts.d` module checks (for example
+`libreswan` or `opensips` command-not-found checks), enable:
+
+```nix
+services.nixCsf.netdata.noiseProfile = "chartsd-minimal";
+```
+
+This sets `enable_all_charts="no"` in generated `/etc/netdata/conf.d/charts.d.conf`
+and keeps `nix_csf=yes`, so only explicitly enabled `charts.d` collectors run.
 
 ## Known failure mode (`systemd-cat-native: command not found`)
 

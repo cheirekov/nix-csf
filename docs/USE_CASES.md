@@ -292,6 +292,33 @@ nix-csfctl promotions --limit 20
 sudo systemctl start nix-csf-refresh.service
 ```
 
+Policy-as-code compile example (offline authoring + CI review path):
+
+```json
+{
+  "clusterPolicy": {
+    "allow": [ "203.0.113.1/32" ],
+    "deny": [ "198.51.100.0/24" ],
+    "ignore": [ "203.0.113.77/32" ]
+  },
+  "dynamicOffenders": {
+    "ban": [
+      "203.0.113.200/32",
+      { "cidr": "2001:db8::beef/128", "ttlSeconds": 900, "reason": "lfd:ssh_auth" }
+    ]
+  }
+}
+```
+
+```bash
+nix-csfctl --output pretty policy compile \
+  --input ./policy-source.json \
+  --policy-revision prod-policy-r42 \
+  --dynamic-revision prod-dyn-r42 \
+  --cluster-output ./cluster-policy.json \
+  --dynamic-output ./dynamic-offenders.json
+```
+
 Propagation v2 snapshot notes:
 
 - snapshots include `lastMutationId` for replay-safe polling,
@@ -489,6 +516,10 @@ services.nixCsf = {
       profile = "server-web"; # ssh-auth + nginx-auth
       sshAuth.threshold = 5;
       nginxAuth.threshold = 10;
+      caddyAuth.enable = true; # optional template
+      postfixSasl.enable = true; # optional template
+      controlPlaneAuth.enable = true; # optional template
+      apiProxyAuth.enable = true; # optional template
     };
     refreshAfterBan = true;
     schedule.onCalendar = "minutely";
@@ -510,6 +541,7 @@ sudo nft list set inet nix_csf dynamic_ban_ipv4
 
 For deeper details and guardrails, see `docs/LFD_DETECTOR.md`.
 Use `lfdDetector.detectors` only when you need custom sources/patterns and do not enable `lfdDetector.detectorPack`.
+Detector pack templates available: `ssh-auth`, `nginx-auth`, `dovecot-auth`, `caddy-auth`, `postfix-sasl`.
 
 ## 16) fail2ban adapter (`fail2banAdapter.*`)
 
@@ -907,3 +939,20 @@ Guardrails:
 
 - `egress.enable = false` keeps output policy lockout-safe (`accept`).
 - `egress.defaultPolicy = "drop"` requires at least one explicit allow selector.
+
+## 22) Authoritative DNS (BIND) production profile
+
+Use this for main/backup authoritative DNS nodes with cluster auth and CI-safe deployment windows.
+
+Key points:
+
+- keep DNS open on both transports: `openUDPPorts = [ 53 ]`, `openTCPPorts = [ 53 ]`,
+- combine `nix-csf` flood controls (`synFlood`, `connFlood`, `dnsFlood`) with BIND-native response-rate limiting,
+- avoid blanket `ignore` for root name server addresses,
+- use authenticated `clusterPolicy` / `dynamicOffenders` pull with token rotation overlap,
+- for CI deployment, add a scoped temporary allow before deploy and always remove it in cleanup.
+
+See full blueprint and command examples:
+
+- `docs/BIND_PRODUCTION_BLUEPRINT.md`
+- `docs/CONTROL_PLANE_TLS_PROXY_POC.md` (dedicated non-80/443 API port via reverse proxy)

@@ -1,33 +1,34 @@
 # Session Brief
 
-Last updated: 2026-02-25  
+Last updated: 2026-02-26  
 Owner: PM/BA + Codex
 
-## 0) Current batch snapshot (`INTEGRATION-EXPANSION-047`)
+## 0) Current batch snapshot (`SECURITY-RUNBOOK-057`)
 
 - Batch type: `IMPLEMENTATION`
-- Active ticket: `T-047` (`IN_PROGRESS`)
+- Active ticket: none (`WIP` slot open)
 - Status:
-  - `T-046` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
-  - `T-047` implementation started in agent lane.
-- Scope delivered in this batch:
-  - `T-046` closure bookkeeping completed:
-    - board/roadmap/changelog/session state transitions to `DONE`,
-  - `T-047` first expansion chunk implemented in integration VM suite:
-    - added new `gatewaydetector` scenario in `tests/integration.nix`,
-    - gateway datapath checks now cover:
-      - NAT table generation (`ip` nat table + prerouting/postrouting behavior),
-      - forwarding matrix allow rule rendering for LAN->WAN flow,
-      - output policy hardening (`egress.defaultPolicy = drop`),
-    - detector/escalation/cluster path checks now include:
-      - journal-driven SSH signal -> LFD detector temp-ban mutation,
-      - escalation promotion (`tempBanThreshold = 1`) into cluster deny snapshot,
-      - dynamic offender cleanup after promotion and nft deny set materialization.
-- Validation evidence (agent lane):
-  - `bash -n scripts/validate-agent.sh`
-  - `./scripts/validate-agent.sh`
-- Next operator step:
-  - run `./scripts/validate-capture.sh` and share summary on failure (or `[nix-csf] validation succeeded` on success).
+  - `T-056` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
+  - `T-057` closed (`DONE`) after operator full-validation confirmation (`[nix-csf] validation succeeded`).
+  - agent validation evidence for the current lane: `./scripts/validate-agent.sh` passed.
+  - release target set to `v1.1.1` with bundled ticket scope `T-039`..`T-059`.
+- Scope delivered in latest completed batch (`T-057`):
+  - added `docs/SECURITY_VALIDATION_RUNBOOK.md` with reproducible hardening checks:
+    - ingress validation (`nmap`),
+    - DNS flood pressure checks (`hping3`),
+    - control-plane auth abuse replay,
+    - detector auth-failure verification,
+    - CI allow/remove cleanup validation,
+  - linked runbook from:
+    - `README.md`,
+    - `docs/SCRIPTS_RUNBOOK.md`,
+    - `docs/DEPLOYMENT_BLUEPRINTS.md`,
+    - `docs/BIND_PRODUCTION_BLUEPRINT.md`.
+- Validation model:
+  - agent lane: `./scripts/validate-agent.sh`,
+  - operator lane: `./scripts/validate-capture.sh`.
+- Next candidate objective:
+  - release-lane follow-up triage (`TBD`).
 
 ## 1) Batch contract
 

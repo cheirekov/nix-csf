@@ -88,6 +88,21 @@ egress_allow_v4_count="0"
 egress_allow_v6_count="0"
 egress_deny_v4_count="0"
 egress_deny_v6_count="0"
+dns_flood_enabled="false"
+dns_flood_udp_rate=""
+dns_flood_udp_burst="0"
+dns_flood_tcp_rate=""
+dns_flood_tcp_burst="0"
+dns_flood_udp_port_count="0"
+dns_flood_tcp_port_count="0"
+dns_flood_allow_source_v4_count="0"
+dns_flood_allow_source_v6_count="0"
+dns_flood_allow_v4_count="0"
+dns_flood_allow_v6_count="0"
+dns_flood_allow_v4_enforced="false"
+dns_flood_allow_v6_enforced="false"
+dns_flood_udp_burst_metric="0"
+dns_flood_tcp_burst_metric="0"
 declare -a forwarding_rule_ports=()
 declare -a forwarding_rule_in_ifaces=()
 declare -a forwarding_rule_out_ifaces=()
@@ -98,6 +113,10 @@ declare -a forwarding_rule_destination_v6=()
 declare -a egress_trusted_interfaces=()
 declare -a egress_allow_tcp_ports=()
 declare -a egress_allow_udp_ports=()
+declare -a dns_flood_udp_ports=()
+declare -a dns_flood_tcp_ports=()
+declare -a dns_flood_allow_ipv4=()
+declare -a dns_flood_allow_ipv6=()
 
 log_event() {
   local sink="$1"
@@ -1152,6 +1171,7 @@ write_metrics() {
     printf 'nix_csf_feature_enabled{feature="legacy_syn_rate_limit"} %s\n' "$(bool_to_num "${legacy_syn_rate_limit_enabled}")"
     printf 'nix_csf_feature_enabled{feature="syn_flood"} %s\n' "$(bool_to_num "${syn_flood_enabled}")"
     printf 'nix_csf_feature_enabled{feature="conn_flood"} %s\n' "$(bool_to_num "${conn_flood_enabled}")"
+    printf 'nix_csf_feature_enabled{feature="dns_flood"} %s\n' "$(bool_to_num "${dns_flood_enabled}")"
     printf 'nix_csf_feature_enabled{feature="icmp_rate_limit"} %s\n' "$(bool_to_num "${icmp_rate_limit_effective}")"
     echo "# HELP nix_csf_coexistence_profile Active coexistence profile (1 active, 0 inactive)."
     echo "# TYPE nix_csf_coexistence_profile gauge"
@@ -1235,6 +1255,8 @@ write_metrics() {
     printf 'nix_csf_set_entries{set="cluster_ignore_ipv6"} %s\n' "${cluster_ignore_v6_count}"
     printf 'nix_csf_set_entries{set="dynamic_ban_ipv4"} %s\n' "${dynamic_ban_v4_count}"
     printf 'nix_csf_set_entries{set="dynamic_ban_ipv6"} %s\n' "${dynamic_ban_v6_count}"
+    printf 'nix_csf_set_entries{set="dns_flood_allow_ipv4"} %s\n' "${dns_flood_allow_v4_count}"
+    printf 'nix_csf_set_entries{set="dns_flood_allow_ipv6"} %s\n' "${dns_flood_allow_v6_count}"
     printf 'nix_csf_set_entries{set="egress_allow_ipv4"} %s\n' "${egress_allow_v4_count}"
     printf 'nix_csf_set_entries{set="egress_allow_ipv6"} %s\n' "${egress_allow_v6_count}"
     printf 'nix_csf_set_entries{set="egress_deny_ipv4"} %s\n' "${egress_deny_v4_count}"
@@ -1275,6 +1297,10 @@ write_metrics() {
     printf 'nix_csf_source_count{source="egress_trusted_interfaces"} %s\n' "${egress_trusted_interface_count}"
     printf 'nix_csf_source_count{source="egress_allow_tcp_ports"} %s\n' "${egress_allow_tcp_port_count}"
     printf 'nix_csf_source_count{source="egress_allow_udp_ports"} %s\n' "${egress_allow_udp_port_count}"
+    printf 'nix_csf_source_count{source="dns_flood_allow_ipv4"} %s\n' "${dns_flood_allow_source_v4_count}"
+    printf 'nix_csf_source_count{source="dns_flood_allow_ipv6"} %s\n' "${dns_flood_allow_source_v6_count}"
+    printf 'nix_csf_source_count{source="dns_flood_udp_ports"} %s\n' "${dns_flood_udp_port_count}"
+    printf 'nix_csf_source_count{source="dns_flood_tcp_ports"} %s\n' "${dns_flood_tcp_port_count}"
     echo "# HELP nix_csf_auth_token_candidates Number of configured auth token candidates per remote source."
     echo "# TYPE nix_csf_auth_token_candidates gauge"
     printf 'nix_csf_auth_token_candidates{source="cluster_policy"} %s\n' "${cluster_policy_auth_token_candidate_count}"
@@ -1311,6 +1337,8 @@ write_metrics() {
     echo "# TYPE nix_csf_rate_limit_burst_packets gauge"
     printf 'nix_csf_rate_limit_burst_packets{limit="syn_flood",preset="%s"} %s\n' "${syn_flood_preset}" "${syn_flood_burst}"
     printf 'nix_csf_rate_limit_burst_packets{limit="conn_flood",preset="%s"} %s\n' "${conn_flood_preset}" "${conn_flood_burst}"
+    printf 'nix_csf_rate_limit_burst_packets{limit="dns_flood_udp",preset="custom"} %s\n' "${dns_flood_udp_burst_metric}"
+    printf 'nix_csf_rate_limit_burst_packets{limit="dns_flood_tcp",preset="custom"} %s\n' "${dns_flood_tcp_burst_metric}"
   } > "${tmp_metrics}"
 
   install -m 0644 "${tmp_metrics}" "${metrics_output_file}"
@@ -1342,6 +1370,15 @@ conn_flood_enabled="$(jq -r '.rateLimits.connFlood.enable // false' "${CONFIG_FI
 conn_flood_preset="$(jq -r '.rateLimits.connFlood.preset // "balanced"' "${CONFIG_FILE}")"
 conn_flood_rate="$(jq -r '.rateLimits.connFlood.rate // ""' "${CONFIG_FILE}")"
 conn_flood_burst="$(jq -r '.rateLimits.connFlood.burst // 0' "${CONFIG_FILE}")"
+dns_flood_enabled="$(jq -r '.rateLimits.dnsFlood.enable // false' "${CONFIG_FILE}")"
+dns_flood_udp_rate="$(jq -r '.rateLimits.dnsFlood.udpRate // "400/second"' "${CONFIG_FILE}")"
+dns_flood_udp_burst="$(jq -r '.rateLimits.dnsFlood.udpBurst // 800' "${CONFIG_FILE}")"
+dns_flood_tcp_rate="$(jq -r '.rateLimits.dnsFlood.tcpRate // "120/second"' "${CONFIG_FILE}")"
+dns_flood_tcp_burst="$(jq -r '.rateLimits.dnsFlood.tcpBurst // 240' "${CONFIG_FILE}")"
+mapfile -t dns_flood_udp_ports < <(jq -r '.rateLimits.dnsFlood.udpPorts[]?' "${CONFIG_FILE}")
+mapfile -t dns_flood_tcp_ports < <(jq -r '.rateLimits.dnsFlood.tcpPorts[]?' "${CONFIG_FILE}")
+mapfile -t dns_flood_allow_ipv4 < <(jq -r '.rateLimits.dnsFlood.allowIPv4[]?' "${CONFIG_FILE}")
+mapfile -t dns_flood_allow_ipv6 < <(jq -r '.rateLimits.dnsFlood.allowIPv6[]?' "${CONFIG_FILE}")
 structured_logging="$(jq -r '.observability.structuredLogging // false' "${CONFIG_FILE}")"
 metrics_enabled="$(jq -r '.observability.metrics.enable // false' "${CONFIG_FILE}")"
 metrics_output_file="$(jq -r '.observability.metrics.outputFile // "/var/lib/nix-csf/metrics.prom"' "${CONFIG_FILE}")"
@@ -1560,6 +1597,7 @@ log_event "stdout" "info" "run_start" \
   "forwarding_rules_declared=${forwarding_rule_declared_count}" \
   "egress_enabled=${egress_enabled}" \
   "egress_policy=${egress_effective_policy}" \
+  "dns_flood_enabled=${dns_flood_enabled}" \
   "icmp_profile=${icmp_profile}" \
   "icmp_rate_limit=${icmp_rate_limit_effective}"
 
@@ -1573,6 +1611,41 @@ if [[ "${conn_flood_enabled}" == "true" ]]; then
   if [[ -z "${conn_flood_rate}" || ! "${conn_flood_burst}" =~ ^[1-9][0-9]*$ ]]; then
     fail "rateLimits.connFlood requires a non-empty rate and positive burst"
   fi
+fi
+
+if [[ "${dns_flood_enabled}" == "true" ]]; then
+  if [[ -z "${dns_flood_udp_rate}" || ! "${dns_flood_udp_burst}" =~ ^[1-9][0-9]*$ ]]; then
+    fail "rateLimits.dnsFlood.udpRate/udpBurst require a non-empty rate and positive burst"
+  fi
+  if [[ -z "${dns_flood_tcp_rate}" || ! "${dns_flood_tcp_burst}" =~ ^[1-9][0-9]*$ ]]; then
+    fail "rateLimits.dnsFlood.tcpRate/tcpBurst require a non-empty rate and positive burst"
+  fi
+  if [[ "${#dns_flood_udp_ports[@]}" -eq 0 && "${#dns_flood_tcp_ports[@]}" -eq 0 ]]; then
+    fail "rateLimits.dnsFlood.enable requires at least one port in udpPorts or tcpPorts"
+  fi
+
+  dns_flood_udp_port_count="${#dns_flood_udp_ports[@]}"
+  dns_flood_tcp_port_count="${#dns_flood_tcp_ports[@]}"
+  dns_flood_allow_source_v4_count="${#dns_flood_allow_ipv4[@]}"
+  dns_flood_allow_source_v6_count="${#dns_flood_allow_ipv6[@]}"
+  dns_flood_udp_burst_metric="${dns_flood_udp_burst}"
+  dns_flood_tcp_burst_metric="${dns_flood_tcp_burst}"
+
+  for port in "${dns_flood_udp_ports[@]}"; do
+    validate_port_number_token "rateLimits.dnsFlood.udpPorts" "${port}"
+  done
+
+  for port in "${dns_flood_tcp_ports[@]}"; do
+    validate_port_number_token "rateLimits.dnsFlood.tcpPorts" "${port}"
+  done
+
+  for cidr in "${dns_flood_allow_ipv4[@]}"; do
+    validate_ipv4_or_cidr_token "rateLimits.dnsFlood.allowIPv4" "${cidr}"
+  done
+
+  for cidr in "${dns_flood_allow_ipv6[@]}"; do
+    validate_ipv6_or_cidr_token "rateLimits.dnsFlood.allowIPv6" "${cidr}"
+  done
 fi
 
 jq -r '.allowIPv4[]?' "${CONFIG_FILE}" > "${TMP_DIR}/allow-v4.raw"
@@ -1697,6 +1770,22 @@ sort_unique "${TMP_DIR}/egress-allow-v4.norm" "${TMP_DIR}/egress-allow-v4.txt"
 sort_unique "${TMP_DIR}/egress-allow-v6.norm" "${TMP_DIR}/egress-allow-v6.txt"
 sort_unique "${TMP_DIR}/egress-deny-v4.norm" "${TMP_DIR}/egress-deny-v4.txt"
 sort_unique "${TMP_DIR}/egress-deny-v6.norm" "${TMP_DIR}/egress-deny-v6.txt"
+
+: > "${TMP_DIR}/dns-flood-allow-v4.raw"
+: > "${TMP_DIR}/dns-flood-allow-v6.raw"
+if [[ "${dns_flood_enabled}" == "true" ]]; then
+  if [[ "${#dns_flood_allow_ipv4[@]}" -gt 0 ]]; then
+    printf '%s\n' "${dns_flood_allow_ipv4[@]}" >> "${TMP_DIR}/dns-flood-allow-v4.raw"
+  fi
+  if [[ "${#dns_flood_allow_ipv6[@]}" -gt 0 ]]; then
+    printf '%s\n' "${dns_flood_allow_ipv6[@]}" >> "${TMP_DIR}/dns-flood-allow-v6.raw"
+  fi
+fi
+
+normalize_cidrs "${TMP_DIR}/dns-flood-allow-v4.raw" "${TMP_DIR}/dns-flood-allow-v4.norm" "${TMP_DIR}/dns-flood-allow-v4.ignore"
+normalize_cidrs "${TMP_DIR}/dns-flood-allow-v6.raw" "${TMP_DIR}/dns-flood-allow-v6.ignore" "${TMP_DIR}/dns-flood-allow-v6.norm"
+sort_unique "${TMP_DIR}/dns-flood-allow-v4.norm" "${TMP_DIR}/dns-flood-allow-v4.txt"
+sort_unique "${TMP_DIR}/dns-flood-allow-v6.norm" "${TMP_DIR}/dns-flood-allow-v6.txt"
 
 country_enabled="$(jq -r '.country.enable' "${CONFIG_FILE}")"
 country_mode="$(jq -r '.country.mode // "deny"' "${CONFIG_FILE}")"
@@ -2428,6 +2517,14 @@ egress_allow_v4_count="$(count_file_lines "${TMP_DIR}/egress-allow-v4.txt")"
 egress_allow_v6_count="$(count_file_lines "${TMP_DIR}/egress-allow-v6.txt")"
 egress_deny_v4_count="$(count_file_lines "${TMP_DIR}/egress-deny-v4.txt")"
 egress_deny_v6_count="$(count_file_lines "${TMP_DIR}/egress-deny-v6.txt")"
+dns_flood_allow_v4_count="$(count_file_lines "${TMP_DIR}/dns-flood-allow-v4.txt")"
+dns_flood_allow_v6_count="$(count_file_lines "${TMP_DIR}/dns-flood-allow-v6.txt")"
+if [[ "${dns_flood_allow_v4_count}" != "0" ]]; then
+  dns_flood_allow_v4_enforced="true"
+fi
+if [[ "${dns_flood_allow_v6_count}" != "0" ]]; then
+  dns_flood_allow_v6_enforced="true"
+fi
 egress_trusted_interface_count="${#egress_trusted_interfaces[@]}"
 egress_allow_tcp_port_count="${#egress_allow_tcp_ports[@]}"
 egress_allow_udp_port_count="${#egress_allow_udp_ports[@]}"
@@ -2481,6 +2578,10 @@ log_event "stdout" "info" "set_counts" \
   "egress_trusted_interfaces=${egress_trusted_interface_count}" \
   "egress_allow_tcp_ports=${egress_allow_tcp_port_count}" \
   "egress_allow_udp_ports=${egress_allow_udp_port_count}" \
+  "dns_flood_allow_v4=${dns_flood_allow_v4_count}" \
+  "dns_flood_allow_v6=${dns_flood_allow_v6_count}" \
+  "dns_flood_udp_ports=${dns_flood_udp_port_count}" \
+  "dns_flood_tcp_ports=${dns_flood_tcp_port_count}" \
   "dynamic_ban_v4=${dynamic_ban_v4_count}" \
   "dynamic_ban_v6=${dynamic_ban_v6_count}"
 
@@ -2583,6 +2684,8 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
   emit_set "feed_ipv6" "ipv6_addr" "${TMP_DIR}/feeds-v6.txt"
   emit_set "dynamic_ban_ipv4" "ipv4_addr" "${TMP_DIR}/dynamic-ban-v4.txt" "interval,timeout"
   emit_set "dynamic_ban_ipv6" "ipv6_addr" "${TMP_DIR}/dynamic-ban-v6.txt" "interval,timeout"
+  emit_set "dns_flood_allow_ipv4" "ipv4_addr" "${TMP_DIR}/dns-flood-allow-v4.txt"
+  emit_set "dns_flood_allow_ipv6" "ipv6_addr" "${TMP_DIR}/dns-flood-allow-v6.txt"
   emit_set "egress_allow_ipv4" "ipv4_addr" "${TMP_DIR}/egress-allow-v4.txt"
   emit_set "egress_allow_ipv6" "ipv6_addr" "${TMP_DIR}/egress-allow-v6.txt"
   emit_set "egress_deny_ipv4" "ipv4_addr" "${TMP_DIR}/egress-deny-v4.txt"
@@ -2612,6 +2715,44 @@ tmp_rules="${TMP_DIR}/ruleset.nft"
   if [[ "${conn_flood_enabled}" == "true" ]]; then
     printf '    ct state new meter conn_flood_v4 { ip saddr limit rate over %s burst %s packets } drop\n' "${conn_flood_rate}" "${conn_flood_burst}"
     printf '    ct state new meter conn_flood_v6 { ip6 saddr limit rate over %s burst %s packets } drop\n' "${conn_flood_rate}" "${conn_flood_burst}"
+  fi
+
+  if [[ "${dns_flood_enabled}" == "true" ]]; then
+    if [[ "${#dns_flood_udp_ports[@]}" -gt 0 ]]; then
+      if [[ "${dns_flood_allow_v4_enforced}" == "true" ]]; then
+        printf '    ip saddr != @dns_flood_allow_ipv4 udp dport { %s } meter dns_udp_flood_v4 { ip saddr limit rate over %s burst %s packets } drop\n' \
+          "$(render_port_set dns_flood_udp_ports)" "${dns_flood_udp_rate}" "${dns_flood_udp_burst}"
+      else
+        printf '    udp dport { %s } meter dns_udp_flood_v4 { ip saddr limit rate over %s burst %s packets } drop\n' \
+          "$(render_port_set dns_flood_udp_ports)" "${dns_flood_udp_rate}" "${dns_flood_udp_burst}"
+      fi
+
+      if [[ "${dns_flood_allow_v6_enforced}" == "true" ]]; then
+        printf '    ip6 saddr != @dns_flood_allow_ipv6 udp dport { %s } meter dns_udp_flood_v6 { ip6 saddr limit rate over %s burst %s packets } drop\n' \
+          "$(render_port_set dns_flood_udp_ports)" "${dns_flood_udp_rate}" "${dns_flood_udp_burst}"
+      else
+        printf '    udp dport { %s } meter dns_udp_flood_v6 { ip6 saddr limit rate over %s burst %s packets } drop\n' \
+          "$(render_port_set dns_flood_udp_ports)" "${dns_flood_udp_rate}" "${dns_flood_udp_burst}"
+      fi
+    fi
+
+    if [[ "${#dns_flood_tcp_ports[@]}" -gt 0 ]]; then
+      if [[ "${dns_flood_allow_v4_enforced}" == "true" ]]; then
+        printf '    ip saddr != @dns_flood_allow_ipv4 tcp flags syn ct state new tcp dport { %s } meter dns_tcp_flood_v4 { ip saddr limit rate over %s burst %s packets } drop\n' \
+          "$(render_port_set dns_flood_tcp_ports)" "${dns_flood_tcp_rate}" "${dns_flood_tcp_burst}"
+      else
+        printf '    tcp flags syn ct state new tcp dport { %s } meter dns_tcp_flood_v4 { ip saddr limit rate over %s burst %s packets } drop\n' \
+          "$(render_port_set dns_flood_tcp_ports)" "${dns_flood_tcp_rate}" "${dns_flood_tcp_burst}"
+      fi
+
+      if [[ "${dns_flood_allow_v6_enforced}" == "true" ]]; then
+        printf '    ip6 saddr != @dns_flood_allow_ipv6 tcp flags syn ct state new tcp dport { %s } meter dns_tcp_flood_v6 { ip6 saddr limit rate over %s burst %s packets } drop\n' \
+          "$(render_port_set dns_flood_tcp_ports)" "${dns_flood_tcp_rate}" "${dns_flood_tcp_burst}"
+      else
+        printf '    tcp flags syn ct state new tcp dport { %s } meter dns_tcp_flood_v6 { ip6 saddr limit rate over %s burst %s packets } drop\n' \
+          "$(render_port_set dns_flood_tcp_ports)" "${dns_flood_tcp_rate}" "${dns_flood_tcp_burst}"
+      fi
+    fi
   fi
 
   echo "    ip saddr @deny_ipv4 drop"

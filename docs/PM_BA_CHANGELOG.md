@@ -1,5 +1,410 @@
 # PM/BA Changelog
 
+## 2026-02-26 — Release `v1.1.1` (firewall ownership + LFD expansion bundle)
+
+- Release version: `1.1.1`
+- Included tickets:
+  - `T-039`, `T-040`, `T-041`, `T-042`, `T-043`, `T-044`, `T-045`, `T-046`, `T-047`, `T-048`, `T-049`, `T-050`, `T-051`, `T-052`, `T-053`, `T-054`, `T-055`, `T-056`, `T-057`, `T-058`, `T-059`
+- Summary:
+  - promotes the Stage 1/2 epic outcomes into release line `1.1.1`,
+  - bundles NAT/forward/egress ownership, detector/escalation/cluster v2, expanded integration coverage, and production runbooks.
+- Validation evidence:
+  - operator: `[nix-csf] validation succeeded`
+  - burn-in: `./scripts/validate-burnin.sh` reported 3/3 successful runs
+
+## 2026-02-26 — `T-057` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-057` (`DONE`)
+- Summary:
+  - delivered `docs/SECURITY_VALIDATION_RUNBOOK.md` with reproducible pre-release and production hardening checks:
+    - ingress surface validation (`nmap`),
+    - DNS flood pressure checks (`hping3`),
+    - control-plane auth abuse replay,
+    - detector auth-failure path verification,
+    - CI temporary allow/remove cleanup validation,
+  - linked runbook from:
+    - `README.md`,
+    - `docs/SCRIPTS_RUNBOOK.md`,
+    - `docs/DEPLOYMENT_BLUEPRINTS.md`,
+    - `docs/BIND_PRODUCTION_BLUEPRINT.md`.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed),
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - workflow moved to release-lane follow-up triage (`TBD`).
+
+## 2026-02-26 — `T-056` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-056` (`DONE`)
+- Summary:
+  - detector-pack auth templates accepted:
+    - `control-plane-auth`,
+    - `api-proxy-auth`,
+  - docs/examples/eval coverage aligned for both templates.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed),
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - workflow advanced to `T-057` (security validation and pen-test runbook).
+
+## 2026-02-26 — Batch AUTH-DETECTOR-TEMPLATES-056 (implementation lane)
+
+- Ticket(s): `T-056` (`IN_PROGRESS`)
+- Summary:
+  - implemented detector-pack expansion for cluster/API auth-failure workflows:
+    - added built-in templates:
+      - `control-plane-auth`,
+      - `api-proxy-auth`,
+    - integrated templates into `lfdDetector.detectorPack` profile/option model with conservative defaults,
+    - extended eval guard (`eval-lfd-detector-pack`) and detector docs/examples for new templates.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - operator validation evidence required before closure:
+    - `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`,
+    - or failure summary path under `.artifacts/validate/*-summary.log`.
+
+## 2026-02-26 — `T-055` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-055` (`DONE`)
+- Summary:
+  - DNS flood controls v1 accepted with module/runtime/tests/docs updates.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed),
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - workflow advanced to `T-056` (cluster/API auth-failure detector templates).
+
+## 2026-02-26 — Batch DNS-FLOOD-CONTROLS-055 (implementation lane)
+
+- Ticket(s): `T-055` (`IN_PROGRESS`)
+- Summary:
+  - implemented DNS-focused flood controls at nix-csf layer:
+    - new module API: `services.nixCsf.rateLimits.dnsFlood.*`,
+    - supports UDP/TCP DNS-port-specific per-source meters,
+    - supports optional trusted-source bypass selectors (`allowIPv4`, `allowIPv6`),
+    - adds rule rendering and validation in `scripts/nix-csf-apply.sh`,
+    - adds metrics for feature state, allow-set cardinality, source selectors, and DNS flood burst values,
+  - extended smoke coverage (`tests/smoke.nix`) with DNS flood rule and metrics assertions,
+  - updated docs:
+    - `docs/BIND_PRODUCTION_BLUEPRINT.md`,
+    - `docs/USE_CASES.md`,
+    - `README.md`.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - operator lane evidence required for closure:
+    - `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`,
+    - or failure summary path under `.artifacts/validate/*-summary.log`.
+  - after operator confirmation, close `T-055` and advance to `T-056`.
+
+## 2026-02-26 — `T-059` closure (cluster auth token lifecycle runbook)
+
+- Ticket(s): `T-059` (`DONE`)
+- Summary:
+  - delivered a dedicated token operations runbook:
+    - added `docs/CLUSTER_AUTH_TOKENS.md`,
+    - documented secure token generation and validation commands,
+    - documented current rotation semantics (single active control-plane token + worker overlap via `authTokenFiles`),
+    - documented verification and troubleshooting for auth slot fallback metrics/logs,
+  - linked runbook from:
+    - `README.md`,
+    - `docs/SCRIPTS_RUNBOOK.md`,
+    - `docs/DEPLOYMENT_BLUEPRINTS.md`.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - next execution candidate remains `T-055` (DNS flood controls v1).
+
+## 2026-02-26 — `T-058` closure (TLS reverse-proxy dedicated-port POC)
+
+- Ticket(s): `T-058` (`DONE`)
+- Summary:
+  - delivered secure exposure pattern for control-plane API on dedicated non-80/443 port:
+    - added `docs/CONTROL_PLANE_TLS_PROXY_POC.md`,
+    - linked POC in `README.md`, `docs/BIND_PRODUCTION_BLUEPRINT.md`, `docs/USE_CASES.md`, and `docs/DEPLOYMENT_BLUEPRINTS.md`,
+    - documented ACME challenge constraints and internal-PKI fallback for dedicated API ports.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - next execution candidate remains `T-055` (DNS flood controls v1).
+
+## 2026-02-26 — Batch TLS-PORT-PROXY-058 (implementation lane)
+
+- Ticket(s): `T-058` (`IN_PROGRESS`)
+- Summary:
+  - started secure reverse-proxy exposure lane for control-plane API on dedicated non-80/443 port:
+    - added `docs/CONTROL_PLANE_TLS_PROXY_POC.md`,
+    - documented production pattern (`controlPlane` localhost + reverse-proxy TLS + token auth),
+    - documented ACME challenge constraints and internal-PKI fallback for dedicated ports,
+    - linked guidance from `README.md`, `docs/USE_CASES.md`, `docs/BIND_PRODUCTION_BLUEPRINT.md`, and `docs/DEPLOYMENT_BLUEPRINTS.md`.
+- BA requirement mapping:
+  - addresses production requirement for CSF/LFD-style dedicated firewall node/API port in Nix way.
+- PM milestone mapping:
+  - release hardening for secure control-plane exposure and cluster integration.
+- Risk impact:
+  - `low` (documentation/process lane; runtime behavior unchanged).
+- Validation evidence (agent lane):
+  - `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - closed in follow-up entry (`T-058` closure).
+
+## 2026-02-26 — `T-054` closure (blueprint lane completed)
+
+- Ticket(s): `T-054` (`DONE`)
+- Summary:
+  - completed BIND production readiness documentation lane:
+    - added `docs/BIND_PRODUCTION_BLUEPRINT.md`,
+    - linked blueprint from `README.md` and `docs/USE_CASES.md`,
+    - codified team triage for next hardening tickets (`T-055`, `T-056`, `T-057`).
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - next execution candidate is `T-055` (DNS flood controls v1).
+
+## 2026-02-26 — `T-053` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-053` (`DONE`)
+- Summary:
+  - detector-pack expansion accepted:
+    - added built-in `caddy-auth` and `postfix-sasl` templates,
+    - preserved profile default behavior (new templates opt-in),
+    - updated eval guard to validate 5 detector-pack entries and defaults.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed),
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - workflow advanced to `T-054` (BIND production blueprint + secure cluster/CI workflow).
+
+## 2026-02-26 — Batch BIND-BLUEPRINT-054 (implementation lane)
+
+- Ticket(s): `T-054` (`IN_PROGRESS`)
+- Summary:
+  - introduced authoritative DNS production lane:
+    - added `docs/BIND_PRODUCTION_BLUEPRINT.md`,
+    - documented DDoS/flood posture layering (`nix-csf` + BIND),
+    - documented root-NS ignore-list guidance (no broad ignore by default),
+    - documented authenticated main/backup cluster configuration pattern,
+    - documented CI temporary SSH allow/remove flow via `nix-csfctl` with auth token and cleanup trap,
+    - added follow-up backlog tickets for DNS flood controls, auth-failure detectors, and pen-test runbook.
+- BA requirement mapping:
+  - provides release-ready operating model for real BIND production cutover.
+- PM milestone mapping:
+  - pre-release production readiness and hardening workflow.
+- Risk impact:
+  - `low` (documentation/process lane; runtime behavior unchanged).
+- Validation evidence (agent lane):
+  - `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - closed in follow-up entry (`T-054` closure).
+
+## 2026-02-26 — `T-052` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-052` (`DONE`)
+- Summary:
+  - optional policy authoring helper accepted:
+    - `nix-csfctl policy compile` for offline JSON compile/validation,
+    - deterministic cluster/dynamic snapshot output (`--cluster-output`, `--dynamic-output`),
+    - regression guard `checks.<system>.policy-compile-check`.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed),
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - workflow advanced to `T-053` (LFD detector-pack template expansion before release).
+
+## 2026-02-26 — Batch LFD-TEMPLATES-053 (implementation lane)
+
+- Ticket(s): `T-053` (`IN_PROGRESS`)
+- Summary:
+  - expanded detector-pack built-ins for common auth-facing services:
+    - added `caddy-auth` template (`detectorPack.caddyAuth.*`),
+    - added `postfix-sasl` template (`detectorPack.postfixSasl.*`),
+    - kept profile defaults stable (new templates opt-in),
+    - updated eval guard coverage for pack shape and defaults,
+    - updated detector docs/examples (`README.md`, `docs/LFD_DETECTOR.md`, `docs/USE_CASES.md`).
+- BA requirement mapping:
+  - improves pre-release LFD service coverage while preserving backward-compatible defaults.
+- PM milestone mapping:
+  - final detector-pack quality pass before release cut.
+- Risk impact:
+  - `low` (new templates disabled by default).
+- Validation evidence (agent lane):
+  - `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - agent validation + operator full validation evidence required before closure.
+
+## 2026-02-26 — `T-051` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-051` (`DONE`)
+- Summary:
+  - optional Netdata plugin-noise cleanup profile accepted:
+    - `services.nixCsf.netdata.noiseProfile = "off" | "chartsd-minimal"`,
+    - minimal profile limits `charts.d` to explicitly enabled modules while preserving `nix_csf` charts.
+- Validation evidence:
+  - agent: `./scripts/validate-agent.sh` (passed),
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - workflow advanced to `T-052` (optional policy-as-code authoring helper).
+
+## 2026-02-26 — Batch POLICY-COMPILE-052 (implementation lane)
+
+- Ticket(s): `T-052` (`IN_PROGRESS`)
+- Summary:
+  - implemented policy authoring ergonomics baseline:
+    - added `nix-csfctl policy compile` command path (offline JSON compile),
+    - compiles canonical cluster/dynamic snapshots with CIDR/schema validation,
+    - supports deterministic output and file targets (`--cluster-output`, `--dynamic-output`),
+    - added regression guard `checks.<system>.policy-compile-check`,
+    - updated operator docs/examples (`README.md`, `docs/USE_CASES.md`, `docs/SCRIPTS_RUNBOOK.md`).
+- BA requirement mapping:
+  - improves safety and reviewability for mutable policy workflows.
+- PM milestone mapping:
+  - post-RC operator tooling maturity.
+- Risk impact:
+  - `low` (operator tooling path; no default runtime behavior change).
+- Validation evidence (agent lane):
+  - `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - operator lane validation (`./scripts/validate-capture.sh`) pending before closure.
+
+## 2026-02-26 — `T-050` closure (RC decision package accepted)
+
+- Ticket(s): `T-050` (`DONE`)
+- Summary:
+  - RC decision artifact finalized with explicit recommendation `GO`,
+  - release gate evidence consolidated (operator validation + 3/3 burn-in),
+  - cut checklist and rollback framing documented for first production tag.
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+  - operator burn-in: `./scripts/validate-burnin.sh --runs 3` -> success, summary:
+    - `/home/yc/work/nix-csf/.artifacts/validate/burnin-20260226T065638Z-summary.log`
+- Open follow-ups:
+  - release lane advanced to `T-051` (optional Netdata plugin-noise cleanup profile).
+
+## 2026-02-26 — Batch NETDATA-NOISE-051 (implementation lane)
+
+- Ticket(s): `T-051` (`IN_PROGRESS`)
+- Summary:
+  - implemented optional Netdata plugin-noise cleanup profile:
+    - new option: `services.nixCsf.netdata.noiseProfile = "off" | "chartsd-minimal"`,
+    - `chartsd-minimal` writes `enable_all_charts="no"` in generated `charts.d.conf`,
+    - preserves `nix_csf=yes` so nix-csf charts remain active,
+    - added eval guard: `checks.<system>.eval-netdata-noise-profile`,
+    - documented usage in `README.md` and `docs/NETDATA.md`.
+- BA requirement mapping:
+  - improves operator signal quality without changing firewall behavior.
+- PM milestone mapping:
+  - post-RC operational polish before broader production rollout.
+- Risk impact:
+  - `low` (observability profile tuning only).
+- Validation evidence (agent lane):
+  - `./scripts/validate-agent.sh` (passed).
+- Open follow-ups:
+  - operator lane validation (`./scripts/validate-capture.sh`) pending before closure.
+
+## 2026-02-26 — `T-049` closure (operator validation + burn-in confirmed)
+
+- Ticket(s): `T-049` (`DONE`)
+- Summary:
+  - operator reported full validation success (`[nix-csf] validation succeeded`),
+  - burn-in run completed with 3/3 successful full-validation passes,
+  - release-candidate hardening checklist accepted.
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+  - operator burn-in: `./scripts/validate-burnin.sh --runs 3` -> success, summary:
+    - `/home/yc/work/nix-csf/.artifacts/validate/burnin-20260226T065638Z-summary.log`
+- Open follow-ups:
+  - release lane advanced to `T-050` (RC decision package).
+
+## 2026-02-26 — Batch RC-DECISION-050 (implementation lane)
+
+- Ticket(s): `T-050` (`IN_PROGRESS`)
+- Summary:
+  - starting release-candidate decision package:
+    - consolidate validation + burn-in evidence into a single recommendation note,
+    - define cut checklist and rollback framing for first production tag.
+  - initial artifact added:
+    - `docs/RELEASE_CANDIDATE_DECISION.md` with current recommendation `GO`.
+- BA requirement mapping:
+  - turns hardening evidence into an explicit release go/no-go decision artifact.
+- PM milestone mapping:
+  - final gate before RC/GA tagging workflow.
+- Risk impact:
+  - `low` (process/documentation).
+- Validation evidence (agent lane):
+  - documentation/process updates with standard agent validation checks.
+- Open follow-ups:
+  - operator confirmation on RC recommendation artifact before closing `T-050`.
+
+## 2026-02-25 — `T-048` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-048` (`DONE`)
+- Summary:
+  - operator reported full validation success (`[nix-csf] validation succeeded`) after documentation blueprint rollout,
+  - deployment blueprint package accepted with canonical patterns for gateway, bastion, app, and clustered nodes.
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - release lane advanced to `T-049` (release-candidate hardening).
+
+## 2026-02-25 — Batch RC-HARDENING-049 (implementation lane)
+
+- Ticket(s): `T-049` (`IN_PROGRESS`)
+- Summary:
+  - started release-candidate hardening pass and shipped first deliverables:
+    - added `docs/RELEASE_CANDIDATE_HARDENING.md` with:
+      - burn-in workflow (`KVM` primary, `TCG` fallback notes),
+      - evidence bundle requirements,
+      - documentation freeze checklist,
+    - added `scripts/validate-burnin.sh` for repeated full validation runs with consolidated summary logs,
+    - updated release/runbook entrypoints:
+      - `docs/RELEASE.md`,
+      - `docs/SCRIPTS_RUNBOOK.md`,
+      - `README.md`.
+- BA requirement mapping:
+  - targets release-readiness acceptance for final production cut confidence.
+- PM milestone mapping:
+  - final stabilization lane before first RC/GA recommendation.
+- Risk impact:
+  - `low` (process/documentation hardening).
+- Validation evidence (agent lane):
+  - docs + validation lane checks as changes land.
+- Open follow-ups:
+  - operator full-validation evidence (`./scripts/validate-capture.sh`) required before moving `T-049` to `DONE`.
+
+## 2026-02-25 — `T-047` closure (operator full-validation confirmed)
+
+- Ticket(s): `T-047` (`DONE`)
+- Summary:
+  - operator reported full validation success (`[nix-csf] validation succeeded`) after integration expansion rollout,
+  - integration expansion accepted with:
+    - gateway datapath checks (NAT/forward/egress),
+    - detector->escalation->cluster propagation path assertions.
+- Validation evidence:
+  - operator: `./scripts/validate-capture.sh` -> `[nix-csf] validation succeeded`.
+- Open follow-ups:
+  - Stage-2 lane advanced to `T-048` (documentation/deployment blueprints).
+
+## 2026-02-25 — Batch DOC-BLUEPRINTS-048 (implementation lane)
+
+- Ticket(s): `T-048` (`IN_PROGRESS`)
+- Summary:
+  - starting documentation blueprint pass for production-style deployment patterns:
+    - gateway,
+    - bastion (restricted egress),
+    - application host (detector pack),
+    - clustered nodes (control-plane + scoped propagation).
+- BA requirement mapping:
+  - targets `T-048` acceptance for end-to-end deployment examples across Stage 1/2 capabilities.
+- PM milestone mapping:
+  - prepares pre-release documentation freeze by making canonical deployment references explicit.
+- Risk impact:
+  - `low` (documentation-only).
+- Validation evidence (agent lane):
+  - docs lint/link sanity by repository validation lane.
+- Open follow-ups:
+  - operator full-validation evidence (`./scripts/validate-capture.sh`) required before moving `T-048` to `DONE`.
+
 ## 2026-02-25 — `T-046` closure (operator full-validation confirmed)
 
 - Ticket(s): `T-046` (`DONE`)

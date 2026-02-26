@@ -99,6 +99,16 @@ pkgs.testers.runNixOSTest {
           enable = true;
           preset = "balanced";
         };
+        dnsFlood = {
+          enable = true;
+          udpRate = "300/second";
+          udpBurst = 600;
+          tcpRate = "90/second";
+          tcpBurst = 180;
+          udpPorts = [ 53 ];
+          tcpPorts = [ 53 ];
+          allowIPv4 = [ "203.0.117.0/24" ];
+        };
       };
       country = {
         enable = true;
@@ -240,6 +250,9 @@ pkgs.testers.runNixOSTest {
     machine.succeed("grep -F 'udp dport { 53 } accept' /var/lib/nix-csf/generated-ruleset.nft")
     machine.succeed("nft list table inet nix_csf | grep -F 'syn_flood_v4'")
     machine.succeed("nft list table inet nix_csf | grep -F 'conn_flood_v4'")
+    machine.succeed("grep -F 'ip saddr != @dns_flood_allow_ipv4 udp dport { 53 } meter dns_udp_flood_v4 { ip saddr limit rate over 300/second burst 600 packets } drop' /var/lib/nix-csf/generated-ruleset.nft")
+    machine.succeed("grep -F 'ip saddr != @dns_flood_allow_ipv4 tcp flags syn ct state new tcp dport { 53 } meter dns_tcp_flood_v4 { ip saddr limit rate over 90/second burst 180 packets } drop' /var/lib/nix-csf/generated-ruleset.nft")
+    machine.succeed("nft list set inet nix_csf dns_flood_allow_ipv4 | grep -F '203.0.117.0/24'")
     machine.succeed("nft list table inet nix_csf | grep -F 'ip saddr @feed_ipv4 drop'")
     machine.succeed("grep -F 'ip saddr 203.0.120.2/32 tcp dport 12000 accept' /var/lib/nix-csf/generated-ruleset.nft")
     machine.succeed("grep -F 'set dynamic_ban_ipv4 {' /var/lib/nix-csf/generated-ruleset.nft")
@@ -260,11 +273,13 @@ pkgs.testers.runNixOSTest {
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"local_files\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"local_allow_port_rules\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"country_port_allow\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"dns_flood\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_feature_enabled{feature=\"icmp_rate_limit\"} 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_icmp_profile{profile=\"legacy\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_egress_policy{policy=\"drop\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"feed_ipv4\"} 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"dynamic_ban_ipv4\"} 2' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_set_entries{set=\"dns_flood_allow_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"egress_allow_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"egress_allow_ipv6\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_set_entries{set=\"egress_deny_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
@@ -281,6 +296,11 @@ pkgs.testers.runNixOSTest {
     machine.succeed("grep -F 'nix_csf_source_count{source=\"egress_trusted_interfaces\"} 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"egress_allow_tcp_ports\"} 2' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_source_count{source=\"egress_allow_udp_ports\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_source_count{source=\"dns_flood_allow_ipv4\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_source_count{source=\"dns_flood_udp_ports\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_source_count{source=\"dns_flood_tcp_ports\"} 1' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_rate_limit_burst_packets{limit=\"dns_flood_udp\",preset=\"custom\"} 600' /var/lib/nix-csf/metrics.prom")
+    machine.succeed("grep -F 'nix_csf_rate_limit_burst_packets{limit=\"dns_flood_tcp\",preset=\"custom\"} 180' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_dynamic_snapshot_schema_version 1' /var/lib/nix-csf/metrics.prom")
     machine.succeed("grep -F 'nix_csf_dynamic_snapshot_cache_expired 0' /var/lib/nix-csf/metrics.prom")
     machine.succeed("awk -F '\\t' '$1 == \"duplicate\" && $2 == \"ipv4\" && $3 == \"allow\" && $4 == \"1\" { found = 1 } END { exit !found }' /var/lib/nix-csf/local-list-audit-summary.tsv")

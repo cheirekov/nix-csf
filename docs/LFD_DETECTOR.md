@@ -22,6 +22,16 @@ This document describes `services.nixCsf.lfdDetector`, a Nix-native detector fra
 
 ## Built-in Detector Pack Example (Recommended)
 
+Built-in templates currently available in `detectorPack`:
+
+- `ssh-auth`
+- `nginx-auth`
+- `dovecot-auth`
+- `caddy-auth` (opt-in)
+- `postfix-sasl` (opt-in)
+- `control-plane-auth` (opt-in)
+- `api-proxy-auth` (opt-in)
+
 ```nix
 services.nixCsf = {
   enable = true;
@@ -67,6 +77,12 @@ services.nixCsf = {
         windowSeconds = 300;
         banTTLSeconds = 900;
       };
+
+      # Additional templates are opt-in by default.
+      caddyAuth.enable = true;
+      postfixSasl.enable = true;
+      controlPlaneAuth.enable = true;
+      apiProxyAuth.enable = true;
     };
 
     refreshAfterBan = true;
@@ -164,6 +180,11 @@ When enabled:
 ## Notes
 
 - Detector emits mutations only; nft rules are still rendered/applied by `nix-csf`.
+- Detector-pack profiles keep defaults stable; additional templates are enabled explicitly
+  with `detectorPack.<name>.enable = true` when needed.
+- `control-plane-auth` and `api-proxy-auth` templates are opt-in by default.
+  Enable them only where control-plane/API endpoints are network-exposed and auth abuse should
+  trigger temporary bans.
 - Escalation (`N` temp bans => permanent deny) remains controlled by `services.nixCsf.controlPlane.escalation.*`.
 - Escalation audit metadata (promotion `id`, `reasonClass`, `cooldown*`) is available via
   `nix-csfctl promotions --limit N`.

@@ -81,6 +81,20 @@
               };
             };
           });
+          netdataNoiseEval = mkEvalSystem ({ ... }: {
+            services.netdata.enable = true;
+            services.nixCsf = {
+              observability.metrics = {
+                enable = true;
+                outputFile = "/var/lib/nix-csf/metrics.prom";
+              };
+              netdata = {
+                enable = true;
+                installHealthAlarms = true;
+                noiseProfile = "chartsd-minimal";
+              };
+            };
+          });
           natEval = mkEvalSystem ({ ... }: {
             services.nixCsf = {
               nat = {
@@ -224,6 +238,11 @@
                     threshold = 7;
                     banTTLSeconds = 450;
                   };
+                  controlPlaneAuth = {
+                    enable = true;
+                    threshold = 6;
+                    banTTLSeconds = 600;
+                  };
                 };
                 schedule.onCalendar = "minutely";
               };
@@ -323,11 +342,22 @@
             test -e "$healthConfig"
             grep -Fq 'chartsd=/etc/netdata/conf.d/charts.d' "$chartsMainConfig"
             grep -Fq 'nix_csf=yes' "$chartsMainConfig"
+            ! grep -Fq 'enable_all_charts="no"' "$chartsMainConfig"
             grep -Fq 'nix_csf_metrics_file=/var/lib/nix-csf/metrics.prom' "$chartsConfig"
             grep -Fq 'alarm: nix_csf_cluster_policy_cache_expired' "$healthConfig"
             grep -Fq 'alarm: nix_csf_dynamic_snapshot_expired' "$healthConfig"
             printf '%s\n' "$tmpfilesRules" | grep -Fq 'd /var/lib/nix-csf 0751 root root -'
             printf '%s\n' "$servicePathEntries" | grep -Fqx "$netdataPackagePath"
+            touch "$out"
+          '';
+          eval-netdata-noise-profile = pkgs.runCommand "nix-csf-eval-netdata-noise-profile" {
+            chartsMainConfig = netdataNoiseEval.config.services.netdata.configDir."charts.d.conf";
+            noiseProfile = netdataNoiseEval.config.services.nixCsf.netdata.noiseProfile;
+          } ''
+            test -e "$chartsMainConfig"
+            test "$noiseProfile" = "chartsd-minimal"
+            grep -Fq 'enable_all_charts="no"' "$chartsMainConfig"
+            grep -Fq 'nix_csf=yes' "$chartsMainConfig"
             touch "$out"
           '';
           eval-nat = pkgs.runCommand "nix-csf-eval-nat" {
@@ -443,10 +473,14 @@ PY
 
             test -n "$detectorsFile"
             test -f "$detectorsFile"
-            jq -e 'length == 3' "$detectorsFile" >/dev/null
+            jq -e 'length == 7' "$detectorsFile" >/dev/null
             jq -e 'map(select(.name == "ssh-auth" and .enable == true)) | length == 1' "$detectorsFile" >/dev/null
             jq -e 'map(select(.name == "nginx-auth" and .enable == true and .threshold == 7 and .banTTLSeconds == 450)) | length == 1' "$detectorsFile" >/dev/null
             jq -e 'map(select(.name == "dovecot-auth" and .enable == false)) | length == 1' "$detectorsFile" >/dev/null
+            jq -e 'map(select(.name == "caddy-auth" and .enable == false)) | length == 1' "$detectorsFile" >/dev/null
+            jq -e 'map(select(.name == "postfix-sasl" and .enable == false)) | length == 1' "$detectorsFile" >/dev/null
+            jq -e 'map(select(.name == "control-plane-auth" and .enable == true and .threshold == 6 and .banTTLSeconds == 600)) | length == 1' "$detectorsFile" >/dev/null
+            jq -e 'map(select(.name == "api-proxy-auth" and .enable == false)) | length == 1' "$detectorsFile" >/dev/null
             touch "$out"
           '';
           eval-fail2ban-adapter = pkgs.runCommand "nix-csf-eval-fail2ban-adapter" {
@@ -540,6 +574,74 @@ EOF
             strict_rc=$?
             set -e
             test "$strict_rc" -eq 2
+
+            touch "$out"
+          '';
+          policy-compile-check = pkgs.runCommand "nix-csf-policy-compile-check" {
+            nativeBuildInputs = [ pkgs.bash pkgs.coreutils pkgs.jq ];
+          } ''
+            workdir="$(mktemp -d)"
+            trap 'rm -rf "$workdir"' EXIT
+
+            cat > "$workdir/policy-source.json" <<'EOF'
+{
+  "clusterPolicy": {
+    "allow": [
+      "203.0.113.1/32",
+      "2001:DB8::1/128",
+      "203.0.113.1/32"
+    ],
+    "deny": [
+      "198.51.100.0/24",
+      "2001:db8:bad::/48"
+    ],
+    "ignore": [
+      "203.0.113.99/32"
+    ]
+  },
+  "dynamicOffenders": {
+    "ban": [
+      "203.0.113.200/32",
+      {
+        "cidr": "203.0.113.200/32",
+        "ttlSeconds": 1200,
+        "reason": "lfd:ssh_auth"
+      },
+      {
+        "cidr": "2001:DB8::beef/128",
+        "expiresAt": 4102444800,
+        "reason": "manual"
+      }
+    ]
+  }
+}
+EOF
+
+            compiled_json="$workdir/compiled.json"
+            cluster_json="$workdir/cluster-policy.json"
+            dynamic_json="$workdir/dynamic-offenders.json"
+
+            ${pkgs.bash}/bin/bash ${./scripts/nix-csfctl.sh} --output json policy compile \
+              --input "$workdir/policy-source.json" \
+              --policy-revision "ci-policy-r1" \
+              --dynamic-revision "ci-dyn-r1" \
+              --cluster-ttl 600 \
+              --dynamic-ttl 300 \
+              --default-ban-ttl 900 \
+              --last-mutation-id 42 \
+              --cluster-output "$cluster_json" \
+              --dynamic-output "$dynamic_json" > "$compiled_json"
+
+            jq -e '.clusterPolicy.schemaVersion == 2 and .clusterPolicy.revision == "ci-policy-r1"' "$compiled_json" >/dev/null
+            jq -e '.dynamicOffenders.schemaVersion == 1 and .dynamicOffenders.revision == "ci-dyn-r1"' "$compiled_json" >/dev/null
+            jq -e '.clusterPolicy.ttlSeconds == 600 and .dynamicOffenders.ttlSeconds == 300 and .clusterPolicy.lastMutationId == 42 and .dynamicOffenders.lastMutationId == 42' "$compiled_json" >/dev/null
+            jq -e '.clusterPolicy.allowIPv4 == ["203.0.113.1/32"]' "$compiled_json" >/dev/null
+            jq -e '.clusterPolicy.allowIPv6 == ["2001:db8::1/128"]' "$compiled_json" >/dev/null
+            jq -e '.dynamicOffenders.banIPv4 | length == 1' "$compiled_json" >/dev/null
+            jq -e '.dynamicOffenders.banIPv4[0].cidr == "203.0.113.200/32" and .dynamicOffenders.banIPv4[0].ttlSeconds == 1200' "$compiled_json" >/dev/null
+            jq -e '.dynamicOffenders.banIPv6[0].cidr == "2001:db8::beef/128"' "$compiled_json" >/dev/null
+            jq -e --slurpfile cluster "$cluster_json" '.clusterPolicy == $cluster[0]' "$compiled_json" >/dev/null
+            jq -e --slurpfile dynamic "$dynamic_json" '.dynamicOffenders == $dynamic[0]' "$compiled_json" >/dev/null
 
             touch "$out"
           '';

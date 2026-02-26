@@ -16,23 +16,31 @@ Current module version source of truth: `VERSION`.
   - Non-flake example: `examples/non-flake/test-server-bg-netdata-import.nix`
 - Day-2 operations:
   - Scripts/runbook index: `docs/SCRIPTS_RUNBOOK.md`
+  - Security validation runbook: `docs/SECURITY_VALIDATION_RUNBOOK.md`
   - Troubleshooting: `docs/TROUBLESHOOTING.md`
   - Use-case catalog: `docs/USE_CASES.md`
+  - Deployment blueprints: `docs/DEPLOYMENT_BLUEPRINTS.md`
+  - Authoritative DNS blueprint: `docs/BIND_PRODUCTION_BLUEPRINT.md`
 - Security and architecture:
   - Architecture: `docs/ARCHITECTURE.md`
   - Cluster control-plane POC: `docs/CLUSTER_CONTROL_PLANE_POC.md`
+  - Control-plane TLS proxy POC: `docs/CONTROL_PLANE_TLS_PROXY_POC.md`
+  - Cluster auth token runbook: `docs/CLUSTER_AUTH_TOKENS.md`
   - Dynamic/cluster recommendation: `docs/DYNAMIC_CLUSTER_POC.md`
 - Monitoring:
   - Prometheus/Grafana: `docs/MONITORING.md`
   - Netdata integration: `docs/NETDATA.md`
 - Migration:
   - Legacy CSF import: `docs/CSF_IMPORT.md`
+  - Release hardening gate: `docs/RELEASE_CANDIDATE_HARDENING.md`
+  - RC decision package: `docs/RELEASE_CANDIDATE_DECISION.md`
 
 ## What is implemented
 
 - Core module: `services.nixCsf`
 - Stateful baseline firewall (`nftables`) with strict apply/refresh pipeline
 - Static local policy sets: `allow*`, `deny*`, open ports, ICMP profiles
+- DNS-focused flood meters with optional trusted-source bypass selectors (`rateLimits.dnsFlood.*`)
 - Country controls:
   - full-country deny/allow modes,
   - per-port country deny (`CC_DENY_PORTS` style),
@@ -45,6 +53,7 @@ Current module version source of truth: `VERSION`.
 - Escalation engine v2 for temp->perm promotion (`controlPlane.escalation.*`: threshold/window/cooldown/reasonClasses + audit IDs)
 - Cluster propagation semantics v2 (`controlPlane.propagation.*`: local vs cluster scope defaults, provenance metadata, replay marker)
 - Nix-native LFD-like detector framework v2 (explicit `lfdDetector.detectors` or curated `lfdDetector.detectorPack`) and fail2ban adapter
+  - built-in templates: `ssh-auth`, `nginx-auth`, `dovecot-auth`, plus opt-in `caddy-auth`, `postfix-sasl`, `control-plane-auth`, and `api-proxy-auth`
 - Auth token rotation (`*.authTokenFiles`) for remote snapshots
 - Docker coexistence profile (`coexistence.profile = "docker-coexist"`)
 - NAT datapath foundation (`nat.*`: IPv4 masquerade + explicit port forwards)
@@ -215,8 +224,30 @@ services.nixCsf = {
       profile = "server-web"; # ssh-auth + nginx-auth
       sshAuth.threshold = 5;
       nginxAuth.threshold = 10;
+      caddyAuth.enable = true; # optional template
+      postfixSasl.enable = true; # optional template
+      controlPlaneAuth.enable = true; # optional template
+      apiProxyAuth.enable = true; # optional template
     };
     refreshAfterBan = true;
+  };
+};
+```
+
+Offline policy authoring/compile path:
+
+```bash
+nix-csfctl --output pretty policy compile --input ./policy-source.json --cluster-output ./cluster-policy.json --dynamic-output ./dynamic-offenders.json
+```
+
+### Netdata noise profile (optional)
+
+```nix
+services.nixCsf = {
+  netdata = {
+    enable = true;
+    # Reduce non-critical default charts.d module checks while keeping nix_csf charts.
+    noiseProfile = "chartsd-minimal"; # off | chartsd-minimal
   };
 };
 ```
